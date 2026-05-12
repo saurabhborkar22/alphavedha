@@ -6,20 +6,34 @@ Ingestion, preprocessing, and storage of all market data. This layer is the foun
 ## Architecture
 
 ```
+database.py       → Async SQLAlchemy engine, session factory, health check
+models.py         → ORM models (DailyOHLCV, CorporateAction, IndexConstituent, etc.)
 providers/        → Fetch raw data from external sources
+  base.py         → DataProvider protocol, RateLimiter, validate_ohlcv, retry logic
+  yfinance_provider.py  → Yahoo Finance (.NS suffix, bulk download)
+  jugaad_provider.py    → NSE daily data with delivery %
 preprocessing/    → Clean, adjust, transform raw data
+  corporate_actions.py  → Split/bonus/rights adjustment, raw price preservation
+  circuit_handler.py    → 5%/10%/20% circuit detection
+  missing_data.py       → Forward-fill with flags, suspension detection
+  fractional_diff.py    → FFD transform, auto min-d via ADF test
+  outlier_treatment.py  → Winsorization (skips prices/returns)
+  pipeline.py           → Orchestrates all 5 steps in correct order
 universe.py       → Manage point-in-time index constituents
-store.py          → Feature store for training-serving consistency
+store.py          → Feature store + OHLCV store with upsert support
 ```
 
 ## Providers
 
-Each provider implements a common interface:
+Each provider implements the `DataProvider` protocol (see `providers/base.py`):
 
 ```python
 class DataProvider(Protocol):
+    @property
+    def name(self) -> str: ...
     async def fetch_ohlcv(self, symbol: str, start: date, end: date) -> pd.DataFrame: ...
-    async def fetch_bulk(self, symbols: list[str], start: date, end: date) -> dict[str, pd.DataFrame]: ...
+    async def fetch_bulk(self, symbols: list[str], start: date, end: date) -> dict[str, FetchResult]: ...
+    async def health_check(self) -> bool: ...
 ```
 
 ### Provider priority (fallback chain)
@@ -32,7 +46,8 @@ class DataProvider(Protocol):
 - yfinance: max 2 requests/second, with exponential backoff
 - NSE website: max 1 request/2 seconds, rotate user-agents, respect 403s
 - Finnhub free: 60 calls/minute
-- All providers: use Redis-backed rate limiter
+- Rate limiter: in-memory token bucket (`RateLimiter` in `base.py`), configurable via `configs/default.yaml`
+- All providers use `fetch_with_retry()` for automatic retry with exponential backoff (3 retries default)
 
 ## Preprocessing — CRITICAL RULES
 
@@ -102,8 +117,33 @@ institutional_flows (date, category, buy_value, sell_value, net_value)
 derivatives_data (symbol, date, futures_oi, futures_price, options_data_json)
 ```
 
+## Database Layer
+
+### Engine (`database.py`)
+- Async SQLAlchemy with asyncpg (connection pooling: 10 pool, 20 overflow)
+- `get_engine()` / `get_session_factory()` — module-level singletons
+- `DATABASE_URL` env var or auto-constructed from config
+- `create_tables()` for dev/testing, Alembic for production migrations
+
+### ORM Models (`models.py`)
+All tables have `created_at` with server default, proper indexes, and unique constraints.
+Key: every time-series query should use the `(symbol, date)` composite index.
+
 ## Testing
 - Unit test each provider with recorded API response fixtures
 - Integration test the full pipeline: fetch → preprocess → store → retrieve
 - Validate: no future data leakage, no unadjusted prices in feature store
 - Test circuit limit detection against known historical circuit hits
+
+### Existing Tests (tests/unit/data/)
+- `test_providers.py` — OHLCV validation, rate limiter, mocked yfinance provider
+- `test_preprocessing.py` — Corporate actions, circuit detection, missing data, fractional diff, outliers
+- `test_pipeline.py` — End-to-end preprocessing pipeline orchestration
+- `test_universe.py` — Index URLs, config loading and validation
+
+### Test Fixtures (tests/conftest.py)
+- `sample_ohlcv` — 20 trading days of realistic TCS data
+- `sample_ohlcv_with_gaps` — OHLCV with 3 missing days
+- `sample_ohlcv_with_circuit` — OHLCV with simulated 5% upper circuit
+- `sample_ohlcv_long` — 252 trading days for fractional diff tests
+- `sample_corporate_actions` — Split + bonus action records
