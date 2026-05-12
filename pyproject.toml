@@ -96,7 +96,6 @@ select = [
     "UP",   # pyupgrade
     "B",    # bugbear
     "SIM",  # simplify
-    "TCH",  # type-checking imports
     "RUF",  # ruff-specific
 ]
 ignore = [

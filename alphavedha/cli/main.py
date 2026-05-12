@@ -27,7 +27,9 @@ def scan(
 
 @app.command()
 def train(
-    model: str = typer.Argument("all", help="Model to train: all, xgboost, lstm, tft, regime, meta"),
+    model: str = typer.Argument(
+        "all", help="Model to train: all, xgboost, lstm, tft, regime, meta"
+    ),
 ) -> None:
     """Train ML models."""
     typer.echo(f"Training {model}... (not yet implemented)")
