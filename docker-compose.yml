@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: alphavedha-db
+    environment:
+      POSTGRES_USER: alphavedha
+      POSTGRES_PASSWORD: alphavedha_dev
+      POSTGRES_DB: alphavedha
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: alphavedha-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

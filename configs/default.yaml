@@ -1,0 +1,205 @@
+# AlphaVedha Default Configuration
+
+project:
+  name: alphavedha
+  version: 0.1.0
+  timezone: Asia/Kolkata
+
+# ─── Universe ──────────────────────────────────────────
+universe:
+  default_tiers:
+    - large    # Nifty 50
+    - mid      # Nifty Midcap 150
+  available_tiers:
+    large:
+      index: "NIFTY 50"
+      count: 50
+    mid:
+      index: "NIFTY MIDCAP 150"
+      count: 150
+    small:
+      index: "NIFTY SMALLCAP 250"
+      count: 250
+  rebalance_check: quarterly
+
+# ─── Data Providers ────────────────────────────────────
+data:
+  providers:
+    primary: jugaad
+    fallback: yfinance
+    derivatives: nse
+    sentiment: finnhub
+
+  rate_limits:
+    yfinance:
+      requests_per_second: 2
+      backoff_factor: 2.0
+    nse:
+      requests_per_second: 0.5
+      user_agent_rotate: true
+    finnhub:
+      requests_per_minute: 60
+
+  history:
+    backfill_start: "2005-01-01"
+    min_history_days: 252  # 1 year of trading days
+
+# ─── Preprocessing ─────────────────────────────────────
+preprocessing:
+  fractional_diff:
+    min_d: 0.1
+    max_d: 0.8
+    adf_pvalue_threshold: 0.05
+    max_lags: 100
+    recompute_interval: monthly
+
+  outlier:
+    winsorize_lower: 0.01
+    winsorize_upper: 0.99
+
+  circuit:
+    thresholds: [0.05, 0.10, 0.20]
+    flag_column: circuit_hit
+
+  missing_data:
+    method: forward_fill
+    add_flag: true
+    max_gap_days: 10  # Alert if gap exceeds this
+
+# ─── Labels ────────────────────────────────────────────
+labels:
+  triple_barrier:
+    multiplier_up: 2.0
+    multiplier_down: 1.5
+    max_holding_period: 15
+    min_atr_threshold: 0.005
+    atr_period: 14
+
+  meta_labeling:
+    min_confidence: 0.55
+    model: xgboost
+
+  sample_weights:
+    uniqueness: true
+    recency_halflife: 252
+
+# ─── Models ────────────────────────────────────────────
+models:
+  artifact_dir: models/artifacts
+
+  xgboost:
+    task: classification
+    params:
+      learning_rate: 0.05
+      max_depth: 6
+      n_estimators: 500
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_alpha: 0.1
+      reg_lambda: 1.0
+      eval_metric: logloss
+      early_stopping_rounds: 50
+
+  lstm:
+    sequence_length: 60
+    hidden_size: 128
+    num_layers: 2
+    dropout: 0.3
+    learning_rate: 0.001
+    batch_size: 64
+    max_epochs: 100
+    early_stopping_patience: 10
+    top_n_features: 30
+
+  tft:
+    hidden_size: 64
+    attention_head_size: 4
+    dropout: 0.1
+    learning_rate: 0.001
+    max_epochs: 50
+    horizons: [7, 15, 30]
+
+  regime:
+    n_states: 4
+    state_names: [bull, bear, sideways, high_volatility]
+    n_iter: 100
+    covariance_type: full
+    retrain_interval: monthly
+
+  ensemble:
+    meta_learner: ridge
+    alpha: 1.0
+
+  conformal:
+    coverage: 0.90
+    calibration_window: 60
+
+# ─── Validation ────────────────────────────────────────
+validation:
+  cpcv:
+    n_segments: 6
+    k_test_segments: 2
+    purge_days: 20
+    embargo_days: 20
+  acceptance:
+    min_median_sharpe: 0.8
+    min_worst_sharpe: 0.3
+
+# ─── Risk ──────────────────────────────────────────────
+risk:
+  position_sizing:
+    method: half_kelly
+    max_single_stock_pct: 10.0
+    min_confidence: 0.55
+
+  portfolio:
+    max_sector_pct: 25.0
+    max_correlation: 0.7
+    min_holding_days: 3
+    min_daily_turnover_cr: 5.0
+
+  circuit_breaker:
+    level_1_drawdown: 10.0    # Reduce positions 50%
+    level_2_drawdown: 15.0    # Halt new entries
+    level_3_drawdown: 20.0    # Close all positions
+    recovery_threshold: 0.95   # 95% of peak to reset
+
+# ─── API ───────────────────────────────────────────────
+api:
+  host: "0.0.0.0"
+  port: 8000
+  rate_limit:
+    default_per_minute: 100
+    batch_per_minute: 10
+  cache:
+    market_hours_ttl: 300      # 5 minutes
+    after_hours_ttl: 43200     # 12 hours
+
+# ─── Monitoring ────────────────────────────────────────
+monitoring:
+  drift:
+    psi_warning: 0.1
+    psi_alert: 0.2
+  performance:
+    min_accuracy: 0.52
+    rolling_windows: [7, 30, 90]
+  retraining:
+    schedule: weekly
+    shadow_period_days: 20
+    keep_versions: 5
+
+# ─── Backtest ──────────────────────────────────────────
+backtest:
+  costs:
+    stt_delivery: 0.001
+    stt_intraday: 0.00025
+    brokerage_flat: 20
+    exchange_txn: 0.0000345
+    gst: 0.18
+    sebi_turnover: 0.000001
+    stamp_duty: 0.00015
+  slippage:
+    large_cap: 0.001
+    mid_cap: 0.003
+    small_cap: 0.005
+  benchmark: "^NSEI"  # Nifty 50

@@ -1,0 +1,76 @@
+{
+  "model": "claude-opus-4-6",
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(pytest *)",
+      "Bash(ruff *)",
+      "Bash(mypy *)",
+      "Bash(make *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git checkout -b*)",
+      "Bash(git branch --show-current*)",
+      "Bash(git stash*)",
+      "Bash(pip install*)",
+      "Bash(pip list*)",
+      "Bash(pip show*)",
+      "Bash(docker compose*)",
+      "Bash(docker-compose*)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(wc *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(cat *)",
+      "Bash(which *)",
+      "Bash(source *)",
+      "Bash(alembic *)",
+      "Bash(uvicorn *)",
+      "Bash(jupyter *)",
+      "Read",
+      "Write",
+      "Edit"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git rebase*)",
+      "Bash(git reset --hard*)",
+      "Bash(git branch -D*)",
+      "Bash(git push origin main*)",
+      "Bash(git push origin master*)",
+      "Bash(rm -rf /*))",
+      "Bash(sudo *)",
+      "Bash(pip install* --break-system-packages*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -qiE '\\.(env|pem|key|p12)$|credentials'; then echo 'BLOCKED: Cannot write to sensitive files (.env, .pem, .key, credentials)' && exit 2; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -qE '\\.py$'; then cd /home/lenovo/alphavedha && ruff check --select E,F,I --fix \"$(echo $TOOL_INPUT | grep -oP '\"file_path\":\\s*\"\\K[^\"]+')\" 2>/dev/null || true; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
