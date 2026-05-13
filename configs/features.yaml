@@ -1,0 +1,193 @@
+# Feature Engineering Configuration
+# Total: 142 features across 7 groups
+
+technical:
+  count: 40
+  module: alphavedha.features.technical
+  groups:
+    momentum:
+      - {name: rsi_7, window: 7, source: close, unit: ratio_0_100}
+      - {name: rsi_14, window: 14, source: close, unit: ratio_0_100}
+      - {name: rsi_21, window: 21, source: close, unit: ratio_0_100}
+      - {name: stoch_k_14, window: 14, source: hlc, unit: ratio_0_100}
+      - {name: stoch_d_14, window: 14, source: hlc, unit: ratio_0_100}
+      - {name: macd_12_26, window: "12/26", source: close, unit: raw}
+      - {name: macd_signal_12_26, window: "12/26/9", source: close, unit: raw}
+      - {name: macd_hist_12_26, window: "12/26/9", source: close, unit: raw}
+      - {name: willr_14, window: 14, source: hlc, unit: ratio_neg100_0}
+      - {name: roc_10, window: 10, source: close, unit: percentage}
+      - {name: roc_20, window: 20, source: close, unit: percentage}
+      - {name: cci_20, window: 20, source: hlc, unit: raw}
+    trend:
+      - {name: sma_20, window: 20, source: close, unit: price}
+      - {name: sma_50, window: 50, source: close, unit: price}
+      - {name: sma_200, window: 200, source: close, unit: price}
+      - {name: ema_9, window: 9, source: close, unit: price}
+      - {name: ema_21, window: 21, source: close, unit: price}
+      - {name: price_to_sma_20, window: 20, source: close, unit: ratio}
+      - {name: price_to_sma_50, window: 50, source: close, unit: ratio}
+      - {name: adx_14, window: 14, source: hlc, unit: ratio_0_100}
+      - {name: dip_14, window: 14, source: hlc, unit: ratio_0_100}
+      - {name: dim_14, window: 14, source: hlc, unit: ratio_0_100}
+    volatility:
+      - {name: bb_upper_20, window: 20, source: close, unit: price}
+      - {name: bb_lower_20, window: 20, source: close, unit: price}
+      - {name: bb_width_20, window: 20, source: close, unit: ratio}
+      - {name: bb_pct_20, window: 20, source: close, unit: ratio}
+      - {name: atr_14, window: 14, source: hlc, unit: price}
+      - {name: natr_14, window: 14, source: hlc, unit: percentage}
+      - {name: hvol_20, window: 20, source: close, unit: annualized_pct}
+      - {name: hvol_60, window: 60, source: close, unit: annualized_pct}
+    volume:
+      - {name: obv, window: null, source: close_volume, unit: raw}
+      - {name: obv_ema_20, window: 20, source: obv, unit: raw}
+      - {name: vol_sma_20, window: 20, source: volume, unit: raw}
+      - {name: vol_ratio_20, window: 20, source: volume, unit: ratio}
+      - {name: vwap_20, window: 20, source: hlcv, unit: price}
+      - {name: price_to_vwap_20, window: 20, source: close_vwap, unit: ratio}
+      - {name: mfi_14, window: 14, source: hlcv, unit: ratio_0_100}
+      - {name: ad, window: null, source: hlcv, unit: raw}
+      - {name: cho_3_10, window: "3/10", source: ad, unit: raw}
+      - {name: fi_13, window: 13, source: close_volume, unit: raw}
+
+returns:
+  count: 21
+  module: alphavedha.features.returns
+  features:
+    - {name: ret_log_1d, window: 1, source: close, unit: log_return}
+    - {name: ret_log_5d, window: 5, source: close, unit: log_return}
+    - {name: ret_log_10d, window: 10, source: close, unit: log_return}
+    - {name: ret_log_20d, window: 20, source: close, unit: log_return}
+    - {name: ret_mean_5d, window: 5, source: log_returns, unit: log_return}
+    - {name: ret_mean_20d, window: 20, source: log_returns, unit: log_return}
+    - {name: ret_std_5d, window: 5, source: log_returns, unit: std}
+    - {name: ret_std_20d, window: 20, source: log_returns, unit: std}
+    - {name: ret_skew_20d, window: 20, source: log_returns, unit: raw}
+    - {name: ret_kurt_20d, window: 20, source: log_returns, unit: raw}
+    - {name: ret_sharpe_20d, window: 20, source: log_returns, unit: ratio}
+    - {name: ret_max_dd_20d, window: 20, source: close, unit: ratio}
+    - {name: ret_up_ratio_20d, window: 20, source: log_returns, unit: ratio_0_1}
+    - {name: ret_mom_5d, window: 5, source: close, unit: percentage}
+    - {name: ret_mom_20d, window: 20, source: close, unit: percentage}
+    - {name: ret_mom_60d, window: 60, source: close, unit: percentage}
+    - {name: ret_zscore_20d, window: 20, source: log_returns, unit: zscore}
+    - {name: ret_frac_diff, window: null, source: preprocessing, unit: frac_diff}
+    - {name: ret_52w_high_dist, window: 252, source: close, unit: ratio}
+    - {name: ret_52w_low_dist, window: 252, source: close, unit: ratio}
+    - {name: ret_regime, window: null, source: hmm_model, unit: category, stub: true, stub_reason: "HMM model not built until Week 4"}
+
+calendar:
+  count: 18
+  module: alphavedha.features.calendar_features
+  features:
+    - {name: cal_dow, source: date, unit: category_0_4}
+    - {name: cal_month, source: date, unit: category_1_12}
+    - {name: cal_quarter, source: date, unit: category_1_4}
+    - {name: cal_week_of_month, source: date, unit: category_1_5}
+    - {name: cal_days_to_monthly_expiry, source: date, unit: days}
+    - {name: cal_is_expiry_week, source: date, unit: binary}
+    - {name: cal_is_expiry_day, source: date, unit: binary}
+    - {name: cal_days_to_rbi, source: date, unit: days}
+    - {name: cal_is_budget_month, source: date, unit: binary}
+    - {name: cal_is_january, source: date, unit: binary}
+    - {name: cal_is_december, source: date, unit: binary}
+    - {name: cal_monsoon_flag, source: date, unit: binary}
+    - {name: cal_is_result_season, source: date, unit: binary}
+    - {name: cal_doy, source: date, unit: day_1_366}
+    - {name: cal_year, source: date, unit: year}
+    - {name: cal_week_of_year, source: date, unit: week_1_53}
+    - {name: cal_is_monday, source: date, unit: binary}
+    - {name: cal_days_in_quarter, source: date, unit: days}
+
+microstructure:
+  count: 10
+  module: alphavedha.features.microstructure
+  features:
+    - {name: micro_delivery_pct, source: jugaad_data, unit: ratio_0_1}
+    - {name: micro_delivery_zscore, window: 20, source: delivery_pct, unit: zscore}
+    - {name: micro_delivery_to_ma5, window: 5, source: delivery_pct, unit: ratio}
+    - {name: micro_delivery_trend_5d, window: 5, source: delivery_pct, unit: diff}
+    - {name: micro_delivery_accel, window: null, source: delivery_pct, unit: diff2}
+    - {name: micro_vol_anomaly, window: 20, source: volume, unit: ratio}
+    - {name: micro_hd_up, source: delivery_close_open, unit: binary}
+    - {name: micro_hd_down, source: delivery_close_open, unit: binary}
+    - {name: micro_ld_up, source: delivery_close_open, unit: binary}
+    - {name: micro_delivery_rolling_10d, window: 10, source: delivery_pct, unit: ratio_0_1}
+
+macro:
+  count: 25
+  module: alphavedha.features.macro
+  features:
+    - {name: macro_vix, source: yfinance_INDIAVIX, unit: index}
+    - {name: macro_vix_change_1d, source: vix, unit: percentage}
+    - {name: macro_vix_zscore_20d, window: 20, source: vix, unit: zscore}
+    - {name: macro_nifty_ret_1d, source: yfinance_NSEI, unit: log_return}
+    - {name: macro_nifty_ret_5d, source: yfinance_NSEI, unit: log_return}
+    - {name: macro_usdinr, source: yfinance_USDINR, unit: fx_rate}
+    - {name: macro_usdinr_change_1d, source: usdinr, unit: percentage}
+    - {name: macro_brent, source: yfinance_BZ, unit: price_usd}
+    - {name: macro_brent_change_1d, source: brent, unit: percentage}
+    - {name: macro_gold, source: yfinance_GC, unit: price_usd}
+    - {name: macro_us10y, source: yfinance_TNX, unit: yield_pct}
+    - {name: macro_gsec_10y, source: rbi, unit: yield_pct, stub: true, stub_reason: "Hardcoded 7.0, RBI data source not integrated"}
+    - {name: macro_gsec_change_1d, source: gsec, unit: diff, stub: true}
+    - {name: macro_fii_net, source: institutional_flows_table, unit: crores_inr}
+    - {name: macro_fii_cum_5d, window: 5, source: fii_net, unit: crores_inr}
+    - {name: macro_dii_net, source: institutional_flows_table, unit: crores_inr}
+    - {name: macro_dii_cum_5d, window: 5, source: dii_net, unit: crores_inr}
+    - {name: macro_sector_ret_1d, source: sector_ohlcv, unit: log_return}
+    - {name: macro_sector_rel_ret_1d, source: stock_vs_sector, unit: log_return}
+    - {name: macro_pmi, source: gov_release, unit: index, stub: true, stub_reason: "Monthly PMI data source not integrated"}
+    - {name: macro_pmi_staleness_days, source: pmi, unit: days, stub: true}
+    - {name: macro_breadth_200sma, source: computed, unit: ratio_0_1, stub: true, stub_reason: "Needs universe-wide SMA computation"}
+    - {name: macro_adv_dec_ratio, source: nse_bhavcopy, unit: ratio, stub: true}
+    - {name: macro_index_cpr, source: nse_derivatives, unit: ratio, stub: true}
+    - {name: macro_mktcap_flow, source: computed, unit: crores_inr, stub: true}
+
+derivatives:
+  count: 20
+  module: alphavedha.features.derivatives
+  features:
+    - {name: deriv_futures_oi, source: derivatives_data_table, unit: contracts}
+    - {name: deriv_futures_oi_change, source: futures_oi, unit: percentage}
+    - {name: deriv_futures_premium, source: futures_vs_spot, unit: percentage}
+    - {name: deriv_atm_iv, source: options_chain, unit: annualized_vol}
+    - {name: deriv_iv_rank, window: 252, source: atm_iv, unit: ratio_0_1}
+    - {name: deriv_iv_pctile, window: 252, source: atm_iv, unit: ratio_0_1}
+    - {name: deriv_pcr_oi, source: options_chain, unit: ratio}
+    - {name: deriv_pcr_vol, source: options_chain, unit: ratio}
+    - {name: deriv_max_pain, source: options_chain, unit: price}
+    - {name: deriv_dist_max_pain, source: spot_vs_max_pain, unit: percentage}
+    - {name: deriv_fii_futures_oi, source: nse_participant_oi, unit: contracts, stub: true, stub_reason: "NSE participant-wise OI parser not built"}
+    - {name: deriv_fii_options_oi, source: nse_participant_oi, unit: contracts, stub: true}
+    - {name: deriv_pro_futures_net, source: nse_participant_oi, unit: contracts, stub: true}
+    - {name: deriv_retail_futures_net, source: nse_participant_oi, unit: contracts, stub: true}
+    - {name: deriv_oi_buildup, source: oi_price_direction, unit: binary}
+    - {name: deriv_oi_unwind, source: oi_price_direction, unit: binary}
+    - {name: deriv_short_cover, source: oi_price_direction, unit: binary}
+    - {name: deriv_short_build, source: oi_price_direction, unit: binary}
+    - {name: deriv_gex, source: options_greeks, unit: raw, stub: true, stub_reason: "Gamma exposure needs full options chain with Greeks"}
+    - {name: deriv_delta_oi, source: options_greeks, unit: raw, stub: true}
+
+sentiment:
+  count: 8
+  module: alphavedha.features.sentiment
+  features:
+    - {name: sent_news_score, source: finbert, unit: score_neg1_pos1}
+    - {name: sent_news_score_5d, window: 5, source: news_score, unit: score_neg1_pos1}
+    - {name: sent_velocity, source: news_score_diff, unit: diff}
+    - {name: sent_velocity_zscore, window: 20, source: velocity, unit: zscore}
+    - {name: sent_article_count, source: news_api, unit: count}
+    - {name: sent_no_news_flag, source: article_count, unit: binary}
+    - {name: sent_pos_ratio, source: finbert, unit: ratio_0_1}
+    - {name: sent_neg_ratio, source: finbert, unit: ratio_0_1}
+
+# Stub summary: 16 features return NaN/hardcoded values.
+# These need data providers that don't exist yet:
+#   - NSE participant-wise OI (4 deriv features)
+#   - PMI/macro data from government releases (4 macro features)
+#   - Market breadth computation (2 macro features)
+#   - Options Greeks for GEX/delta (2 deriv features)
+#   - RBI G-Sec yield data (2 macro features)
+#   - HMM regime model (1 return feature, built Week 4)
+#   - Index call-put ratio (1 macro feature)

@@ -4,7 +4,7 @@
 
 AlphaVedha (अल्फावेध) is a Python-based stock market analysis and prediction platform for Indian markets (NSE/BSE). It combines ensemble ML models (XGBoost + LSTM + Temporal Fusion Transformer), India-specific microstructure signals, and quantitative finance techniques to predict stock direction, magnitude, and price targets.
 
-**Phase 1:** Prediction engine with 141-feature ensemble ML
+**Phase 1:** Prediction engine with 142-feature ensemble ML
 **Phase 2:** AI-powered balance sheet analysis (Beneish M-Score, Altman Z-Score)
 **Phase 3:** Signal timing engine with entry/exit optimization
 

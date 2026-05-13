@@ -78,6 +78,15 @@ def sample_ohlcv_long() -> pd.DataFrame:
 
 
 @pytest.fixture
+def sample_ohlcv_with_delivery(sample_ohlcv_long: pd.DataFrame) -> pd.DataFrame:
+    """252-day OHLCV with delivery_pct column for microstructure tests."""
+    df = sample_ohlcv_long.copy()
+    rng = np.random.default_rng(42)
+    df["delivery_pct"] = rng.uniform(0.3, 0.8, size=len(df))
+    return df
+
+
+@pytest.fixture
 def sample_corporate_actions() -> list[dict]:
     """Sample corporate actions for testing adjustments."""
     return [
