@@ -6,7 +6,7 @@
 
 ## 1. What Is AlphaVedha?
 
-An AI-powered Indian stock market prediction engine for NSE/BSE. Predicts stock direction, magnitude, confidence, and price target ranges using ensemble ML (XGBoost + LSTM + TFT) with 141 India-specific features.
+An AI-powered Indian stock market prediction engine for NSE/BSE. Predicts stock direction, magnitude, confidence, and price target ranges using ensemble ML (XGBoost + LSTM + TFT) with 142 India-specific features.
 
 - **Solo developer:** Saurabh Borkar (borkarsaurabh22@gmail.com)
 - **Language:** Python 3.12, async-first
@@ -22,7 +22,7 @@ An AI-powered Indian stock market prediction engine for NSE/BSE. Predicts stock 
 | Week | Focus | Status |
 |------|-------|--------|
 | 1 | Data pipeline + preprocessing + DB | **DONE** |
-| 2 | Feature engineering (all 141 features) | **NEXT** |
+| 2 | Feature engineering (all 142 features) | **DONE** |
 | 3 | Triple barrier labeling + XGBoost + CPCV validation + VectorBT backtest | Planned |
 | 4 | LSTM + HMM regime + derivatives features + macro features | Planned |
 | 5 | TFT + stacking ensemble + meta-labeling + conformal prediction + sentiment | Planned |
@@ -79,11 +79,30 @@ preprocessing/
 
 ---
 
-## 4. Week 2 — Feature Engineering (141 Features)
+## 4. Week 2 — Feature Engineering (142 Features) — COMPLETED
 
-### What to build
+### What was built
 
-7 feature modules in `alphavedha/features/` + pipeline orchestrator. Each module is a standalone function that takes a preprocessed OHLCV DataFrame and returns a DataFrame of named feature columns.
+7 feature modules in `alphavedha/features/` + pipeline orchestrator. Each module is a standalone function that takes a preprocessed OHLCV DataFrame and returns a DataFrame of named feature columns. 65 unit tests, all passing.
+
+### Files created:
+- `alphavedha/features/technical.py` — 40 indicators using `ta` library
+- `alphavedha/features/returns.py` — 21 return-derived features
+- `alphavedha/features/calendar_features.py` — 18 calendar features
+- `alphavedha/features/microstructure.py` — 10 delivery/volume features
+- `alphavedha/features/macro.py` — 25 macro/market features
+- `alphavedha/features/derivatives.py` — 20 F&O features (Black-Scholes IV)
+- `alphavedha/features/sentiment.py` — 8 FinBERT sentiment features
+- `alphavedha/features/pipeline.py` — Orchestrator (FeatureResult)
+- `alphavedha/features/__init__.py` — Exports
+- `configs/features.yaml` — Feature metadata (name, source, unit, stubs)
+- `tests/unit/features/` — 7 test files, 65 tests
+
+### Bugs caught and fixed:
+- `CCIIndicator` is in `ta.trend`, not `ta.momentum`. Fixed import.
+- `ta` ADX crashes on short data (< 28 rows). Added length guard.
+- ATR warmup period produces zeros, not NaN. Fixed test to check after warmup.
+- Returns module has 21 features (not 20) — `ret_regime` is the extra one. Updated counts.
 
 ### Module breakdown:
 
@@ -264,7 +283,7 @@ async def compute_all_features(
 
 **Pipeline order:**
 1. technical (40) — needs only OHLCV
-2. returns (20) — needs OHLCV + optional frac_diff
+2. returns (21) — needs OHLCV + optional frac_diff
 3. calendar (18) — needs only DatetimeIndex
 4. microstructure (10) — needs delivery_pct column
 5. macro (25) — needs macro_df (market-wide data)
@@ -272,7 +291,7 @@ async def compute_all_features(
 7. sentiment (8) — needs news articles
 
 **Validation after concat:**
-- Assert 141 columns
+- Assert 142 columns
 - Replace inf with NaN, then forward-fill remaining NaN
 - Log any columns with >50% NaN as warnings
 - Store to feature store via `store.store_features()`
