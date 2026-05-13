@@ -434,7 +434,65 @@ ruff format alphavedha/
 
 ---
 
-## 10. Weeks 3-6 Preview
+## 10. Session Handoff — What's Next
+
+### Database Setup (must do before Week 3)
+The database is **not created yet**. Code is written but DB doesn't exist.
+
+```bash
+# 1. Start PostgreSQL + Redis via Docker
+docker compose up -d
+# This creates: user=alphavedha, pass=alphavedha_dev, db=alphavedha on port 5432
+
+# 2. Create .env file
+cp .env.example .env
+# Defaults work as-is for local Docker setup
+
+# 3. Create tables (run once)
+# The code has database.create_tables() which creates all 6 tables automatically
+# This will be called from the CLI or a setup script (to be built in Week 3+)
+```
+
+**PostgreSQL 16 is already installed** on this machine (port 5433), but the project uses
+Docker TimescaleDB (port 5432) via docker-compose.yml. Either works — just update DATABASE_URL.
+
+### 6 Tables
+| Table | Status | Populated By |
+|-------|--------|-------------|
+| `daily_ohlcv` | Schema done | yfinance + jugaad-data providers (built) |
+| `corporate_actions` | Schema done | Manual / NSE (provider not built) |
+| `index_constituents` | Schema done | niftyindices.com scraper (built) |
+| `institutional_flows` | Schema done | NSE bhavcopy (provider **not built**) |
+| `derivatives_data` | Schema done | NSE F&O data (provider **not built**) |
+| `features` | Schema done | Computed by feature pipeline (built) |
+
+### Data Sources — Registration Required?
+| Source | Registration | Cost | Status |
+|--------|-------------|------|--------|
+| yfinance | None | Free | Provider built |
+| jugaad-data | None | Free | Provider built |
+| niftyindices.com | None | Free | Scraper built |
+| Finnhub (news) | Free API key at finnhub.io | Free tier 60 calls/min | Provider **not built** |
+| NSE bhavcopy | None | Free | Provider **not built** — needed for FII/DII + derivatives |
+
+### 16 Stub Features (need data or models)
+These features exist in code but return NaN/hardcoded values:
+- **8 macro:** gsec_10y (hardcoded 7.0), gsec_change, pmi, pmi_staleness, breadth_200sma, adv_dec_ratio, index_cpr, mktcap_flow
+- **6 derivatives:** fii_futures_oi, fii_options_oi, pro_futures_net, retail_futures_net, gex, delta_oi
+- **1 returns:** ret_regime (hardcoded 1, needs HMM from Week 4)
+- **Sentiment:** Works if articles are provided, but no news fetcher exists yet
+
+### Git State
+- **Branch `main`:** Weeks 1 + PROJECT_BRIEF.md (commits up to dd214af)
+- **Branch `feature/week2-feature-engineering`:** All Week 2 code (commit 2758f2f, 22 files, 2008 insertions)
+- **Untracked:** `docs/superpowers/specs/` — design spec, intentionally not committed
+
+### Week 3 Scope: Labeling + XGBoost + Validation + Backtest
+Start here in the next session. Read `configs/default.yaml` for all hyperparameters.
+
+---
+
+## 11. Weeks 3-6 Preview
 
 ### Week 3: Labeling + XGBoost + Validation
 - `alphavedha/labels/` — Triple barrier method, meta-labeling, sample weights
