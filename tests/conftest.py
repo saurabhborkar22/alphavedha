@@ -105,3 +105,78 @@ def sample_corporate_actions() -> list[dict]:
             "details": "1:2 bonus (3 shares for 2)",
         },
     ]
+
+
+@pytest.fixture
+def sample_ohlcv_500() -> pd.DataFrame:
+    """500 trading days of OHLCV for labeling and CPCV tests."""
+    dates = pd.bdate_range("2022-01-03", periods=500, freq="B")
+    rng = np.random.default_rng(42)
+
+    base_price = 3800.0
+    returns = rng.normal(0.0005, 0.018, size=500)
+    closes = base_price * np.cumprod(1 + returns)
+
+    highs = closes * (1 + np.abs(rng.normal(0, 0.012, 500)))
+    lows = closes * (1 - np.abs(rng.normal(0, 0.012, 500)))
+    opens = closes * (1 + rng.normal(0, 0.005, 500))
+
+    df = pd.DataFrame(
+        {
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "adj_close": closes,
+            "volume": rng.integers(5_000_000, 15_000_000, size=500),
+        },
+        index=dates,
+    )
+    df.index.name = "date"
+    return df
+
+
+@pytest.fixture
+def sample_features_500(sample_ohlcv_500: pd.DataFrame) -> pd.DataFrame:
+    """142 synthetic feature columns aligned to sample_ohlcv_500."""
+    rng = np.random.default_rng(99)
+    n = len(sample_ohlcv_500)
+    data = rng.standard_normal((n, 142))
+    columns = [f"feat_{i:03d}" for i in range(142)]
+    return pd.DataFrame(data, index=sample_ohlcv_500.index, columns=columns)
+
+
+@pytest.fixture
+def sample_known_path() -> pd.DataFrame:
+    """Deterministic price path for label verification.
+
+    Days 0-4:   steady rise (100 -> 110) — should trigger upper barrier
+    Days 5-9:   sharp drop (110 -> 95)  — should trigger lower barrier
+    Days 10-24: flat (100)              — should trigger time barrier
+    """
+    dates = pd.bdate_range("2024-01-02", periods=25, freq="B")
+    closes = np.array(
+        [100, 102, 104, 106, 110,
+         108, 104, 100, 97, 95,
+         100, 100, 100, 100, 100,
+         100, 100, 100, 100, 100,
+         100, 100, 100, 100, 100],
+        dtype=float,
+    )
+    highs = closes * 1.005
+    lows = closes * 0.995
+    opens = closes * 1.001
+
+    df = pd.DataFrame(
+        {
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "adj_close": closes,
+            "volume": np.full(25, 10_000_000),
+        },
+        index=dates,
+    )
+    df.index.name = "date"
+    return df
