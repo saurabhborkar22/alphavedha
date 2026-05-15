@@ -83,9 +83,7 @@ class ConformalPredictor:
     def predict(self, X: pd.DataFrame) -> ConformalResult:
         """Predict point estimates and prediction intervals."""
         if not self._is_fitted or self._mapie is None:
-            raise ModelTrainingError(
-                "ConformalPredictor is not fitted. Call fit() first."
-            )
+            raise ModelTrainingError("ConformalPredictor is not fitted. Call fit() first.")
 
         y_pred, y_pis = self._mapie.predict_interval(X.values)
 
@@ -108,9 +106,7 @@ class ConformalPredictor:
         SplitConformalRegressor (prefit=True) for new conformity score estimation.
         """
         if not self._is_fitted or self._mapie is None:
-            raise ModelTrainingError(
-                "ConformalPredictor is not fitted. Call fit() first."
-            )
+            raise ModelTrainingError("ConformalPredictor is not fitted. Call fit() first.")
 
         # Extract the underlying fitted base estimator from the cross-conformal model
         fitted_base: RegressorMixin = (
