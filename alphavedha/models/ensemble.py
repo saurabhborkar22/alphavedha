@@ -92,9 +92,7 @@ class StackingEnsemble:
         regime_probs: np.ndarray,
     ) -> EnsembleResult:
         if not self._is_fitted or self._ridge is None:
-            raise ModelTrainingError(
-                "StackingEnsemble is not fitted. Call fit() first."
-            )
+            raise ModelTrainingError("StackingEnsemble is not fitted. Call fit() first.")
 
         self._validate_model_names(base_predictions)
         meta_X = self._build_meta_features(base_predictions, regime_probs)
@@ -169,28 +167,26 @@ class StackingEnsemble:
         base_predictions: dict[str, PredictionResult],
         regime_probs: np.ndarray,
     ) -> np.ndarray:
-        model_probs = [
-            base_predictions[name].probabilities for name in self.EXPECTED_MODELS
+        model_probs: list[np.ndarray] = [
+            p
+            for name in self.EXPECTED_MODELS
+            if (p := base_predictions[name].probabilities) is not None
         ]
         disagreement = self._compute_disagreement(base_predictions)
         return np.column_stack([*model_probs, regime_probs, disagreement])
 
-    def _compute_disagreement(
-        self, base_predictions: dict[str, PredictionResult]
-    ) -> np.ndarray:
-        stacked = np.stack(
-            [base_predictions[m].probabilities for m in self.EXPECTED_MODELS],
-            axis=0,
-        )
+    def _compute_disagreement(self, base_predictions: dict[str, PredictionResult]) -> np.ndarray:
+        probs_list: list[np.ndarray] = [
+            p for m in self.EXPECTED_MODELS if (p := base_predictions[m].probabilities) is not None
+        ]
+        stacked = np.stack(probs_list, axis=0)
         mean_probs = stacked.mean(axis=0)
         consensus = np.argmax(mean_probs, axis=1)
         n = len(consensus)
         probs_for_consensus = stacked[:, np.arange(n), consensus]
-        return np.std(probs_for_consensus, axis=0)
+        return np.std(probs_for_consensus, axis=0)  # type: ignore[no-any-return]
 
-    def _aggregate_magnitude(
-        self, base_predictions: dict[str, PredictionResult]
-    ) -> np.ndarray:
+    def _aggregate_magnitude(self, base_predictions: dict[str, PredictionResult]) -> np.ndarray:
         confs = np.stack(
             [base_predictions[m].confidence for m in self.EXPECTED_MODELS],
             axis=0,
@@ -202,17 +198,13 @@ class StackingEnsemble:
         conf_sum = confs.sum(axis=0, keepdims=True)
         conf_sum = np.where(conf_sum == 0, 1.0, conf_sum)
         weights = confs / conf_sum
-        return (weights * mags).sum(axis=0)
+        return (weights * mags).sum(axis=0)  # type: ignore[no-any-return]
 
-    def _validate_model_names(
-        self, base_predictions: dict[str, PredictionResult]
-    ) -> None:
+    def _validate_model_names(self, base_predictions: dict[str, PredictionResult]) -> None:
         expected = set(self.EXPECTED_MODELS)
         actual = set(base_predictions.keys())
         if actual != expected:
-            raise ValueError(
-                f"Expected models {sorted(expected)}, got {sorted(actual)}"
-            )
+            raise ValueError(f"Expected models {sorted(expected)}, got {sorted(actual)}")
 
     def _validate_inputs(self, meta_X: np.ndarray) -> None:
         if np.any(~np.isfinite(meta_X)):
@@ -221,4 +213,4 @@ class StackingEnsemble:
     @staticmethod
     def _softmax(logits: np.ndarray) -> np.ndarray:
         exp = np.exp(logits - logits.max(axis=1, keepdims=True))
-        return exp / exp.sum(axis=1, keepdims=True)
+        return exp / exp.sum(axis=1, keepdims=True)  # type: ignore[no-any-return]

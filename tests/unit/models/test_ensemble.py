@@ -40,9 +40,7 @@ def ensemble_config() -> EnsembleConfig:
 
 
 @pytest.fixture
-def synthetic_ensemble_data() -> (
-    tuple[dict[str, PredictionResult], np.ndarray, pd.Series]
-):
+def synthetic_ensemble_data() -> tuple[dict[str, PredictionResult], np.ndarray, pd.Series]:
     rng = np.random.default_rng(42)
     n = 100
     base_preds = {
@@ -59,9 +57,7 @@ def synthetic_ensemble_data() -> (
 class TestStackingEnsembleFit:
     def test_fit_returns_metrics(
         self,
-        synthetic_ensemble_data: tuple[
-            dict[str, PredictionResult], np.ndarray, pd.Series
-        ],
+        synthetic_ensemble_data: tuple[dict[str, PredictionResult], np.ndarray, pd.Series],
         ensemble_config: EnsembleConfig,
     ) -> None:
         base_preds, regime_probs, y_true = synthetic_ensemble_data
@@ -71,28 +67,18 @@ class TestStackingEnsembleFit:
         assert "accuracy" in metrics
         assert "f1_weighted" in metrics
 
-    def test_predict_before_fit_raises(
-        self, ensemble_config: EnsembleConfig
-    ) -> None:
+    def test_predict_before_fit_raises(self, ensemble_config: EnsembleConfig) -> None:
         ensemble = StackingEnsemble(config=ensemble_config)
         rng = np.random.default_rng(0)
-        preds = {
-            name: _make_prediction_result(10, rng)
-            for name in ["xgboost", "lstm", "tft"]
-        }
+        preds = {name: _make_prediction_result(10, rng) for name in ["xgboost", "lstm", "tft"]}
         regime = np.ones((10, 4)) / 4
         with pytest.raises(ModelTrainingError):
             ensemble.predict(preds, regime)
 
-    def test_nan_input_raises(
-        self, ensemble_config: EnsembleConfig
-    ) -> None:
+    def test_nan_input_raises(self, ensemble_config: EnsembleConfig) -> None:
         rng = np.random.default_rng(0)
         n = 50
-        preds = {
-            name: _make_prediction_result(n, rng)
-            for name in ["xgboost", "lstm", "tft"]
-        }
+        preds = {name: _make_prediction_result(n, rng) for name in ["xgboost", "lstm", "tft"]}
         regime = np.ones((n, 4)) / 4
         preds["xgboost"].probabilities[0, 0] = np.nan
         y = pd.Series(rng.choice([-1, 0, 1], size=n))
@@ -100,15 +86,10 @@ class TestStackingEnsembleFit:
         with pytest.raises(DataQualityError):
             ensemble.fit(preds, regime, y)
 
-    def test_inf_input_raises(
-        self, ensemble_config: EnsembleConfig
-    ) -> None:
+    def test_inf_input_raises(self, ensemble_config: EnsembleConfig) -> None:
         rng = np.random.default_rng(0)
         n = 50
-        preds = {
-            name: _make_prediction_result(n, rng)
-            for name in ["xgboost", "lstm", "tft"]
-        }
+        preds = {name: _make_prediction_result(n, rng) for name in ["xgboost", "lstm", "tft"]}
         regime = np.ones((n, 4)) / 4
         regime[0, 0] = np.inf
         y = pd.Series(rng.choice([-1, 0, 1], size=n))
@@ -116,14 +97,21 @@ class TestStackingEnsembleFit:
         with pytest.raises(DataQualityError):
             ensemble.fit(preds, regime, y)
 
-    def test_missing_model_name_raises(
-        self, ensemble_config: EnsembleConfig
-    ) -> None:
+    def test_missing_model_name_raises(self, ensemble_config: EnsembleConfig) -> None:
+        rng = np.random.default_rng(0)
+        n = 50
+        preds = {name: _make_prediction_result(n, rng) for name in ["xgboost", "lstm"]}
+        regime = np.ones((n, 4)) / 4
+        y = pd.Series(rng.choice([-1, 0, 1], size=n))
+        ensemble = StackingEnsemble(config=ensemble_config)
+        with pytest.raises(ValueError, match="Expected models"):
+            ensemble.fit(preds, regime, y)
+
+    def test_extra_model_name_raises(self, ensemble_config: EnsembleConfig) -> None:
         rng = np.random.default_rng(0)
         n = 50
         preds = {
-            name: _make_prediction_result(n, rng)
-            for name in ["xgboost", "lstm"]
+            name: _make_prediction_result(n, rng) for name in ["xgboost", "lstm", "tft", "extra"]
         }
         regime = np.ones((n, 4)) / 4
         y = pd.Series(rng.choice([-1, 0, 1], size=n))
@@ -131,29 +119,9 @@ class TestStackingEnsembleFit:
         with pytest.raises(ValueError, match="Expected models"):
             ensemble.fit(preds, regime, y)
 
-    def test_extra_model_name_raises(
-        self, ensemble_config: EnsembleConfig
-    ) -> None:
+    def test_empty_predictions_raises(self, ensemble_config: EnsembleConfig) -> None:
         rng = np.random.default_rng(0)
-        n = 50
-        preds = {
-            name: _make_prediction_result(n, rng)
-            for name in ["xgboost", "lstm", "tft", "extra"]
-        }
-        regime = np.ones((n, 4)) / 4
-        y = pd.Series(rng.choice([-1, 0, 1], size=n))
-        ensemble = StackingEnsemble(config=ensemble_config)
-        with pytest.raises(ValueError, match="Expected models"):
-            ensemble.fit(preds, regime, y)
-
-    def test_empty_predictions_raises(
-        self, ensemble_config: EnsembleConfig
-    ) -> None:
-        rng = np.random.default_rng(0)
-        preds = {
-            name: _make_prediction_result(0, rng)
-            for name in ["xgboost", "lstm", "tft"]
-        }
+        preds = {name: _make_prediction_result(0, rng) for name in ["xgboost", "lstm", "tft"]}
         regime = np.ones((0, 4))
         y = pd.Series([], dtype=int)
         ensemble = StackingEnsemble(config=ensemble_config)
@@ -165,9 +133,7 @@ class TestStackingEnsemblePredict:
     @pytest.fixture(autouse=True)
     def _fitted_ensemble(
         self,
-        synthetic_ensemble_data: tuple[
-            dict[str, PredictionResult], np.ndarray, pd.Series
-        ],
+        synthetic_ensemble_data: tuple[dict[str, PredictionResult], np.ndarray, pd.Series],
         ensemble_config: EnsembleConfig,
     ) -> None:
         base_preds, regime_probs, y_true = synthetic_ensemble_data
@@ -200,12 +166,8 @@ class TestStackingEnsemblePredict:
         mean_probs = stacked.mean(axis=0)
         consensus = np.argmax(mean_probs, axis=1)
         n = len(consensus)
-        expected = np.std(
-            stacked[:, np.arange(n), consensus], axis=0
-        )
-        np.testing.assert_allclose(
-            self.result.model_disagreement, expected, atol=1e-10
-        )
+        expected = np.std(stacked[:, np.arange(n), consensus], axis=0)
+        np.testing.assert_allclose(self.result.model_disagreement, expected, atol=1e-10)
 
     def test_magnitude_is_weighted_average(self) -> None:
         confs = np.stack(
@@ -220,17 +182,13 @@ class TestStackingEnsemblePredict:
         conf_sum = np.where(conf_sum == 0, 1.0, conf_sum)
         weights = confs / conf_sum
         expected = (weights * mags).sum(axis=0)
-        np.testing.assert_allclose(
-            self.result.magnitude, expected, atol=1e-10
-        )
+        np.testing.assert_allclose(self.result.magnitude, expected, atol=1e-10)
 
 
 class TestStackingEnsemblePersistence:
     def test_save_load_roundtrip(
         self,
-        synthetic_ensemble_data: tuple[
-            dict[str, PredictionResult], np.ndarray, pd.Series
-        ],
+        synthetic_ensemble_data: tuple[dict[str, PredictionResult], np.ndarray, pd.Series],
         ensemble_config: EnsembleConfig,
         tmp_path: Path,
     ) -> None:
@@ -245,9 +203,7 @@ class TestStackingEnsemblePersistence:
         loaded = StackingEnsemble.load(save_dir)
         result_after = loaded.predict(base_preds, regime_probs)
 
-        np.testing.assert_array_equal(
-            result_before.direction, result_after.direction
-        )
+        np.testing.assert_array_equal(result_before.direction, result_after.direction)
         np.testing.assert_allclose(
             result_before.probabilities, result_after.probabilities, atol=1e-10
         )

@@ -59,9 +59,7 @@ class MetaLabelingModel:
 
         n_samples = len(X_aug)
         if n_samples < _MIN_SAMPLES:
-            raise InsufficientDataError(
-                f"Need at least {_MIN_SAMPLES} samples, got {n_samples}"
-            )
+            raise InsufficientDataError(f"Need at least {_MIN_SAMPLES} samples, got {n_samples}")
 
         self._validate_inputs(X_aug)
 
@@ -87,9 +85,7 @@ class MetaLabelingModel:
             and ensemble_confidence_val is not None
             and y_correct_val is not None
         ):
-            X_val_aug = self._build_features(
-                X_val, ensemble_direction_val, ensemble_confidence_val
-            )
+            X_val_aug = self._build_features(X_val, ensemble_direction_val, ensemble_confidence_val)
             eval_set = [(X_val_aug.values, y_correct_val.values)]
             self._classifier.set_params(early_stopping_rounds=20)
 
@@ -123,9 +119,7 @@ class MetaLabelingModel:
         ensemble_confidence: np.ndarray,
     ) -> MetaLabelResult:
         if not self._is_fitted or self._classifier is None:
-            raise ModelTrainingError(
-                "MetaLabelingModel is not fitted. Call fit() first."
-            )
+            raise ModelTrainingError("MetaLabelingModel is not fitted. Call fit() first.")
 
         X_aug = self._build_features(X_features, ensemble_direction, ensemble_confidence)
         self._validate_inputs(X_aug)

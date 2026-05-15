@@ -19,15 +19,11 @@ def meta_config() -> MetaLabelingConfig:
 
 
 @pytest.fixture
-def synthetic_meta_data() -> (
-    tuple[pd.DataFrame, np.ndarray, np.ndarray, pd.Series]
-):
+def synthetic_meta_data() -> tuple[pd.DataFrame, np.ndarray, np.ndarray, pd.Series]:
     """Synthetic features + ensemble outputs + binary correctness labels."""
     rng = np.random.default_rng(42)
     n = 200
-    X = pd.DataFrame(
-        rng.standard_normal((n, 10)), columns=[f"f{i}" for i in range(10)]
-    )
+    X = pd.DataFrame(rng.standard_normal((n, 10)), columns=[f"f{i}" for i in range(10)])
     ensemble_direction = rng.choice([-1, 0, 1], size=n).astype(float)
     ensemble_confidence = rng.uniform(0.3, 0.95, size=n)
     y_correct = pd.Series(rng.integers(0, 2, size=n), name="correct")
@@ -37,9 +33,7 @@ def synthetic_meta_data() -> (
 class TestMetaLabelingModelFit:
     def test_fit_returns_metrics(
         self,
-        synthetic_meta_data: tuple[
-            pd.DataFrame, np.ndarray, np.ndarray, pd.Series
-        ],
+        synthetic_meta_data: tuple[pd.DataFrame, np.ndarray, np.ndarray, pd.Series],
         meta_config: MetaLabelingConfig,
     ) -> None:
         X, ens_dir, ens_conf, y_correct = synthetic_meta_data
@@ -51,9 +45,7 @@ class TestMetaLabelingModelFit:
         assert "recall" in metrics
         assert "f1" in metrics
 
-    def test_predict_before_fit_raises(
-        self, meta_config: MetaLabelingConfig
-    ) -> None:
+    def test_predict_before_fit_raises(self, meta_config: MetaLabelingConfig) -> None:
         model = MetaLabelingModel(config=meta_config)
         X = pd.DataFrame({"a": range(10), "b": range(10)})
         direction = np.zeros(10)
@@ -84,9 +76,7 @@ class TestMetaLabelingModelFit:
 
     def test_fit_with_validation_set(
         self,
-        synthetic_meta_data: tuple[
-            pd.DataFrame, np.ndarray, np.ndarray, pd.Series
-        ],
+        synthetic_meta_data: tuple[pd.DataFrame, np.ndarray, np.ndarray, pd.Series],
         meta_config: MetaLabelingConfig,
     ) -> None:
         X, ens_dir, ens_conf, y_correct = synthetic_meta_data
@@ -110,9 +100,7 @@ class TestMetaLabelingModelPredict:
     @pytest.fixture(autouse=True)
     def _fitted_model(
         self,
-        synthetic_meta_data: tuple[
-            pd.DataFrame, np.ndarray, np.ndarray, pd.Series
-        ],
+        synthetic_meta_data: tuple[pd.DataFrame, np.ndarray, np.ndarray, pd.Series],
         meta_config: MetaLabelingConfig,
     ) -> None:
         X, ens_dir, ens_conf, y_correct = synthetic_meta_data
@@ -138,7 +126,9 @@ class TestMetaLabelingModelPredict:
         config = MetaLabelingConfig(min_confidence=0.80)
         model = MetaLabelingModel(config=config)
         X, ens_dir, ens_conf, y_correct = (
-            self.X, self.ens_dir, self.ens_conf,
+            self.X,
+            self.ens_dir,
+            self.ens_conf,
             pd.Series(np.random.default_rng(42).integers(0, 2, size=len(self.X))),
         )
         model.fit(X, ens_dir, ens_conf, y_correct)
@@ -150,9 +140,7 @@ class TestMetaLabelingModelPredict:
 class TestMetaLabelingModelPersistence:
     def test_save_load_roundtrip(
         self,
-        synthetic_meta_data: tuple[
-            pd.DataFrame, np.ndarray, np.ndarray, pd.Series
-        ],
+        synthetic_meta_data: tuple[pd.DataFrame, np.ndarray, np.ndarray, pd.Series],
         meta_config: MetaLabelingConfig,
         tmp_path: Path,
     ) -> None:
@@ -170,6 +158,4 @@ class TestMetaLabelingModelPersistence:
         np.testing.assert_allclose(
             result_before.meta_confidence, result_after.meta_confidence, atol=1e-6
         )
-        np.testing.assert_array_equal(
-            result_before.is_tradeable, result_after.is_tradeable
-        )
+        np.testing.assert_array_equal(result_before.is_tradeable, result_after.is_tradeable)
