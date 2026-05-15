@@ -28,14 +28,14 @@ COSTS = {
 }
 ```
 
-## CPCV Validation (validation.py)
+## CPCV Validation (cpcv.py)
 - N=6 segments, k=2 test segments → 15 combinatorial paths
 - Each path: train on 4 segments, test on 2 segments
 - Purge: 20 trading days gap between train and test
 - Embargo: additional 20 days after test before next train window
 - Acceptance criteria: median Sharpe > 0.8, worst-case Sharpe > 0.3
 
-## Metrics (metrics.py)
+## Metrics (computed in engine.py)
 - Sharpe ratio (annualized, risk-free = India 10Y G-Sec yield)
 - Sortino ratio
 - Maximum drawdown (% and duration in days)
