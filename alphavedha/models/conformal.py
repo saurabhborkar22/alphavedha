@@ -18,7 +18,12 @@ from sklearn.metrics import mean_squared_error, r2_score
 from xgboost import XGBRegressor
 
 from alphavedha.config import ConformalConfig
-from alphavedha.exceptions import ModelNotFoundError, ModelTrainingError
+from alphavedha.exceptions import (
+    DataQualityError,
+    InsufficientDataError,
+    ModelNotFoundError,
+    ModelTrainingError,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -54,6 +59,8 @@ class ConformalPredictor:
 
     def fit(self, X_train: pd.DataFrame, y_train: pd.Series) -> dict[str, float]:
         """Fit the predictor using cross-conformal (jackknife+) approach."""
+        if np.any(~np.isfinite(X_train.values)) or np.any(~np.isfinite(y_train.values)):
+            raise DataQualityError("Input contains NaN or Inf values")
         mapie = CrossConformalRegressor(
             estimator=self._base_regressor,
             confidence_level=self._config.coverage,
@@ -81,6 +88,10 @@ class ConformalPredictor:
         """Predict point estimates and prediction intervals."""
         if not self._is_fitted or self._mapie is None:
             raise ModelTrainingError("ConformalPredictor is not fitted. Call fit() first.")
+        if len(X) == 0:
+            raise InsufficientDataError("Cannot predict with empty input")
+        if np.any(~np.isfinite(X.values)):
+            raise DataQualityError("Input contains NaN or Inf values")
 
         y_pred, y_pis = self._mapie.predict_interval(X.values)
 
@@ -105,8 +116,14 @@ class ConformalPredictor:
         if not self._is_fitted or self._mapie is None:
             raise ModelTrainingError("ConformalPredictor is not fitted. Call fit() first.")
 
-        # Extract the underlying fitted base estimator from the cross-conformal model
-        fitted_base: RegressorMixin = self._mapie._mapie_regressor.estimator_.single_estimator_
+        # MAPIE 1.4.0: no public API to extract the fitted base estimator
+        try:
+            fitted_base: RegressorMixin = self._mapie._mapie_regressor.estimator_.single_estimator_
+        except AttributeError as e:
+            raise ModelTrainingError(
+                "Failed to extract base estimator from CrossConformalRegressor. "
+                "This may be due to a MAPIE version change."
+            ) from e
 
         split_mapie = SplitConformalRegressor(
             estimator=fitted_base,

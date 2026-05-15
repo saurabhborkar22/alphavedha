@@ -16,6 +16,7 @@ from hmmlearn.hmm import GaussianHMM
 
 from alphavedha.config import RegimeConfig
 from alphavedha.exceptions import (
+    DataQualityError,
     InsufficientDataError,
     ModelNotFoundError,
     ModelTrainingError,
@@ -62,6 +63,8 @@ class RegimeDetector:
 
     def fit(self, returns: pd.Series, volatility: pd.Series) -> dict[str, float]:
         X = self._prepare_input(returns, volatility)
+        if np.any(~np.isfinite(X)):
+            raise DataQualityError("Input contains NaN or Inf values")
         n_samples = X.shape[0]
         if n_samples < _MIN_SAMPLES:
             raise InsufficientDataError(f"Need at least {_MIN_SAMPLES} samples, got {n_samples}")
@@ -103,6 +106,10 @@ class RegimeDetector:
             raise ModelTrainingError("RegimeDetector is not fitted. Call fit() first.")
 
         X = self._prepare_input(returns, volatility)
+        if X.shape[0] == 0:
+            raise InsufficientDataError("Cannot predict with empty input")
+        if np.any(~np.isfinite(X)):
+            raise DataQualityError("Input contains NaN or Inf values")
         if self._feature_mean is not None and self._feature_std is not None:
             X = (X - self._feature_mean) / self._feature_std
 
@@ -200,7 +207,14 @@ class RegimeDetector:
 
         means = self._hmm.means_[:, 0]
         n_states = self._config.n_states
-        covariances = np.array([self._hmm.covars_[i][0, 0] for i in range(n_states)])
+        if self._config.covariance_type == "full":
+            covariances = np.array([self._hmm.covars_[i][0, 0] for i in range(n_states)])
+        elif self._config.covariance_type == "diag":
+            covariances = np.array([self._hmm.covars_[i][0] for i in range(n_states)])
+        elif self._config.covariance_type == "spherical":
+            covariances = self._hmm.covars_
+        else:
+            covariances = np.array([self._hmm.covars_[i][0, 0] for i in range(n_states)])
 
         assigned: set[int] = set()
         self._state_mapping = {}
