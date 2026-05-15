@@ -303,7 +303,7 @@ class TemporalAttentionModel(BaseModel):
 
         for epoch in range(cfg.max_epochs):
             self._network.train()
-            for X_seq, y_dir, y_mag, weights, h_dirs, h_mags, h_masks in train_loader:
+            for X_seq, _y_dir, _y_mag, weights, h_dirs, h_mags, h_masks in train_loader:
                 X_seq = X_seq.to(self._device)
                 weights = weights.to(self._device)
                 h_dirs = h_dirs.to(self._device)
@@ -340,8 +340,8 @@ class TemporalAttentionModel(BaseModel):
                 with torch.no_grad():
                     for (
                         X_seq,
-                        y_dir,
-                        y_mag,
+                        _y_dir,
+                        _y_mag,
                         weights,
                         h_dirs,
                         h_mags,
