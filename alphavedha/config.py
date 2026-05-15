@@ -139,11 +139,15 @@ class LSTMConfig(BaseModel):
 
 
 class TFTConfig(BaseModel):
+    sequence_length: int = 60
     hidden_size: int = 64
     attention_head_size: int = 4
+    num_layers: int = 2
     dropout: float = 0.1
     learning_rate: float = 0.001
+    batch_size: int = 64
     max_epochs: int = 50
+    early_stopping_patience: int = 10
     horizons: list[int] = Field(default_factory=lambda: [7, 15, 30])
 
 

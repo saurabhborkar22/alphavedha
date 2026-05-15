@@ -21,7 +21,7 @@ The label is determined by which barrier is hit FIRST:
 multiplier_up: 2.0        # Take profit = 2x ATR
 multiplier_down: 1.5      # Stop loss = 1.5x ATR
 max_holding_period: 15     # Trading days
-min_atr_threshold: 0.5    # Skip stocks with ATR < 0.5% (illiquid)
+min_atr_threshold: 0.005  # Skip stocks with ATR < 0.5% (illiquid)
 ```
 
 ### Rules
