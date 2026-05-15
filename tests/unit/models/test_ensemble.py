@@ -64,8 +64,8 @@ class TestStackingEnsembleFit:
         ensemble = StackingEnsemble(config=ensemble_config)
         metrics = ensemble.fit(base_preds, regime_probs, y_true)
         assert isinstance(metrics, dict)
-        assert "accuracy" in metrics
-        assert "f1_weighted" in metrics
+        assert "train_accuracy" in metrics
+        assert "train_f1_weighted" in metrics
 
     def test_predict_before_fit_raises(self, ensemble_config: EnsembleConfig) -> None:
         ensemble = StackingEnsemble(config=ensemble_config)

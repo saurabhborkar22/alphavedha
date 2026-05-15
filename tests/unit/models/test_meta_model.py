@@ -40,10 +40,10 @@ class TestMetaLabelingModelFit:
         model = MetaLabelingModel(config=meta_config)
         metrics = model.fit(X, ens_dir, ens_conf, y_correct)
         assert isinstance(metrics, dict)
-        assert "accuracy" in metrics
-        assert "precision" in metrics
-        assert "recall" in metrics
-        assert "f1" in metrics
+        assert "train_accuracy" in metrics
+        assert "train_precision" in metrics
+        assert "train_recall" in metrics
+        assert "train_f1" in metrics
 
     def test_predict_before_fit_raises(self, meta_config: MetaLabelingConfig) -> None:
         model = MetaLabelingModel(config=meta_config)
@@ -93,7 +93,7 @@ class TestMetaLabelingModelFit:
             y_correct_val=y_correct[n_train:],
         )
         assert isinstance(metrics, dict)
-        assert "accuracy" in metrics
+        assert "train_accuracy" in metrics
 
 
 class TestMetaLabelingModelPredict:

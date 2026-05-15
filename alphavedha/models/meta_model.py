@@ -99,10 +99,10 @@ class MetaLabelingModel:
 
         y_pred = self._classifier.predict(X_aug.values)
         self._training_metrics = {
-            "accuracy": float(accuracy_score(y_correct.values, y_pred)),
-            "precision": float(precision_score(y_correct.values, y_pred, zero_division=0)),
-            "recall": float(recall_score(y_correct.values, y_pred, zero_division=0)),
-            "f1": float(f1_score(y_correct.values, y_pred, zero_division=0)),
+            "train_accuracy": float(accuracy_score(y_correct.values, y_pred)),
+            "train_precision": float(precision_score(y_correct.values, y_pred, zero_division=0)),
+            "train_recall": float(recall_score(y_correct.values, y_pred, zero_division=0)),
+            "train_f1": float(f1_score(y_correct.values, y_pred, zero_division=0)),
         }
 
         logger.info(

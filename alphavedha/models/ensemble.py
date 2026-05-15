@@ -58,6 +58,7 @@ class StackingEnsemble:
         y_true: pd.Series,
     ) -> dict[str, float]:
         self._validate_model_names(base_oof_predictions)
+        self._validate_probabilities(base_oof_predictions)
         meta_X = self._build_meta_features(base_oof_predictions, regime_probs)
         self._validate_inputs(meta_X)
 
@@ -67,7 +68,19 @@ class StackingEnsemble:
                 f"Need at least {_MIN_SAMPLES} OOF samples, got {n_samples}"
             )
 
+        invalid_labels = set(y_true.values) - {-1, 0, 1}
+        if invalid_labels:
+            raise DataQualityError(
+                f"y_true contains invalid labels: {invalid_labels}. Expected {{-1, 0, 1}}."
+            )
+
         y_cls = np.array([_LABEL_MAP[v] for v in y_true.values])
+
+        unique_classes = set(y_cls)
+        if unique_classes != {0, 1, 2}:
+            raise DataQualityError(
+                f"y_true must contain all 3 classes (-1, 0, 1), got classes mapping to {unique_classes}"
+            )
 
         self._ridge = RidgeClassifier(alpha=self._config.alpha)
         self._ridge.fit(meta_X, y_cls)
@@ -75,8 +88,8 @@ class StackingEnsemble:
 
         y_pred = self._ridge.predict(meta_X)
         self._training_metrics = {
-            "accuracy": float(accuracy_score(y_cls, y_pred)),
-            "f1_weighted": float(f1_score(y_cls, y_pred, average="weighted")),
+            "train_accuracy": float(accuracy_score(y_cls, y_pred)),
+            "train_f1_weighted": float(f1_score(y_cls, y_pred, average="weighted")),
         }
 
         logger.info(
@@ -95,6 +108,7 @@ class StackingEnsemble:
             raise ModelTrainingError("StackingEnsemble is not fitted. Call fit() first.")
 
         self._validate_model_names(base_predictions)
+        self._validate_probabilities(base_predictions)
         meta_X = self._build_meta_features(base_predictions, regime_probs)
         self._validate_inputs(meta_X)
 
@@ -167,18 +181,23 @@ class StackingEnsemble:
         base_predictions: dict[str, PredictionResult],
         regime_probs: np.ndarray,
     ) -> np.ndarray:
-        model_probs: list[np.ndarray] = [
-            p
-            for name in self.EXPECTED_MODELS
-            if (p := base_predictions[name].probabilities) is not None
-        ]
+        if regime_probs.ndim != 2 or regime_probs.shape[1] != 4:
+            raise DataQualityError(f"regime_probs must have shape (n, 4), got {regime_probs.shape}")
+        # _validate_probabilities ensures no None values
+        model_probs: list[np.ndarray] = []
+        for name in self.EXPECTED_MODELS:
+            probs = base_predictions[name].probabilities
+            assert probs is not None
+            model_probs.append(probs)
         disagreement = self._compute_disagreement(base_predictions)
         return np.column_stack([*model_probs, regime_probs, disagreement])
 
     def _compute_disagreement(self, base_predictions: dict[str, PredictionResult]) -> np.ndarray:
-        probs_list: list[np.ndarray] = [
-            p for m in self.EXPECTED_MODELS if (p := base_predictions[m].probabilities) is not None
-        ]
+        probs_list: list[np.ndarray] = []
+        for m in self.EXPECTED_MODELS:
+            probs = base_predictions[m].probabilities
+            assert probs is not None
+            probs_list.append(probs)
         stacked = np.stack(probs_list, axis=0)
         mean_probs = stacked.mean(axis=0)
         consensus = np.argmax(mean_probs, axis=1)
@@ -199,6 +218,13 @@ class StackingEnsemble:
         conf_sum = np.where(conf_sum == 0, 1.0, conf_sum)
         weights = confs / conf_sum
         return (weights * mags).sum(axis=0)  # type: ignore[no-any-return]
+
+    def _validate_probabilities(self, base_predictions: dict[str, PredictionResult]) -> None:
+        for name in self.EXPECTED_MODELS:
+            if base_predictions[name].probabilities is None:
+                raise DataQualityError(
+                    f"Model '{name}' has None probabilities. All base models must provide probabilities."
+                )
 
     def _validate_model_names(self, base_predictions: dict[str, PredictionResult]) -> None:
         expected = set(self.EXPECTED_MODELS)
