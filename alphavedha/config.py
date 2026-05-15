@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import functools
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -160,6 +160,14 @@ class RegimeConfig(BaseModel):
     covariance_type: str = "full"
     retrain_interval: str = "monthly"
 
+    @model_validator(mode="after")
+    def _validate_state_names_count(self) -> Self:
+        if len(self.state_names) != self.n_states:
+            raise ValueError(
+                f"n_states ({self.n_states}) != len(state_names) ({len(self.state_names)})"
+            )
+        return self
+
 
 class EnsembleConfig(BaseModel):
     meta_learner: str = "ridge"
@@ -169,6 +177,7 @@ class EnsembleConfig(BaseModel):
 class ConformalConfig(BaseModel):
     coverage: float = 0.90
     calibration_window: int = 60
+    method: str = "plus"
 
 
 class ModelsConfig(BaseModel):

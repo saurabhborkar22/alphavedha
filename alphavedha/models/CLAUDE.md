@@ -75,7 +75,7 @@ class BasePredictor(Protocol):
 - Output: current regime label + probability per state
 
 ### conformal.py
-- Use MAPIE `MapieRegressor` with conformalized quantile regression
+- Use MAPIE 1.4.0 `CrossConformalRegressor` (jackknife+) for training and `SplitConformalRegressor` (prefit) for post-hoc calibration
 - Calibration set: most recent 60 trading days (rolling)
 - Coverage target: 90%
 - Output: [price_low, price_mid, price_high]
