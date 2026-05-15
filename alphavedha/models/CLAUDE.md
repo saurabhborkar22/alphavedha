@@ -25,20 +25,34 @@ class BasePredictor(Protocol):
 - Enable GPU training if available (`tree_method='gpu_hist'`)
 - Use built-in feature importance for monitoring
 
+### sequence_utils.py (Shared)
+- `SequenceDataset` — sliding-window Dataset for single-horizon models (LSTM)
+- `MultiHorizonSequenceDataset` — sliding-window Dataset with per-horizon labels and validity masks (TFT)
+- `EarlyStopping` — patience-based training stopper
+- `compute_combined_loss` — weighted CrossEntropy (0.7) + MSE (0.3) with per-sample weights
+- `create_data_loaders` — convenience factory for train/val DataLoader pairs
+- `get_device` — auto-detect CUDA > MPS > CPU
+- Label mapping: {-1: 0, 0: 1, 1: 2} for 3-class classification
+
 ### lstm_model.py (PyTorch)
+- `LSTMNetwork(nn.Module)` with dual heads: classification (3-class) + regression (magnitude)
 - Input: 60-day sequence of top-30 features (by XGBoost importance)
 - Architecture: 2 LSTM layers, 128 hidden units, dropout=0.3
 - Training: Adam optimizer, lr=1e-3, batch_size=64, early stopping patience=10
 - Use `torch.nn.utils.clip_grad_norm_` (max_norm=1.0)
-- Save with `torch.save(model.state_dict(), path)` — never save full model object
+- Warmup padding: first `seq_len-1` predictions are neutral (direction=0, confidence=0)
+- Save with `safetensors` — never save full model object
+- `get_feature_importance()` returns None (LSTM has no intrinsic feature importance)
 
-### tft_model.py (PyTorch)
-- Use `pytorch-forecasting` TFT implementation OR custom
-- Static covariates: sector, market_cap_tier, index_membership
-- Known future inputs: calendar features (day_of_week, month, expiry_proximity)
-- Unknown future inputs: all price-derived and market features
-- Multi-horizon output: 7d, 15d, 30d simultaneously
-- Attention weights → save for interpretability dashboard
+### temporal_attention.py (PyTorch — TFT-lite)
+- Custom TFT-lite architecture (not pytorch-forecasting)
+- Components: `GatedResidualNetwork`, `VariableSelectionNetwork`, `InterpretableMultiHeadAttention`, `TemporalAttentionNetwork`
+- Architecture: VSN → LSTM encoder → multi-head attention → per-horizon heads
+- Multi-horizon output: 7d, 15d, 30d simultaneously via `get_horizon_predictions()`
+- Feature importance from VSN selection weights (softmax-normalized, sums to 1.0)
+- Attention weights available via `get_attention_weights()` for interpretability
+- Horizon loss weights: {7d: 0.5, 15d: 0.3, 30d: 0.2}
+- Save with `safetensors`
 
 ### ensemble.py (Stacking)
 - Meta-learner input: [xgboost_pred, lstm_pred, tft_pred, regime_probs, model_disagreement]
@@ -76,7 +90,7 @@ class BasePredictor(Protocol):
 
 ## Serialization
 - XGBoost: `joblib.dump()` / `joblib.load()`
-- PyTorch (LSTM, TFT): `torch.save(model.state_dict())` — save state_dict only, not full model
+- PyTorch (LSTM, TFT): `safetensors` (`save_file` / `load_file`) + `model_config.json` for architecture params
 - HMM: `joblib.dump()`
 - Meta-learner (Ridge): `joblib.dump()`
 - All artifacts include a `metadata.json` with training details
