@@ -169,6 +169,7 @@ class EnsembleConfig(BaseModel):
 class ConformalConfig(BaseModel):
     coverage: float = 0.90
     calibration_window: int = 60
+    method: str = "plus"
 
 
 class ModelsConfig(BaseModel):
