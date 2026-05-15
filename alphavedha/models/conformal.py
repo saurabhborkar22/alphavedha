@@ -22,9 +22,6 @@ from alphavedha.exceptions import ModelNotFoundError, ModelTrainingError
 
 logger = structlog.get_logger(__name__)
 
-# Type alias for the two MAPIE regressor variants used internally
-_MapieVariant = CrossConformalRegressor | SplitConformalRegressor
-
 
 @dataclass
 class ConformalResult:
@@ -51,7 +48,7 @@ class ConformalPredictor:
         self._base_regressor: RegressorMixin = base_regressor or XGBRegressor(
             n_estimators=100, random_state=42
         )
-        self._mapie: _MapieVariant | None = None
+        self._mapie: Any = None
         self._is_fitted = False
         self._training_metrics: dict[str, float] = {}
 
@@ -109,9 +106,7 @@ class ConformalPredictor:
             raise ModelTrainingError("ConformalPredictor is not fitted. Call fit() first.")
 
         # Extract the underlying fitted base estimator from the cross-conformal model
-        fitted_base: RegressorMixin = (
-            self._mapie._mapie_regressor.estimator_.single_estimator_  # type: ignore[union-attr]
-        )
+        fitted_base: RegressorMixin = self._mapie._mapie_regressor.estimator_.single_estimator_
 
         split_mapie = SplitConformalRegressor(
             estimator=fitted_base,
