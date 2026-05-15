@@ -55,17 +55,29 @@ class BasePredictor(Protocol):
 - Save with `safetensors`
 
 ### ensemble.py (Stacking)
-- Meta-learner input: [xgboost_pred, lstm_pred, tft_pred, regime_probs, model_disagreement]
+- `StackingEnsemble` — does NOT subclass BaseModel (custom interface like RegimeDetector)
+- Meta-learner input: 14 features = [xgb_proba(3), lstm_proba(3), tft_proba(3), regime_probs(4), disagreement(1)]
+- `_build_meta_features()` constructs the 14-column matrix from base model `PredictionResult.probabilities`
+- `_compute_disagreement()` — std of each model's probability for the consensus class (argmax of mean probabilities)
+- `_aggregate_magnitude()` — confidence-weighted average of base model magnitudes
+- Meta-learner: `sklearn.linear_model.RidgeClassifier(alpha=config.alpha)`
+- Probabilities: softmax of `decision_function()` output (RidgeClassifier has no native `predict_proba`)
 - model_disagreement = std(base_predictions) — high disagreement = low confidence
-- Use Ridge regression as default meta-learner (prevents overfitting on small meta-dataset)
 - Train meta-learner on OUT-OF-FOLD predictions from base models (never on training predictions)
+- Direction mapping: {0: -1, 1: 0, 2: 1} — same as all other models
+- Serialization: `joblib.dump()` for RidgeClassifier + `metadata.json`
 
 ### meta_model.py (Meta-Labeling)
-- Input: primary prediction + all original features
-- Output: P(primary prediction is correct)
-- Use XGBoost classifier
+- `MetaLabelingModel` — does NOT subclass BaseModel (custom interface)
+- Input: original feature DataFrame + `ensemble_direction` (int) + `ensemble_confidence` (float)
+- `_build_features()` appends the two ensemble columns to the feature DataFrame
+- Output: `MetaLabelResult(meta_confidence, is_tradeable)` — P(primary prediction is correct)
+- `is_tradeable` = meta_confidence > config.min_confidence (default 0.55)
+- Use `XGBClassifier` with binary:logistic, max_depth=4, n_estimators=200
+- Early stopping via `early_stopping_rounds=20` when validation set provided
 - Threshold: only output predictions where meta_confidence > 0.55
 - This model answers "should I bet on this signal?" not "what direction?"
+- Serialization: `joblib.dump()` for XGBClassifier + `metadata.json`
 
 ### regime.py (HMM)
 - Trained on: Nifty 50 log returns + India VIX
