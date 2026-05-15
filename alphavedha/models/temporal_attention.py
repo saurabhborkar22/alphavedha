@@ -37,18 +37,14 @@ _HORIZON_LOSS_WEIGHTS = {0: 0.5, 1: 0.3, 2: 0.2}
 class GatedResidualNetwork(nn.Module):
     """Gated transformation with skip connection and layer norm."""
 
-    def __init__(
-        self, input_size: int, hidden_size: int, output_size: int, dropout: float
-    ) -> None:
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, dropout: float) -> None:
         super().__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.elu = nn.ELU()
         self.fc2 = nn.Linear(hidden_size, output_size * 2)
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(output_size)
-        self.skip = (
-            nn.Linear(input_size, output_size) if input_size != output_size else None
-        )
+        self.skip = nn.Linear(input_size, output_size) if input_size != output_size else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         skip = self.skip(x) if self.skip is not None else x
@@ -58,7 +54,7 @@ class GatedResidualNetwork(nn.Module):
         h = self.dropout(h)
         h1, h2 = h.chunk(2, dim=-1)
         h = h1 * torch.sigmoid(h2)
-        return self.layer_norm(h + skip)
+        return self.layer_norm(h + skip)  # type: ignore[no-any-return]
 
 
 class VariableSelectionNetwork(nn.Module):
@@ -68,14 +64,9 @@ class VariableSelectionNetwork(nn.Module):
         super().__init__()
         self.n_features = n_features
         self.feature_grns = nn.ModuleList(
-            [
-                GatedResidualNetwork(1, hidden_size, hidden_size, dropout)
-                for _ in range(n_features)
-            ]
+            [GatedResidualNetwork(1, hidden_size, hidden_size, dropout) for _ in range(n_features)]
         )
-        self.selection_grn = GatedResidualNetwork(
-            n_features, hidden_size, n_features, dropout
-        )
+        self.selection_grn = GatedResidualNetwork(n_features, hidden_size, n_features, dropout)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         weights = self.selection_grn(x)
@@ -110,21 +101,9 @@ class InterpretableMultiHeadAttention(nn.Module):
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         batch_size, seq_len, _ = x.shape
 
-        Q = (
-            self.q_proj(x)
-            .view(batch_size, seq_len, self.n_heads, self.head_dim)
-            .transpose(1, 2)
-        )
-        K = (
-            self.k_proj(x)
-            .view(batch_size, seq_len, self.n_heads, self.head_dim)
-            .transpose(1, 2)
-        )
-        V = (
-            self.v_proj(x)
-            .view(batch_size, seq_len, self.n_heads, self.head_dim)
-            .transpose(1, 2)
-        )
+        Q = self.q_proj(x).view(batch_size, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
+        K = self.k_proj(x).view(batch_size, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
+        V = self.v_proj(x).view(batch_size, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
 
         scale = self.head_dim**0.5
         scores = torch.matmul(Q, K.transpose(-2, -1)) / scale
@@ -164,12 +143,8 @@ class TemporalAttentionNetwork(nn.Module):
         self.attention = InterpretableMultiHeadAttention(hidden_size, n_heads, dropout)
         self.dropout = nn.Dropout(dropout)
 
-        self.cls_heads = nn.ModuleDict(
-            {str(h): nn.Linear(hidden_size, 3) for h in horizons}
-        )
-        self.reg_heads = nn.ModuleDict(
-            {str(h): nn.Linear(hidden_size, 1) for h in horizons}
-        )
+        self.cls_heads = nn.ModuleDict({str(h): nn.Linear(hidden_size, 3) for h in horizons})
+        self.reg_heads = nn.ModuleDict({str(h): nn.Linear(hidden_size, 1) for h in horizons})
 
     def forward(
         self, x: torch.Tensor
@@ -207,9 +182,7 @@ class TemporalAttentionNetwork(nn.Module):
 class TemporalAttentionModel(BaseModel):
     """BaseModel wrapper around TemporalAttentionNetwork with multi-horizon output."""
 
-    def __init__(
-        self, config: TFTConfig | None = None, name: str = "temporal_attention"
-    ) -> None:
+    def __init__(self, config: TFTConfig | None = None, name: str = "temporal_attention") -> None:
         cfg = config or TFTConfig()
         self._tft_config = cfg
         self._network: TemporalAttentionNetwork | None = None
@@ -267,9 +240,7 @@ class TemporalAttentionModel(BaseModel):
             y_magnitude=return_train.values,
             sequence_length=cfg.sequence_length,
             horizons=cfg.horizons,
-            sample_weight=(
-                sample_weight.values if sample_weight is not None else None
-            ),
+            sample_weight=(sample_weight.values if sample_weight is not None else None),
         )
         train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True)
 
@@ -294,9 +265,7 @@ class TemporalAttentionModel(BaseModel):
             horizons=cfg.horizons,
         ).to(self._device)
 
-        optimizer = torch.optim.Adam(
-            self._network.parameters(), lr=cfg.learning_rate
-        )
+        optimizer = torch.optim.Adam(self._network.parameters(), lr=cfg.learning_rate)
         early_stop = EarlyStopping(patience=cfg.early_stopping_patience)
         best_state: dict[str, torch.Tensor] | None = None
         horizons_sorted = sorted(cfg.horizons)
@@ -323,15 +292,11 @@ class TemporalAttentionModel(BaseModel):
                     h_y_dir = h_dirs[:, j][mask]
                     h_y_mag = h_mags[:, j][mask]
                     h_w = weights[mask]
-                    h_loss = compute_combined_loss(
-                        h_cls, h_reg, h_y_dir, h_y_mag, h_w
-                    )
+                    h_loss = compute_combined_loss(h_cls, h_reg, h_y_dir, h_y_mag, h_w)
                     total_loss = total_loss + _HORIZON_LOSS_WEIGHTS[j] * h_loss
 
-                total_loss.backward()
-                nn.utils.clip_grad_norm_(
-                    self._network.parameters(), max_norm=1.0
-                )
+                total_loss.backward()  # type: ignore[no-untyped-call]
+                nn.utils.clip_grad_norm_(self._network.parameters(), max_norm=1.0)
                 optimizer.step()
 
             if val_loader is not None:
@@ -365,9 +330,7 @@ class TemporalAttentionModel(BaseModel):
                             h_y_dir = h_dirs[:, j][mask]
                             h_y_mag = h_mags[:, j][mask]
                             h_w = weights[mask]
-                            h_loss = compute_combined_loss(
-                                h_cls, h_reg, h_y_dir, h_y_mag, h_w
-                            )
+                            h_loss = compute_combined_loss(h_cls, h_reg, h_y_dir, h_y_mag, h_w)
                             vloss = vloss + _HORIZON_LOSS_WEIGHTS[j] * h_loss
                         val_losses.append(vloss.item())
 
@@ -380,19 +343,14 @@ class TemporalAttentionModel(BaseModel):
                     )
                     break
                 if avg_val_loss <= early_stop.best_loss:
-                    best_state = {
-                        k: v.cpu().clone()
-                        for k, v in self._network.state_dict().items()
-                    }
+                    best_state = {k: v.cpu().clone() for k, v in self._network.state_dict().items()}
 
         if best_state is not None:
             self._network.load_state_dict(best_state)
             self._network.to(self._device)
 
         train_metrics = self._compute_metrics(train_loader)
-        val_metrics = (
-            self._compute_metrics(val_loader) if val_loader is not None else {}
-        )
+        val_metrics = self._compute_metrics(val_loader) if val_loader is not None else {}
 
         elapsed = time.perf_counter() - start
         self._is_fitted = True
@@ -452,17 +410,13 @@ class TemporalAttentionModel(BaseModel):
 
         return {
             "accuracy": float(accuracy_score(y_dir_arr, cls_pred_arr)),
-            "f1_weighted": float(
-                f1_score(y_dir_arr, cls_pred_arr, average="weighted")
-            ),
+            "f1_weighted": float(f1_score(y_dir_arr, cls_pred_arr, average="weighted")),
             "rmse": float(np.sqrt(mean_squared_error(y_mag_arr, reg_pred_arr))),
         }
 
     def predict(self, X: pd.DataFrame) -> PredictionResult:
         if not self._is_fitted or self._network is None:
-            raise ModelTrainingError(
-                "TemporalAttentionModel is not fitted. Call fit() first."
-            )
+            raise ModelTrainingError("TemporalAttentionModel is not fitted. Call fit() first.")
 
         cfg = self._tft_config
         seq_len = cfg.sequence_length
@@ -481,12 +435,8 @@ class TemporalAttentionModel(BaseModel):
         )
         loader = DataLoader(ds, batch_size=cfg.batch_size, shuffle=False)
 
-        per_horizon_proba: dict[int, list[np.ndarray]] = {
-            h: [] for h in cfg.horizons
-        }
-        per_horizon_reg: dict[int, list[np.ndarray]] = {
-            h: [] for h in cfg.horizons
-        }
+        per_horizon_proba: dict[int, list[np.ndarray]] = {h: [] for h in cfg.horizons}
+        per_horizon_reg: dict[int, list[np.ndarray]] = {h: [] for h in cfg.horizons}
         all_attn: list[np.ndarray] = []
         all_feat_w: list[np.ndarray] = []
 
@@ -556,9 +506,7 @@ class TemporalAttentionModel(BaseModel):
         if self._network is None:
             return
 
-        state_dict = {
-            k: v.cpu() for k, v in self._network.state_dict().items()
-        }
+        state_dict = {k: v.cpu() for k, v in self._network.state_dict().items()}
         save_file(state_dict, directory / "model.safetensors")
 
         model_config = {
@@ -570,9 +518,7 @@ class TemporalAttentionModel(BaseModel):
             "sequence_length": self._tft_config.sequence_length,
             "horizons": self._tft_config.horizons,
         }
-        (directory / "model_config.json").write_text(
-            json.dumps(model_config, indent=2)
-        )
+        (directory / "model_config.json").write_text(json.dumps(model_config, indent=2))
 
     @classmethod
     def _load_model_artifacts(
@@ -613,9 +559,7 @@ class TemporalAttentionModel(BaseModel):
             sequence_length=model_config["sequence_length"],
             horizons=model_config["horizons"],
         )
-        model._feature_names = [
-            f"f{i}" for i in range(model_config["n_features"])
-        ]
+        model._feature_names = [f"f{i}" for i in range(model_config["n_features"])]
         model._is_fitted = True
 
         return model

@@ -50,9 +50,12 @@ class TestTemporalAttentionModel:
         X, labels, returns = synthetic_data
         model = TemporalAttentionModel(config=tft_config)
         result = model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         assert isinstance(result, TrainResult)
         assert "accuracy" in result.train_metrics
@@ -106,8 +109,8 @@ class TestTemporalAttentionModel:
         model.fit(X_train=X[:160], y_train=labels[:160], return_train=returns[:160])
         pred = model.predict(X[160:])
         seq_len = tft_config.sequence_length
-        assert all(pred.direction[:seq_len - 1] == 0)
-        assert all(pred.confidence[:seq_len - 1] == 0.0)
+        assert all(pred.direction[: seq_len - 1] == 0)
+        assert all(pred.confidence[: seq_len - 1] == 0.0)
 
     def test_probabilities_shape_and_sum(
         self,
@@ -210,7 +213,7 @@ class TestTemporalAttentionModel:
         model.predict(X[160:])
         horizons = model.get_horizon_predictions()
         assert set(horizons.keys()) == {7, 15, 30}
-        for h, pred in horizons.items():
+        for _h, pred in horizons.items():
             assert isinstance(pred, PredictionResult)
 
     def test_horizon_prediction_shapes(
@@ -223,7 +226,7 @@ class TestTemporalAttentionModel:
         model.fit(X_train=X[:160], y_train=labels[:160], return_train=returns[:160])
         model.predict(X[160:])
         horizons = model.get_horizon_predictions()
-        for h, pred in horizons.items():
+        for _h, pred in horizons.items():
             assert len(pred.direction) == 40
             assert len(pred.magnitude) == 40
 
@@ -250,7 +253,8 @@ class TestTemporalAttentionModel:
         weights = pd.Series(rng.uniform(0.1, 5.0, size=160))
         model = TemporalAttentionModel(config=tft_config)
         result = model.fit(
-            X_train=X[:160], y_train=labels[:160],
+            X_train=X[:160],
+            y_train=labels[:160],
             return_train=returns[:160],
             sample_weight=weights,
         )

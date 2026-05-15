@@ -49,9 +49,12 @@ class TestLSTMModel:
         X, labels, returns = synthetic_data
         model = LSTMModel(config=lstm_config)
         result = model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         assert isinstance(result, TrainResult)
         assert "accuracy" in result.train_metrics
@@ -66,7 +69,8 @@ class TestLSTMModel:
         X, labels, returns = synthetic_data
         model = LSTMModel(config=lstm_config)
         model.fit(
-            X_train=X[:160], y_train=labels[:160],
+            X_train=X[:160],
+            y_train=labels[:160],
             return_train=returns[:160],
         )
         pred = model.predict(X[160:])
@@ -109,10 +113,10 @@ class TestLSTMModel:
         pred = model.predict(X[160:])
         seq_len = lstm_config.sequence_length
         # First seq_len-1 rows should be neutral padding
-        assert all(pred.direction[:seq_len - 1] == 0)
-        assert all(pred.confidence[:seq_len - 1] == 0.0)
+        assert all(pred.direction[: seq_len - 1] == 0)
+        assert all(pred.confidence[: seq_len - 1] == 0.0)
         np.testing.assert_array_equal(
-            pred.probabilities[:seq_len - 1],
+            pred.probabilities[: seq_len - 1],
             np.tile([0.0, 1.0, 0.0], (seq_len - 1, 1)),
         )
 
@@ -193,7 +197,8 @@ class TestLSTMModel:
         weights = pd.Series(rng.uniform(0.1, 5.0, size=160))
         model = LSTMModel(config=lstm_config)
         result = model.fit(
-            X_train=X[:160], y_train=labels[:160],
+            X_train=X[:160],
+            y_train=labels[:160],
             return_train=returns[:160],
             sample_weight=weights,
         )

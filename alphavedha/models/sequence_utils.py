@@ -29,9 +29,7 @@ class SequenceDataset(Dataset):  # type: ignore[type-arg]
     ) -> None:
         n_samples = X.shape[0]
         if n_samples < sequence_length:
-            raise InsufficientDataError(
-                f"Need at least {sequence_length} samples, got {n_samples}"
-            )
+            raise InsufficientDataError(f"Need at least {sequence_length} samples, got {n_samples}")
 
         self._X = X.astype(np.float32)
         self._sequence_length = sequence_length
@@ -98,9 +96,7 @@ class MultiHorizonSequenceDataset(Dataset):  # type: ignore[type-arg]
     ) -> None:
         n_samples = X.shape[0]
         if n_samples < sequence_length:
-            raise InsufficientDataError(
-                f"Need at least {sequence_length} samples, got {n_samples}"
-            )
+            raise InsufficientDataError(f"Need at least {sequence_length} samples, got {n_samples}")
 
         self._X = X.astype(np.float32)
         self._seq_len = sequence_length

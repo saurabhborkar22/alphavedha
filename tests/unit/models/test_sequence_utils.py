@@ -44,7 +44,7 @@ class TestSequenceDataset:
     def test_label_alignment(self, seq_data: tuple[np.ndarray, np.ndarray, np.ndarray]) -> None:
         X, y_dir, y_mag = seq_data
         ds = SequenceDataset(X, y_dir, y_mag, sequence_length=10)
-        _, y_d, y_m, _ = ds[0]
+        _, _y_d, y_m, _ = ds[0]
         # Label should come from index 9 (last of window 0..9)
         expected_mag = np.float32(y_mag[9])
         assert float(y_m) == pytest.approx(expected_mag, abs=1e-6)
@@ -61,7 +61,7 @@ class TestSequenceDataset:
     def test_nan_labels_excluded(self) -> None:
         X = np.zeros((20, 3), dtype=np.float32)
         y_dir = np.zeros(20, dtype=float)
-        y_dir[9] = np.nan   # position 9 is label for window 0..9 (seq_len=10)
+        y_dir[9] = np.nan  # position 9 is label for window 0..9 (seq_len=10)
         y_dir[10] = np.nan  # position 10 is label for window 1..10
         y_mag = np.zeros(20, dtype=np.float32)
         ds = SequenceDataset(X, y_dir, y_mag, sequence_length=10)
@@ -98,19 +98,15 @@ class TestMultiHorizonSequenceDataset:
         self, seq_data: tuple[np.ndarray, np.ndarray, np.ndarray]
     ) -> None:
         X, y_dir, y_mag = seq_data
-        ds = MultiHorizonSequenceDataset(
-            X, y_dir, y_mag, sequence_length=10, horizons=[7, 15, 30]
-        )
+        ds = MultiHorizonSequenceDataset(X, y_dir, y_mag, sequence_length=10, horizons=[7, 15, 30])
         assert len(ds) == 91  # 100 - 10 + 1
 
     def test_multi_horizon_returns_masks(
         self, seq_data: tuple[np.ndarray, np.ndarray, np.ndarray]
     ) -> None:
         X, y_dir, y_mag = seq_data
-        ds = MultiHorizonSequenceDataset(
-            X, y_dir, y_mag, sequence_length=10, horizons=[7, 15, 30]
-        )
-        X_seq, y_d, y_m, w, h_dirs, h_mags, h_masks = ds[0]
+        ds = MultiHorizonSequenceDataset(X, y_dir, y_mag, sequence_length=10, horizons=[7, 15, 30])
+        _X_seq, _y_d, _y_m, _w, h_dirs, h_mags, h_masks = ds[0]
         assert h_dirs.shape == (3,)
         assert h_mags.shape == (3,)
         assert h_masks.shape == (3,)
@@ -121,16 +117,14 @@ class TestMultiHorizonSequenceDataset:
         X = np.zeros((30, 3), dtype=np.float32)
         y_dir = np.zeros(30, dtype=float)
         y_mag = np.zeros(30, dtype=np.float32)
-        ds = MultiHorizonSequenceDataset(
-            X, y_dir, y_mag, sequence_length=10, horizons=[7, 15, 30]
-        )
+        ds = MultiHorizonSequenceDataset(X, y_dir, y_mag, sequence_length=10, horizons=[7, 15, 30])
         # Last window: i=20, label_idx=29
         # 7d offset=0 -> idx 29 -> valid (29 < 30)
         # 15d offset=8 -> idx 37 -> invalid (37 >= 30)
         # 30d offset=23 -> idx 52 -> invalid (52 >= 30)
         last_idx = len(ds) - 1
         _, _, _, _, _, _, h_masks = ds[last_idx]
-        assert h_masks[0].item() is True   # 7d valid
+        assert h_masks[0].item() is True  # 7d valid
         assert h_masks[1].item() is False  # 15d out of bounds
         assert h_masks[2].item() is False  # 30d out of bounds
 

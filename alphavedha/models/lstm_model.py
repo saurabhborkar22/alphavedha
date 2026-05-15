@@ -142,10 +142,8 @@ class LSTMModel(BaseModel):
 
                 optimizer.zero_grad()
                 cls_logits, reg_output = self._network(X_seq)
-                loss = compute_combined_loss(
-                    cls_logits, reg_output, y_dir, y_mag, weights
-                )
-                loss.backward()
+                loss = compute_combined_loss(cls_logits, reg_output, y_dir, y_mag, weights)
+                loss.backward()  # type: ignore[no-untyped-call]
                 nn.utils.clip_grad_norm_(self._network.parameters(), max_norm=1.0)
                 optimizer.step()
 
@@ -159,31 +157,22 @@ class LSTMModel(BaseModel):
                         y_mag = y_mag.to(self._device)
                         weights = weights.to(self._device)
                         cls_logits, reg_output = self._network(X_seq)
-                        vloss = compute_combined_loss(
-                            cls_logits, reg_output, y_dir, y_mag, weights
-                        )
+                        vloss = compute_combined_loss(cls_logits, reg_output, y_dir, y_mag, weights)
                         val_losses.append(vloss.item())
 
                 avg_val_loss = float(np.mean(val_losses))
                 if early_stop.step(avg_val_loss):
-                    logger.info(
-                        "early_stopping", epoch=epoch, best_loss=early_stop.best_loss
-                    )
+                    logger.info("early_stopping", epoch=epoch, best_loss=early_stop.best_loss)
                     break
                 if avg_val_loss <= early_stop.best_loss:
-                    best_state = {
-                        k: v.cpu().clone()
-                        for k, v in self._network.state_dict().items()
-                    }
+                    best_state = {k: v.cpu().clone() for k, v in self._network.state_dict().items()}
 
         if best_state is not None:
             self._network.load_state_dict(best_state)
             self._network.to(self._device)
 
         train_metrics = self._compute_metrics(train_loader)
-        val_metrics = (
-            self._compute_metrics(val_loader) if val_loader is not None else {}
-        )
+        val_metrics = self._compute_metrics(val_loader) if val_loader is not None else {}
 
         elapsed = time.perf_counter() - start
         self._is_fitted = True
@@ -238,9 +227,7 @@ class LSTMModel(BaseModel):
 
         return {
             "accuracy": float(accuracy_score(y_dir_arr, cls_pred_arr)),
-            "f1_weighted": float(
-                f1_score(y_dir_arr, cls_pred_arr, average="weighted")
-            ),
+            "f1_weighted": float(f1_score(y_dir_arr, cls_pred_arr, average="weighted")),
             "rmse": float(np.sqrt(mean_squared_error(y_mag_arr, reg_pred_arr))),
         }
 
@@ -321,9 +308,7 @@ class LSTMModel(BaseModel):
         (directory / "model_config.json").write_text(json.dumps(model_config, indent=2))
 
     @classmethod
-    def _load_model_artifacts(
-        cls, directory: Path, config: dict[str, Any]
-    ) -> LSTMModel:
+    def _load_model_artifacts(cls, directory: Path, config: dict[str, Any]) -> LSTMModel:
         model = cls(config=None, name="lstm")
 
         config_path = directory / "model_config.json"
