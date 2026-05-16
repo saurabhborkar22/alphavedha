@@ -62,6 +62,7 @@ class TestStockRanker:
         assert len(result.sell_candidates) == 1
         assert result.buy_candidates[0].symbol == "TCS"
         assert result.sell_candidates[0].symbol == "RELIANCE"
+        assert any(sym == "HDFC" and reason == "hold signal" for sym, reason in result.excluded)
 
     def test_sorts_by_composite_score_desc(self) -> None:
         ranker = StockRanker()

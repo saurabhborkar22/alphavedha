@@ -60,7 +60,7 @@ class TestPortfolioConstraints:
             portfolio=empty_portfolio,
         )
         assert isinstance(result, ConstraintResult)
-        assert result.passed is True
+        assert result.trade_allowed is True
         assert result.adjusted_weight_pct == 5.0
         assert len(result.violations) == 0
 
@@ -98,7 +98,7 @@ class TestPortfolioConstraints:
             portfolio=portfolio,
         )
         assert result.adjusted_weight_pct == 0.0
-        assert result.passed is False
+        assert result.trade_allowed is False
         assert any("correlation" in v.lower() for v in result.violations)
 
     def test_sell_before_min_holding_rejected(self, config: PortfolioConfig) -> None:
@@ -117,7 +117,7 @@ class TestPortfolioConstraints:
             portfolio=portfolio,
         )
         assert result.adjusted_weight_pct == 0.0
-        assert result.passed is False
+        assert result.trade_allowed is False
         assert any("holding period" in v.lower() for v in result.violations)
 
     def test_low_liquidity_rejected(self, config: PortfolioConfig) -> None:
@@ -135,5 +135,5 @@ class TestPortfolioConstraints:
             avg_daily_turnover_cr=2.0,
         )
         assert result.adjusted_weight_pct == 0.0
-        assert result.passed is False
+        assert result.trade_allowed is False
         assert any("liquidity" in v.lower() for v in result.violations)

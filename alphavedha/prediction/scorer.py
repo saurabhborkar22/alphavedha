@@ -14,6 +14,12 @@ logger = structlog.get_logger(__name__)
 
 _DEFAULT_WEIGHTS = CompositeScoreWeights()
 
+
+def _sigmoid_normalize(value: float, scale: float = 2.0, invert: bool = False) -> float:
+    """Map a single value to [0, 1] via sigmoid. Invert for "lower is better" metrics."""
+    x = -value * scale if invert else value * scale
+    return 1.0 / (1.0 + np.exp(-x))
+
 _REGIME_ALIGNMENT: dict[tuple[str, int], float] = {
     ("bull", 1): 100.0,
     ("bull", 0): 50.0,
@@ -92,7 +98,11 @@ class CompositeScorer:
         regime = regime_result.current_regime
         sub_scores["macro_alignment"] = _REGIME_ALIGNMENT.get((regime, direction), 50.0)
 
-        # Feature-derived sub-scores
+        # Feature-derived sub-scores — normalize each feature individually
+        # via sigmoid, then average. This avoids scale mismatch when
+        # features in the same group span different orders of magnitude
+        # (e.g., atr_14 ≈ 50 vs natr_14 ≈ 0.02).
+        invert = False
         for score_name, prefixes in _FEATURE_PREFIXES.items():
             cols = [c for c in features.columns if any(c.startswith(p) for p in prefixes)]
             if not cols:
@@ -103,15 +113,11 @@ class CompositeScorer:
                 if len(finite_vals) == 0:
                     sub_scores[score_name] = None
                 else:
-                    mean_val = float(np.mean(finite_vals))
-                    if score_name == "volatility_risk":
-                        # High volatility → lower score (inverted via sigmoid)
-                        normalized = 1.0 / (1.0 + np.exp(mean_val * 5))
-                        sub_scores[score_name] = float(normalized * 100.0)
-                    else:
-                        # Higher positive values → higher score
-                        normalized = 1.0 / (1.0 + np.exp(-mean_val * 2))
-                        sub_scores[score_name] = float(normalized * 100.0)
+                    invert = score_name == "volatility_risk"
+                    per_feature = [
+                        _sigmoid_normalize(float(v), invert=invert) for v in finite_vals
+                    ]
+                    sub_scores[score_name] = float(np.mean(per_feature)) * 100.0
 
         # Redistribute weight from unavailable sub-scores to available ones
         available_weight = sum(weight_dict[k] for k, v in sub_scores.items() if v is not None)

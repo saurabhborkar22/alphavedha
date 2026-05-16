@@ -20,6 +20,9 @@ def compute_position_size(
     if magnitude <= 0.0:
         return 0.0
 
+    # Symmetric Kelly (assumes avg_win ≈ avg_loss). TODO: upgrade to
+    # generalized Kelly f = (p·b - q) / b once we have calibrated
+    # win/loss ratio estimates per regime.
     kelly_fraction = 2 * meta_confidence - 1
 
     if kelly_fraction <= 0.0:

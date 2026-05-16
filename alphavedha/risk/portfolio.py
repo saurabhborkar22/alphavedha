@@ -33,7 +33,7 @@ class PortfolioState:
 class ConstraintResult:
     adjusted_weight_pct: float
     violations: list[str]
-    passed: bool
+    trade_allowed: bool
 
 
 class PortfolioConstraints:
@@ -62,9 +62,9 @@ class PortfolioConstraints:
                         f"min {self._config.min_holding_days}d"
                     )
                     return ConstraintResult(
-                        adjusted_weight_pct=0.0, violations=violations, passed=False
+                        adjusted_weight_pct=0.0, violations=violations, trade_allowed=False
                     )
-            return ConstraintResult(adjusted_weight_pct=weight, violations=violations, passed=True)
+            return ConstraintResult(adjusted_weight_pct=weight, violations=violations, trade_allowed=True)
 
         # Buy / add: check liquidity
         turnover = avg_daily_turnover_cr
@@ -77,7 +77,7 @@ class PortfolioConstraints:
                 f"Liquidity violation: {symbol} turnover {turnover:.1f} cr < "
                 f"{self._config.min_daily_turnover_cr:.1f} cr min"
             )
-            return ConstraintResult(adjusted_weight_pct=0.0, violations=violations, passed=False)
+            return ConstraintResult(adjusted_weight_pct=0.0, violations=violations, trade_allowed=False)
 
         # Check correlation with existing holdings
         for held_sym, held_info in portfolio.holdings.items():
@@ -88,7 +88,7 @@ class PortfolioConstraints:
                     f"{corr:.2f} > {self._config.max_correlation}"
                 )
                 return ConstraintResult(
-                    adjusted_weight_pct=0.0, violations=violations, passed=False
+                    adjusted_weight_pct=0.0, violations=violations, trade_allowed=False
                 )
 
         # Check sector exposure cap
@@ -117,5 +117,5 @@ class PortfolioConstraints:
         return ConstraintResult(
             adjusted_weight_pct=weight,
             violations=violations,
-            passed=len(violations) == 0 or weight > 0.0,
+            trade_allowed=weight > 0.0,
         )

@@ -43,17 +43,19 @@ class StockRanker:
                 continue
             candidates.append(pred)
 
-        buy = sorted(
-            [p for p in candidates if p.direction == 1],
-            key=lambda p: p.composite_score,
-            reverse=True,
-        )[:top_n]
+        buy_candidates: list[StockPrediction] = []
+        sell_candidates: list[StockPrediction] = []
 
-        sell = sorted(
-            [p for p in candidates if p.direction == -1],
-            key=lambda p: p.composite_score,
-            reverse=True,
-        )[:top_n]
+        for pred in candidates:
+            if pred.direction == 1:
+                buy_candidates.append(pred)
+            elif pred.direction == -1:
+                sell_candidates.append(pred)
+            else:
+                excluded.append((pred.symbol, "hold signal"))
+
+        buy = sorted(buy_candidates, key=lambda p: p.composite_score, reverse=True)[:top_n]
+        sell = sorted(sell_candidates, key=lambda p: p.composite_score, reverse=True)[:top_n]
 
         logger.info(
             "ranking_completed",
