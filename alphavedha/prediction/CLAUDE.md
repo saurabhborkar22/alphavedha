@@ -6,44 +6,36 @@ Orchestrate the full prediction pipeline: data → features → models → ensem
 ## Pipeline Flow
 
 ```
-1. engine.py receives prediction request (symbol + horizon)
-2. Fetch latest data from feature store (or compute if stale)
-3. Run regime detection (HMM) → get current regime
-4. Run all base models (XGBoost, LSTM, TFT) → get raw predictions
-5. Compute model disagreement (std of base predictions)
-6. Run stacking meta-learner → get calibrated prediction
-7. Run meta-labeling model → get confidence score
-8. Run conformal prediction → get price target range
-9. Run risk management → get position sizing
-10. Compute composite score (0-100)
-11. Return structured PredictionResult
+1. engine.py receives prediction request (symbol + features + returns + price)
+2. Run regime detection (HMM) → get current regime (or default if no market_features)
+3. Run all base models (XGBoost, LSTM, TFT) → get raw predictions
+4. Graceful degradation: 2/3 minimum, failed models get neutral PredictionResult
+5. Run stacking meta-learner → get calibrated prediction
+6. Run meta-labeling model → get confidence score + is_tradeable
+7. Run conformal prediction → get price target range
+8. Run CompositeScorer → get 0-100 composite score
+9. Run RiskManager.assess() → get position sizing
+10. Return StockPrediction with all fields populated
 ```
 
-## Composite Score (scorer.py)
+## Modules
 
-Weighted combination of sub-scores, each 0-100:
+### engine.py — PredictionEngine
+- Constructor takes all models + scorer + risk_manager via dependency injection
+- `predict()` returns `StockPrediction` dataclass with 16 fields
+- Graceful degradation: catches individual model failures, applies defaults, adds warnings
+- Minimum 2/3 base models must succeed; otherwise raises `PredictionError`
+- `market_features=None` → regime skipped, uniform probs `[0.25, 0.25, 0.25, 0.25]`
+- `current_portfolio=None` → portfolio constraints and circuit breaker skipped
 
-```python
-SCORE_WEIGHTS = {
-    "technical_momentum": 0.25,
-    "derivatives_sentiment": 0.20,
-    "macro_alignment": 0.15,
-    "microstructure_quality": 0.15,
-    "news_sentiment": 0.10,
-    "volatility_risk": 0.15,   # Inverted — low vol = high score
-}
-```
+### scorer.py — CompositeScorer
+- 6 weighted sub-scores: technical_momentum, derivatives_sentiment, macro_alignment, microstructure_quality, news_sentiment, volatility_risk
+- Feature columns matched by prefix: `deriv_*`, `micro_*`, `sent_*`, `hvol_*`/`natr_*`/`atr_*`/`bb_width_*`
+- Missing feature groups have weight redistributed to available groups
+- Configurable weights via `CompositeScoreWeights` Pydantic config
 
-Each sub-score is a percentile rank within the current universe.
-
-## Ranker (ranker.py)
-- Rank all stocks in a tier by composite_score
-- Apply filters: min confidence > 0.55, min liquidity, no circuit-hit today
-- Return top-N with full prediction details
-- Separate rankings for BUY candidates (direction=UP) and SELL candidates (direction=DOWN)
-
-## Rules
-- Cache intermediate results — don't recompute features for the same stock on the same day
-- If any model fails, return predictions from remaining models with a warning flag
-- Never return a prediction without a confidence score and model version
-- Log the full pipeline execution time for performance monitoring
+### ranker.py — StockRanker
+- Filters: is_tradeable, position_size > 0, no circuit-hit
+- Produces `RankingResult` with separate buy/sell candidate lists sorted by composite_score desc
+- Respects top_n limit
+- Tracks excluded symbols with reasons

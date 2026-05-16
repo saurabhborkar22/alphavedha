@@ -244,6 +244,30 @@ class ApiConfig(BaseModel):
     )
 
 
+class CompositeScoreWeights(BaseModel):
+    technical_momentum: float = 0.25
+    derivatives_sentiment: float = 0.20
+    macro_alignment: float = 0.15
+    microstructure_quality: float = 0.15
+    news_sentiment: float = 0.10
+    volatility_risk: float = 0.15
+
+    @model_validator(mode="after")
+    def _weights_must_sum_to_one(self) -> Self:
+        total = (
+            self.technical_momentum
+            + self.derivatives_sentiment
+            + self.macro_alignment
+            + self.microstructure_quality
+            + self.news_sentiment
+            + self.volatility_risk
+        )
+        if abs(total - 1.0) > 1e-6:
+            msg = f"Weights must sum to 1.0, got {total:.6f}"
+            raise ValueError(msg)
+        return self
+
+
 class DriftConfig(BaseModel):
     psi_warning: float = 0.1
     psi_alert: float = 0.2
