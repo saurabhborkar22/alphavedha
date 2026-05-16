@@ -244,6 +244,15 @@ class ApiConfig(BaseModel):
     )
 
 
+class CompositeScoreWeights(BaseModel):
+    technical_momentum: float = 0.25
+    derivatives_sentiment: float = 0.20
+    macro_alignment: float = 0.15
+    microstructure_quality: float = 0.15
+    news_sentiment: float = 0.10
+    volatility_risk: float = 0.15
+
+
 class DriftConfig(BaseModel):
     psi_warning: float = 0.1
     psi_alert: float = 0.2
