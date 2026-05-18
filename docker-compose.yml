@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: alphavedha_dev
       POSTGRES_DB: alphavedha
     ports:
-      - "5432:5432"
+      - "5435:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped

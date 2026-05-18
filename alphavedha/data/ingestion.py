@@ -1,0 +1,139 @@
+"""Data ingestion — fetch, preprocess, and store OHLCV data end-to-end.
+
+Wires providers → preprocessing → store for single stocks or full universe.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+
+import structlog
+
+from alphavedha.data.preprocessing.pipeline import run_pipeline
+from alphavedha.data.providers.yfinance_provider import YFinanceProvider
+from alphavedha.data.store import store_ohlcv
+from alphavedha.data.universe import (
+    fetch_index_constituents,
+    get_symbols_for_tier,
+    refresh_universe,
+    save_constituents,
+)
+
+logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class IngestionResult:
+    """Summary of a data ingestion run."""
+
+    symbols_requested: int = 0
+    symbols_succeeded: int = 0
+    symbols_failed: int = 0
+    total_rows_stored: int = 0
+    failed_symbols: list[str] = field(default_factory=list)
+    errors: dict[str, str] = field(default_factory=dict)
+
+
+async def ingest_symbol(
+    symbol: str,
+    start: date,
+    end: date,
+    provider: YFinanceProvider | None = None,
+) -> int:
+    """Fetch, preprocess, and store OHLCV for a single symbol. Returns rows stored."""
+    if provider is None:
+        provider = YFinanceProvider()
+
+    df = await provider.fetch_ohlcv(symbol, start, end)
+    if df.empty:
+        logger.warning("ingest_empty", symbol=symbol)
+        return 0
+
+    result = run_pipeline(df, symbol, skip_frac_diff=True, skip_outlier=True)
+    stored = await store_ohlcv(symbol, result.df)
+
+    logger.info(
+        "ingest_complete",
+        symbol=symbol,
+        rows_fetched=len(df),
+        rows_stored=stored,
+        circuit_hits=result.circuit_hits,
+    )
+    return stored
+
+
+async def ingest_universe(
+    tier: str,
+    start: date,
+    end: date,
+    concurrency: int = 3,
+) -> IngestionResult:
+    """Ingest OHLCV for all symbols in a universe tier."""
+    symbols = await get_symbols_for_tier(tier)
+    if not symbols:
+        logger.warning("ingest_no_symbols", tier=tier)
+        return IngestionResult()
+
+    provider = YFinanceProvider()
+    sem = asyncio.Semaphore(concurrency)
+    result = IngestionResult(symbols_requested=len(symbols))
+
+    async def _ingest_one(sym: str) -> None:
+        async with sem:
+            try:
+                rows = await ingest_symbol(sym, start, end, provider)
+                if rows > 0:
+                    result.symbols_succeeded += 1
+                    result.total_rows_stored += rows
+                else:
+                    result.symbols_failed += 1
+                    result.failed_symbols.append(sym)
+                    result.errors[sym] = "empty data"
+            except Exception as e:
+                result.symbols_failed += 1
+                result.failed_symbols.append(sym)
+                result.errors[sym] = str(e)
+                logger.error("ingest_symbol_error", symbol=sym, error=str(e))
+
+    await asyncio.gather(*[_ingest_one(s) for s in symbols])
+
+    logger.info(
+        "ingest_universe_complete",
+        tier=tier,
+        succeeded=result.symbols_succeeded,
+        failed=result.symbols_failed,
+        total_rows=result.total_rows_stored,
+    )
+    return result
+
+
+async def backfill(
+    tier: str = "large",
+    start: str = "2020-01-01",
+) -> IngestionResult:
+    """Full backfill: refresh universe, then ingest all symbols."""
+    await refresh_universe()
+
+    start_date = date.fromisoformat(start)
+    end_date = date.today()
+
+    logger.info(
+        "backfill_starting",
+        tier=tier,
+        start=str(start_date),
+        end=str(end_date),
+    )
+    return await ingest_universe(tier, start_date, end_date)
+
+
+async def refresh_latest(
+    tier: str = "large",
+    lookback_days: int = 5,
+) -> IngestionResult:
+    """Refresh recent data for all symbols in a tier."""
+    start_date = date.today() - timedelta(days=lookback_days)
+    end_date = date.today()
+
+    return await ingest_universe(tier, start_date, end_date)
