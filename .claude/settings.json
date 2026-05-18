@@ -44,7 +44,7 @@
       "Bash(git branch -D*)",
       "Bash(git push origin main*)",
       "Bash(git push origin master*)",
-      "Bash(rm -rf /*))",
+      "Bash(rm -rf /*)",
       "Bash(sudo *)",
       "Bash(pip install* --break-system-packages*)"
     ]
