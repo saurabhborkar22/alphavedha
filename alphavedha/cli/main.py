@@ -168,7 +168,7 @@ def data_backfill(
 def data_status() -> None:
     """Show data freshness status."""
     from alphavedha.data.database import get_session_factory
-    from alphavedha.data.models import DailyOHLCV, IndexConstituent
+    from alphavedha.data.models import DailyOHLCV, DerivativesData, IndexConstituent, InstitutionalFlow
 
     from sqlalchemy import func, select
 
@@ -181,14 +181,62 @@ def data_status() -> None:
             )).scalar() or 0
             latest_date = (await session.execute(select(func.max(DailyOHLCV.date)))).scalar()
             index_count = (await session.execute(select(func.count(IndexConstituent.id)))).scalar() or 0
+            flow_count = (await session.execute(select(func.count(InstitutionalFlow.id)))).scalar() or 0
+            flow_latest = (await session.execute(select(func.max(InstitutionalFlow.date)))).scalar()
+            deriv_count = (await session.execute(select(func.count(DerivativesData.id)))).scalar() or 0
+            deriv_latest = (await session.execute(select(func.max(DerivativesData.date)))).scalar()
 
         console.print(f"[bold]Database Status[/bold]")
-        console.print(f"  OHLCV rows:    {ohlcv_count:,}")
-        console.print(f"  Symbols:       {symbol_count}")
-        console.print(f"  Latest date:   {latest_date or 'no data'}")
-        console.print(f"  Index members: {index_count}")
+        console.print(f"  OHLCV rows:      {ohlcv_count:,}")
+        console.print(f"  Symbols:         {symbol_count}")
+        console.print(f"  Latest date:     {latest_date or 'no data'}")
+        console.print(f"  Index members:   {index_count}")
+        console.print(f"  FII/DII rows:    {flow_count:,} (latest: {flow_latest or 'no data'})")
+        console.print(f"  Derivatives:     {deriv_count:,} (latest: {deriv_latest or 'no data'})")
 
     asyncio.run(_status())
+
+
+@data_app.command("fii-refresh")
+def data_fii_refresh() -> None:
+    """Fetch today's FII/DII flow data from NSE."""
+    from alphavedha.data.ingestion import ingest_fii_dii
+
+    with console.status("Fetching FII/DII data from NSE..."):
+        result = asyncio.run(ingest_fii_dii())
+
+    if result.error:
+        console.print(f"[red]Error:[/red] {result.error}")
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[green]Done:[/green] {result.rows_stored} rows stored "
+        f"(categories: {', '.join(result.categories)})"
+    )
+
+
+@data_app.command("derivatives-refresh")
+def data_derivatives_refresh(
+    tier: str = typer.Option("large", help="Market cap tier"),
+    symbol: str | None = typer.Option(None, help="Single symbol to fetch"),
+) -> None:
+    """Fetch F&O derivatives data from NSE."""
+    from alphavedha.data.ingestion import ingest_derivatives
+
+    symbols = [symbol] if symbol else None
+    label = symbol or f"{tier} cap"
+
+    with console.status(f"Fetching derivatives data for {label}..."):
+        result = asyncio.run(ingest_derivatives(symbols=symbols, tier=tier))
+
+    console.print(
+        f"[green]Done:[/green] {result.symbols_succeeded}/{result.symbols_requested} symbols, "
+        f"{result.rows_stored} rows stored"
+    )
+    if result.errors:
+        console.print(f"[yellow]Errors ({len(result.errors)}):[/yellow]")
+        for sym, err in list(result.errors.items())[:5]:
+            console.print(f"  [dim]{sym}: {err}[/dim]")
 
 
 app.add_typer(data_app, name="data")

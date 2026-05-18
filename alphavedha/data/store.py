@@ -15,7 +15,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from alphavedha.data.database import get_session_factory
-from alphavedha.data.models import DailyOHLCV, Feature
+from alphavedha.data.models import DailyOHLCV, DerivativesData, Feature, InstitutionalFlow
 
 logger = structlog.get_logger(__name__)
 
@@ -212,3 +212,150 @@ async def delete_ohlcv(symbol: str) -> int:
     deleted = result.rowcount  # type: ignore[union-attr]
     logger.info("ohlcv_deleted", symbol=symbol, rows=deleted)
     return deleted
+
+
+async def store_fii_dii(rows: list[dict]) -> int:
+    """Store FII/DII flow data. Upserts on (date, category)."""
+    if not rows:
+        return 0
+
+    session_factory = get_session_factory()
+    stored = 0
+
+    async with session_factory() as session:
+        for row in rows:
+            stmt = (
+                pg_insert(InstitutionalFlow)
+                .values(
+                    date=row["date"],
+                    category=row["category"],
+                    buy_value=row["buy_value"],
+                    sell_value=row["sell_value"],
+                    net_value=row["net_value"],
+                )
+                .on_conflict_do_update(
+                    constraint="uq_institutional_flow",
+                    set_={
+                        "buy_value": row["buy_value"],
+                        "sell_value": row["sell_value"],
+                        "net_value": row["net_value"],
+                    },
+                )
+            )
+            await session.execute(stmt)
+            stored += 1
+
+        await session.commit()
+
+    logger.info("fii_dii_stored", rows=stored)
+    return stored
+
+
+async def load_fii_dii(start: date, end: date) -> pd.DataFrame:
+    """Load FII/DII flow data for a date range."""
+    session_factory = get_session_factory()
+
+    async with session_factory() as session:
+        stmt = (
+            select(InstitutionalFlow)
+            .where(
+                InstitutionalFlow.date >= start,
+                InstitutionalFlow.date <= end,
+            )
+            .order_by(InstitutionalFlow.date)
+        )
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    if not rows:
+        return pd.DataFrame()
+
+    records = [
+        {
+            "date": r.date,
+            "category": r.category,
+            "buy_value": r.buy_value,
+            "sell_value": r.sell_value,
+            "net_value": r.net_value,
+        }
+        for r in rows
+    ]
+
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["date"])
+    return df
+
+
+async def store_derivatives(rows: list[dict]) -> int:
+    """Store derivatives (F&O) data. Upserts on (symbol, date)."""
+    if not rows:
+        return 0
+
+    session_factory = get_session_factory()
+    stored = 0
+
+    async with session_factory() as session:
+        for row in rows:
+            stmt = (
+                pg_insert(DerivativesData)
+                .values(
+                    symbol=row["symbol"],
+                    date=row["date"],
+                    futures_oi=row.get("futures_oi"),
+                    futures_price=row.get("futures_price"),
+                    options_data_json=row.get("options_data_json"),
+                )
+                .on_conflict_do_update(
+                    constraint="uq_derivatives_data",
+                    set_={
+                        "futures_oi": row.get("futures_oi"),
+                        "futures_price": row.get("futures_price"),
+                        "options_data_json": row.get("options_data_json"),
+                    },
+                )
+            )
+            await session.execute(stmt)
+            stored += 1
+
+        await session.commit()
+
+    logger.info("derivatives_stored", rows=stored)
+    return stored
+
+
+async def load_derivatives(
+    symbol: str, start: date, end: date
+) -> pd.DataFrame:
+    """Load derivatives data for a symbol and date range."""
+    session_factory = get_session_factory()
+
+    async with session_factory() as session:
+        stmt = (
+            select(DerivativesData)
+            .where(
+                DerivativesData.symbol == symbol,
+                DerivativesData.date >= start,
+                DerivativesData.date <= end,
+            )
+            .order_by(DerivativesData.date)
+        )
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    if not rows:
+        return pd.DataFrame()
+
+    records = [
+        {
+            "date": r.date,
+            "symbol": r.symbol,
+            "futures_oi": r.futures_oi,
+            "futures_price": r.futures_price,
+            "options_data_json": r.options_data_json,
+        }
+        for r in rows
+    ]
+
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["date"])
+    return df
