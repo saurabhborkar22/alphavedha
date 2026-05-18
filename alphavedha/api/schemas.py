@@ -83,11 +83,6 @@ class BatchRequest(BaseModel):
     symbols: list[str] = Field(..., min_length=1, max_length=20)
 
 
-class FailedPrediction(BaseModel):
-    symbol: str
-    error: str
-
-
 class BatchResponse(BaseModel):
     predictions: list[PredictionResponse]
     total: int

@@ -8,7 +8,12 @@ from io import StringIO
 import numpy as np
 from rich.console import Console
 
-from alphavedha.cli.formatters import format_prediction, format_ranking
+from alphavedha.cli.formatters import (
+    format_prediction,
+    format_ranking,
+    prediction_to_json,
+    ranking_to_json,
+)
 from alphavedha.prediction.engine import StockPrediction
 from alphavedha.prediction.ranker import RankingResult
 
@@ -79,3 +84,42 @@ class TestFormatRanking:
         text = output.getvalue()
         assert "TCS" in text
         assert "INFY" in text
+
+
+class TestPredictionToJson:
+    def test_valid_json_with_required_fields(self) -> None:
+        import json
+
+        pred = _make_prediction("TCS", direction=1, composite_score=85.0)
+        raw = prediction_to_json(pred)
+        data = json.loads(raw)
+        assert data["symbol"] == "TCS"
+        assert data["direction"] == 1
+        assert data["direction_label"] == "BUY"
+        assert data["composite_score"] == 85.0
+        assert isinstance(data["regime_probabilities"], list)
+
+    def test_numpy_arrays_serialized(self) -> None:
+        import json
+
+        raw = prediction_to_json(_make_prediction())
+        data = json.loads(raw)
+        assert len(data["regime_probabilities"]) == 4
+
+
+class TestRankingToJson:
+    def test_valid_json_structure(self) -> None:
+        import json
+
+        result = RankingResult(
+            buy_candidates=[_make_prediction("TCS")],
+            sell_candidates=[_make_prediction("RELIANCE", direction=-1)],
+            excluded=[("HDFC", "hold signal")],
+        )
+        raw = ranking_to_json(result)
+        data = json.loads(raw)
+        assert len(data["buy_candidates"]) == 1
+        assert data["buy_candidates"][0]["symbol"] == "TCS"
+        assert len(data["sell_candidates"]) == 1
+        assert data["excluded"][0]["symbol"] == "HDFC"
+        assert "generated_at" in data

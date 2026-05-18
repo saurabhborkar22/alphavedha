@@ -56,7 +56,7 @@ _DEMO_FEATURE_NAMES: list[str] = [
 
 def _symbol_seed(symbol: str) -> int:
     """Deterministic seed from symbol name using MD5 hash."""
-    h = hashlib.md5(symbol.encode()).hexdigest()  # noqa: S324
+    h = hashlib.md5(symbol.encode()).hexdigest()
     return int(h[:8], 16)
 
 
@@ -70,7 +70,7 @@ class _DemoBaseModel:
     def predict(self, X: pd.DataFrame) -> PredictionResult:
         n = X.shape[0]
         # Use first row's values to derive a deterministic seed
-        row_hash = hashlib.md5(  # noqa: S324
+        row_hash = hashlib.md5(
             X.iloc[0].values.tobytes() + self._name.encode()
         ).hexdigest()
         seed = int(row_hash[:8], 16) + self._seed_offset
@@ -223,6 +223,11 @@ class ModelRegistry:
         else:
             config = get_config()
             self._artifact_dir = Path(config.models.artifact_dir)
+
+    @property
+    def is_demo(self) -> bool:
+        """Whether the registry is operating in demo mode."""
+        return self._demo
 
     @property
     def model_version(self) -> str:

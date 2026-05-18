@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
-import numpy as np
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text

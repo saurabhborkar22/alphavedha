@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import structlog
 
 from alphavedha.config import AppConfig
@@ -28,6 +29,19 @@ class PredictionService:
         self._engine = registry.get_prediction_engine()
         self._ranker = StockRanker()
 
+    def _get_features(self, symbol: str) -> pd.DataFrame:
+        if self._registry.is_demo:
+            return self._registry.get_demo_features(symbol)
+        raise NotImplementedError(
+            "Real feature loading not yet implemented. Use --demo mode."
+        )
+
+    def _get_symbols(self, tier: str) -> list[str]:
+        if self._registry.is_demo:
+            return self._registry.get_demo_symbols()
+        from alphavedha.data.universe import get_symbols_for_tier
+        return get_symbols_for_tier(tier)
+
     async def predict_single(self, symbol: str, sector: str = "") -> StockPrediction:
         """Predict a single stock, checking cache first.
 
@@ -44,7 +58,7 @@ class PredictionService:
             logger.debug("cache_hit", symbol=symbol)
             return cached
 
-        features = self._registry.get_demo_features(symbol)
+        features = self._get_features(symbol)
         prediction = self._engine.predict(symbol, features, sector=sector)
 
         await self._cache.set(cache_key, prediction)
@@ -52,7 +66,7 @@ class PredictionService:
         return prediction
 
     async def scan_tier(self, tier: str, top_n: int = 10) -> RankingResult:
-        """Scan all demo symbols and rank them into buy/sell candidates.
+        """Scan symbols in a tier and rank them into buy/sell candidates.
 
         Args:
             tier: Universe tier name (e.g. "large", "mid").
@@ -61,7 +75,7 @@ class PredictionService:
         Returns:
             RankingResult with buy_candidates, sell_candidates, and excluded.
         """
-        symbols = self._registry.get_demo_symbols()
+        symbols = self._get_symbols(tier)
         logger.info("scan_started", tier=tier, symbols=len(symbols))
 
         predictions: list[StockPrediction] = []

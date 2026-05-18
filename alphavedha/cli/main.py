@@ -57,7 +57,7 @@ def predict(
             console.print(format_prediction(result))
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command()
@@ -90,7 +90,7 @@ def scan(
                     console.print(f"  [dim]... and {len(result.excluded) - 5} more[/dim]")
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command()

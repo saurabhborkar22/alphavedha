@@ -82,6 +82,25 @@ class TestBatchResponse:
         assert len(resp.failed) == 1
 
 
+class TestScanResponse:
+    def test_scan_response_structure(self) -> None:
+        resp = ScanResponse(
+            tier="large",
+            buy_candidates=[
+                PredictionResponse.from_stock_prediction(_make_prediction("TCS")),
+            ],
+            sell_candidates=[],
+            excluded=[],
+            total_scanned=1,
+            model_version="v0.1.0",
+        )
+        assert resp.tier == "large"
+        assert len(resp.buy_candidates) == 1
+        assert resp.total_scanned == 1
+        data = resp.model_dump(mode="json")
+        assert isinstance(data["generated_at"], str)
+
+
 class TestErrorResponse:
     def test_error_response_structure(self) -> None:
         resp = ErrorResponse(
