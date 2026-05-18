@@ -13,7 +13,7 @@ import structlog
 
 from alphavedha.data.preprocessing.pipeline import run_pipeline
 from alphavedha.data.providers.yfinance_provider import YFinanceProvider
-from alphavedha.data.store import store_ohlcv
+from alphavedha.data.store import store_derivatives, store_fii_dii, store_ohlcv
 from alphavedha.data.universe import (
     fetch_index_constituents,
     get_symbols_for_tier,
@@ -137,3 +137,89 @@ async def refresh_latest(
     end_date = date.today()
 
     return await ingest_universe(tier, start_date, end_date)
+
+
+@dataclass
+class FIIDIIResult:
+    """Summary of FII/DII ingestion."""
+
+    rows_fetched: int = 0
+    rows_stored: int = 0
+    categories: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+async def ingest_fii_dii() -> FIIDIIResult:
+    """Fetch today's FII/DII data from NSE and store it."""
+    from alphavedha.data.providers.nse_provider import NSEProvider, parse_fii_dii_response
+
+    provider = NSEProvider()
+    result = FIIDIIResult()
+
+    try:
+        raw = await provider.fetch_fii_dii_today()
+        result.rows_fetched = len(raw)
+
+        if not raw:
+            logger.warning("fii_dii_empty_response")
+            return result
+
+        parsed = parse_fii_dii_response(raw)
+        result.rows_stored = await store_fii_dii(parsed)
+        result.categories = list({r["category"] for r in parsed})
+
+        logger.info(
+            "fii_dii_ingested",
+            fetched=result.rows_fetched,
+            stored=result.rows_stored,
+            categories=result.categories,
+        )
+    except Exception as e:
+        result.error = str(e)
+        logger.error("fii_dii_ingestion_failed", error=str(e))
+
+    return result
+
+
+@dataclass
+class DerivativesResult:
+    """Summary of derivatives ingestion."""
+
+    symbols_requested: int = 0
+    symbols_succeeded: int = 0
+    rows_stored: int = 0
+    errors: dict[str, str] = field(default_factory=dict)
+
+
+async def ingest_derivatives(
+    symbols: list[str] | None = None,
+    tier: str = "large",
+) -> DerivativesResult:
+    """Fetch F&O data for symbols and store it."""
+    from alphavedha.data.providers.nse_provider import NSEProvider, parse_fno_to_derivatives
+
+    if symbols is None:
+        symbols = await get_symbols_for_tier(tier)
+
+    provider = NSEProvider()
+    result = DerivativesResult(symbols_requested=len(symbols))
+    today = date.today()
+
+    for symbol in symbols:
+        try:
+            fno_data = await provider.fetch_stock_fno_quote(symbol)
+            parsed = parse_fno_to_derivatives(fno_data, symbol, today)
+            stored = await store_derivatives([parsed])
+            result.symbols_succeeded += 1
+            result.rows_stored += stored
+        except Exception as e:
+            result.errors[symbol] = str(e)
+            logger.warning("derivatives_ingest_error", symbol=symbol, error=str(e))
+
+    logger.info(
+        "derivatives_ingested",
+        succeeded=result.symbols_succeeded,
+        requested=result.symbols_requested,
+        rows=result.rows_stored,
+    )
+    return result

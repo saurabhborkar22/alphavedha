@@ -61,6 +61,7 @@ class TierData:
 def _prepare_symbol_data(
     symbol: str,
     ohlcv_df: pd.DataFrame,
+    fii_dii_df: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.Series, pd.Series] | None:
     """Compute features and labels for a single symbol. Returns (X, y_direction, y_return) or None."""
     config = get_config()
@@ -69,7 +70,9 @@ def _prepare_symbol_data(
         logger.warning("train_skip_short", symbol=symbol, rows=len(ohlcv_df))
         return None
 
-    feature_result = compute_all_features(symbol=symbol, ohlcv_df=ohlcv_df)
+    feature_result = compute_all_features(
+        symbol=symbol, ohlcv_df=ohlcv_df, fii_dii_df=fii_dii_df,
+    )
     features_df = feature_result.df
 
     label_result = compute_triple_barrier_labels(
@@ -180,6 +183,15 @@ async def _load_tier_data(
     start_date = date(2020, 1, 1)
     end_date = date.today()
 
+    fii_dii_df: pd.DataFrame | None = None
+    try:
+        from alphavedha.features.macro import load_fii_dii_for_features
+        fii_dii_df = await load_fii_dii_for_features(str(start_date), str(end_date))
+        if fii_dii_df is not None and not fii_dii_df.empty:
+            logger.info("train_fii_dii_loaded", rows=len(fii_dii_df))
+    except Exception as e:
+        logger.warning("train_fii_dii_load_failed", error=str(e))
+
     for symbol in symbols:
         try:
             ohlcv_df = await load_ohlcv(symbol, start_date, end_date)
@@ -188,7 +200,7 @@ async def _load_tier_data(
                 continue
 
             ohlcv_by_symbol[symbol] = ohlcv_df
-            prepared = _prepare_symbol_data(symbol, ohlcv_df)
+            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df)
             if prepared is None:
                 continue
 
@@ -287,6 +299,13 @@ async def train_xgboost(
     start_date = date(2020, 1, 1)
     end_date = date.today()
 
+    fii_dii_df: pd.DataFrame | None = None
+    try:
+        from alphavedha.features.macro import load_fii_dii_for_features
+        fii_dii_df = await load_fii_dii_for_features(str(start_date), str(end_date))
+    except Exception:
+        pass
+
     for symbol in symbols:
         try:
             ohlcv_df = await load_ohlcv(symbol, start_date, end_date)
@@ -294,7 +313,7 @@ async def train_xgboost(
                 result.errors[symbol] = "no data in DB"
                 continue
 
-            prepared = _prepare_symbol_data(symbol, ohlcv_df)
+            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df)
             if prepared is None:
                 continue
 

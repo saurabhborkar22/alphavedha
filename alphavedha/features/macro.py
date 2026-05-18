@@ -53,6 +53,33 @@ _ALL_MACRO_COLUMNS = [
 ]
 
 
+async def load_fii_dii_for_features(start: str, end: str) -> pd.DataFrame:
+    """Load FII/DII data from DB and pivot into feature-ready format.
+
+    Returns DataFrame indexed by date with columns: fii_net, dii_net.
+    """
+    from datetime import date as date_type
+
+    from alphavedha.data.store import load_fii_dii
+
+    start_dt = date_type.fromisoformat(start)
+    end_dt = date_type.fromisoformat(end)
+    raw = await load_fii_dii(start_dt, end_dt)
+
+    if raw.empty:
+        return pd.DataFrame()
+
+    pivoted = raw.pivot_table(
+        index="date", columns="category", values="net_value", aggfunc="first"
+    )
+
+    result = pd.DataFrame(index=pivoted.index)
+    result["fii_net"] = pivoted.get("FII", pivoted.get("FPI", np.nan))
+    result["dii_net"] = pivoted.get("DII", np.nan)
+    result.index = pd.to_datetime(result.index)
+    return result
+
+
 def fetch_macro_data(start: str, end: str) -> pd.DataFrame:
     """Fetch market-wide macro data via yfinance."""
     import yfinance as yf
