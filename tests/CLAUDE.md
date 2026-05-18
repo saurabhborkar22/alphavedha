@@ -11,7 +11,9 @@ tests/
 │   ├── models/              # Model interface and prediction shape tests
 │   ├── prediction/          # Prediction engine orchestration tests
 │   ├── risk/                # Risk management logic tests
-│   └── api/                 # API endpoint tests (mocked prediction engine)
+│   ├── services/            # Service layer tests (ModelRegistry, PredictionCache, PredictionService)
+│   ├── api/                 # API endpoint tests (health, predictions, schemas, auth)
+│   └── cli/                 # CLI command and formatter tests
 ├── integration/             # Requires DB, slower
 │   ├── data/                # Full data pipeline: fetch → preprocess → store
 │   ├── features/            # Feature store read/write consistency

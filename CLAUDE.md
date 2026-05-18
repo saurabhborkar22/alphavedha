@@ -53,6 +53,12 @@ make predict SYMBOL=TCS.NS    # Predict one stock
 make scan TIER=large           # Scan Nifty 50
 make scan TIER=mid             # Scan Midcap 150
 
+# CLI (direct)
+alphavedha predict TCS --demo          # Predict with Rich output
+alphavedha predict TCS --demo --json   # Predict with JSON output
+alphavedha scan large --demo --top-n 5 # Scan and rank stocks
+alphavedha serve --demo                # Start API in demo mode
+
 # API
 make serve              # Start FastAPI dev server
 make serve-prod         # Start with gunicorn
@@ -72,12 +78,13 @@ alphavedha/
 │   ├── models/           # ML models (XGBoost, LSTM, TFT, HMM)
 │   ├── prediction/       # Prediction engine orchestrator
 │   ├── risk/             # Risk management (Kelly, circuit breakers)
+│   ├── services/         # Service layer (PredictionService, ModelRegistry, PredictionCache)
 │   ├── backtest/         # VectorBT backtesting + CPCV validation
 │   ├── monitoring/       # MLOps (drift detection, versioning)
 │   ├── fundamental/      # Phase 2: Balance sheet AI
 │   ├── signals/          # Phase 3: Signal timing
-│   ├── api/              # FastAPI endpoints
-│   └── cli/              # Typer CLI
+│   ├── api/              # FastAPI endpoints (app factory, auth, routes, schemas)
+│   └── cli/              # Typer CLI (predict, scan, serve, formatters)
 ├── tests/                # pytest test suite
 ├── configs/              # YAML configuration files
 ├── agents/               # Specialized Claude Code agent configs
