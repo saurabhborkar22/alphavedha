@@ -121,31 +121,223 @@ def serve(
     )
 
 
-# Data subcommands (stubs — out of scope for Week 8)
 data_app = typer.Typer(help="Data management commands")
 
 
 @data_app.command("refresh")
-def data_refresh() -> None:
-    """Fetch latest market data."""
-    typer.echo("Refreshing data... (not yet wired — requires DB)")
+def data_refresh(
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+    days: int = typer.Option(5, help="Lookback days for refresh"),
+) -> None:
+    """Fetch latest market data for a tier."""
+    from alphavedha.data.ingestion import refresh_latest
+
+    with console.status(f"Refreshing {tier} cap data (last {days} days)..."):
+        result = asyncio.run(refresh_latest(tier, lookback_days=days))
+
+    console.print(
+        f"[green]Done:[/green] {result.symbols_succeeded}/{result.symbols_requested} symbols, "
+        f"{result.total_rows_stored} rows stored"
+    )
+    if result.failed_symbols:
+        console.print(f"[yellow]Failed ({result.symbols_failed}):[/yellow] {', '.join(result.failed_symbols[:10])}")
 
 
 @data_app.command("backfill")
 def data_backfill(
-    start: str = typer.Option("2005-01-01", help="Start date for backfill (YYYY-MM-DD)"),
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+    start: str = typer.Option("2020-01-01", help="Start date (YYYY-MM-DD)"),
 ) -> None:
-    """Backfill historical market data."""
-    typer.echo(f"Backfilling from {start}... (not yet wired — requires DB)")
+    """Backfill historical market data for a tier."""
+    from alphavedha.data.ingestion import backfill
+
+    console.print(f"Backfilling [bold]{tier}[/bold] cap from {start}...")
+    result = asyncio.run(backfill(tier, start))
+
+    console.print(
+        f"[green]Done:[/green] {result.symbols_succeeded}/{result.symbols_requested} symbols, "
+        f"{result.total_rows_stored} rows stored"
+    )
+    if result.failed_symbols:
+        console.print(f"[yellow]Failed ({result.symbols_failed}):[/yellow] {', '.join(result.failed_symbols[:10])}")
+        for sym, err in list(result.errors.items())[:5]:
+            console.print(f"  [dim]{sym}: {err}[/dim]")
 
 
 @data_app.command("status")
 def data_status() -> None:
     """Show data freshness status."""
-    typer.echo("Checking data status... (not yet wired — requires DB)")
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import DailyOHLCV, IndexConstituent
+
+    from sqlalchemy import func, select
+
+    async def _status() -> None:
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            ohlcv_count = (await session.execute(select(func.count(DailyOHLCV.id)))).scalar() or 0
+            symbol_count = (await session.execute(
+                select(func.count(func.distinct(DailyOHLCV.symbol)))
+            )).scalar() or 0
+            latest_date = (await session.execute(select(func.max(DailyOHLCV.date)))).scalar()
+            index_count = (await session.execute(select(func.count(IndexConstituent.id)))).scalar() or 0
+
+        console.print(f"[bold]Database Status[/bold]")
+        console.print(f"  OHLCV rows:    {ohlcv_count:,}")
+        console.print(f"  Symbols:       {symbol_count}")
+        console.print(f"  Latest date:   {latest_date or 'no data'}")
+        console.print(f"  Index members: {index_count}")
+
+    asyncio.run(_status())
 
 
 app.add_typer(data_app, name="data")
+
+
+# Training subcommands
+train_app = typer.Typer(help="Model training commands")
+
+
+@train_app.command("xgboost")
+def train_xgboost_cmd(
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+) -> None:
+    """Train XGBoost model on all stocks in a tier."""
+    from alphavedha.training.pipeline import train_xgboost
+
+    console.print(f"Training XGBoost on [bold]{tier}[/bold] cap stocks...")
+    result = asyncio.run(train_xgboost(tier))
+
+    if result.train_result:
+        tr = result.train_result
+        console.print(f"\n[bold green]Training complete[/bold green]")
+        console.print(f"  Symbols:        {result.n_symbols}")
+        console.print(f"  Train rows:     {result.n_train_rows:,}")
+        console.print(f"  Val rows:       {result.n_val_rows:,}")
+        console.print(f"  Train accuracy: {tr.train_metrics.get('accuracy', 0):.3f}")
+        console.print(f"  Val accuracy:   {tr.val_metrics.get('accuracy', 0):.3f}")
+        console.print(f"  Val F1:         {tr.val_metrics.get('f1_weighted', 0):.3f}")
+        if "rmse" in tr.val_metrics:
+            console.print(f"  Val RMSE:       {tr.val_metrics['rmse']:.4f}")
+        console.print(f"  Time:           {result.total_time_seconds:.1f}s")
+        console.print(f"  Saved to:       {result.artifact_path}")
+    else:
+        console.print("[red]Training failed — no data available[/red]")
+
+    if result.errors:
+        console.print(f"\n[yellow]Errors ({len(result.errors)}):[/yellow]")
+        for sym, err in list(result.errors.items())[:5]:
+            console.print(f"  [dim]{sym}: {err}[/dim]")
+
+
+def _print_train_result(result: object) -> None:
+    """Print standard training result metrics."""
+    from alphavedha.training.pipeline import TrainingPipelineResult
+
+    r: TrainingPipelineResult = result  # type: ignore[assignment]
+    if r.train_result:
+        tr = r.train_result
+        console.print(f"\n[bold green]{r.model_name} training complete[/bold green]")
+        if r.n_symbols:
+            console.print(f"  Symbols:        {r.n_symbols}")
+        if r.n_train_rows:
+            console.print(f"  Train rows:     {r.n_train_rows:,}")
+        if r.n_val_rows:
+            console.print(f"  Val rows:       {r.n_val_rows:,}")
+        if "accuracy" in tr.train_metrics:
+            console.print(f"  Train accuracy: {tr.train_metrics['accuracy']:.3f}")
+        if "accuracy" in tr.val_metrics:
+            console.print(f"  Val accuracy:   {tr.val_metrics['accuracy']:.3f}")
+        if "f1_weighted" in tr.val_metrics:
+            console.print(f"  Val F1:         {tr.val_metrics['f1_weighted']:.3f}")
+        if "rmse" in tr.val_metrics:
+            console.print(f"  Val RMSE:       {tr.val_metrics['rmse']:.4f}")
+        console.print(f"  Time:           {tr.training_time_seconds:.1f}s")
+        if r.artifact_path:
+            console.print(f"  Saved to:       {r.artifact_path}")
+    elif r.extra_metrics:
+        console.print(f"\n[bold green]{r.model_name} training complete[/bold green]")
+        for k, v in r.extra_metrics.items():
+            console.print(f"  {k}: {v:.4f}")
+        if r.artifact_path:
+            console.print(f"  Saved to:       {r.artifact_path}")
+    else:
+        console.print(f"[red]{r.model_name} training failed — no data available[/red]")
+
+    if r.errors:
+        console.print(f"\n[yellow]Errors ({len(r.errors)}):[/yellow]")
+        for sym, err in list(r.errors.items())[:5]:
+            console.print(f"  [dim]{sym}: {err}[/dim]")
+
+
+@train_app.command("lstm")
+def train_lstm_cmd(
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+) -> None:
+    """Train LSTM model (requires XGBoost trained first for feature selection)."""
+    from alphavedha.training.pipeline import train_lstm
+
+    console.print(f"Training LSTM on [bold]{tier}[/bold] cap stocks...")
+    result = asyncio.run(train_lstm(tier))
+    _print_train_result(result)
+
+
+@train_app.command("tft")
+def train_tft_cmd(
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+) -> None:
+    """Train Temporal Fusion Transformer (TFT-lite) model."""
+    from alphavedha.training.pipeline import train_tft
+
+    console.print(f"Training TFT on [bold]{tier}[/bold] cap stocks...")
+    result = asyncio.run(train_tft(tier))
+    _print_train_result(result)
+
+
+@train_app.command("regime")
+def train_regime_cmd(
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+) -> None:
+    """Train HMM regime detector on portfolio returns + volatility."""
+    from alphavedha.training.pipeline import train_regime
+
+    console.print(f"Training Regime Detector on [bold]{tier}[/bold] cap stocks...")
+    result = asyncio.run(train_regime(tier))
+    _print_train_result(result)
+
+
+@train_app.command("all")
+def train_all_cmd(
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+) -> None:
+    """Train all models in dependency order: XGBoost → LSTM → TFT → Regime → Ensemble → Meta → Conformal."""
+    from alphavedha.training.pipeline import train_all
+
+    console.print(f"Training [bold]all models[/bold] on [bold]{tier}[/bold] cap stocks...")
+    console.print("Order: XGBoost → LSTM → TFT → Regime → Ensemble → Meta-labeling → Conformal\n")
+
+    results = asyncio.run(train_all(tier))
+
+    trained = [m for m, r in results.items() if r.artifact_path is not None]
+    failed = [m for m, r in results.items() if r.artifact_path is None]
+
+    console.print(f"\n[bold]{'='*50}[/bold]")
+    console.print(f"[bold]Training Summary[/bold]")
+    console.print(f"[bold]{'='*50}[/bold]")
+
+    for name, r in results.items():
+        _print_train_result(r)
+
+    console.print(f"\n[bold green]Trained:[/bold green] {', '.join(trained) if trained else 'none'}")
+    if failed:
+        console.print(f"[bold red]Failed:[/bold red] {', '.join(failed)}")
+
+    if results:
+        total = next(iter(results.values())).total_time_seconds
+        console.print(f"\n[bold]Total time: {total:.1f}s[/bold]")
+
+
+app.add_typer(train_app, name="train")
 
 if __name__ == "__main__":
     app()

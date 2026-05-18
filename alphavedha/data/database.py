@@ -27,7 +27,7 @@ def get_database_url() -> str:
         cfg = get_config()
         url = (
             f"postgresql+asyncpg://{cfg.project.name}:{cfg.project.name}_dev"
-            f"@localhost:5432/{cfg.project.name}"
+            f"@localhost:5435/{cfg.project.name}"
         )
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
