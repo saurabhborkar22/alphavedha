@@ -1,7 +1,7 @@
-"""Fundamental features — 5 earnings-based signals for PEAD analysis.
+"""Fundamental features — 9 signals: 5 earnings-based (PEAD) + 4 promoter/insider.
 
-Requires earnings_df DataFrame with quarterly results.
-Graceful degradation: returns NaN if no earnings data available.
+Requires earnings_df and/or promoter_df DataFrames.
+Graceful degradation: returns NaN if data sources unavailable.
 Column naming: fund_{indicator}.
 """
 
@@ -13,30 +13,51 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-FUNDAMENTAL_FEATURE_COUNT = 5
+FUNDAMENTAL_FEATURE_COUNT = 9
 
 
 def compute_fundamental_features(
     ohlcv_df: pd.DataFrame,
     earnings_df: pd.DataFrame | None = None,
+    promoter_df: pd.DataFrame | None = None,
+    insider_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Compute 5 fundamental features from quarterly earnings data.
+    """Compute 9 fundamental features: 5 earnings + 4 promoter/insider.
 
     Args:
         ohlcv_df: DataFrame with OHLCV data, DatetimeIndex.
         earnings_df: DataFrame with columns: symbol, quarter, year,
             revenue_actual, profit_actual, announced_date, expenses.
-            Sorted by (year, quarter).
+        promoter_df: DataFrame with columns: quarter_end, promoter_pct,
+            pledge_pct. Sorted by quarter_end.
+        insider_df: DataFrame with columns: trade_date, trade_type,
+            value_lakhs. One row per insider transaction.
 
     Returns:
-        DataFrame with 5 fund_* columns, same index as ohlcv_df.
+        DataFrame with 9 fund_* columns, same index as ohlcv_df.
     """
     result = pd.DataFrame(index=ohlcv_df.index)
 
-    if earnings_df is None or earnings_df.empty:
+    has_earnings = earnings_df is not None and not earnings_df.empty
+    has_promoter = promoter_df is not None and not promoter_df.empty
+
+    if not has_earnings:
         logger.warning("fundamental_no_earnings", msg="No earnings data, returning NaN")
-        for col in _ALL_COLUMNS:
+        for col in _EARNINGS_COLUMNS:
             result[col] = np.nan
+
+    if not has_promoter:
+        logger.debug("fundamental_no_promoter", msg="No promoter data")
+        for col in _PROMOTER_COLUMNS:
+            result[col] = np.nan
+
+    if not has_earnings and not has_promoter:
+        return result
+
+    if has_promoter:
+        _compute_promoter_features(result, ohlcv_df, promoter_df, insider_df)
+
+    if not has_earnings:
         return result
 
     earnings = earnings_df.copy()
@@ -92,13 +113,22 @@ def compute_fundamental_features(
     return result
 
 
-_ALL_COLUMNS = [
+_EARNINGS_COLUMNS = [
     "fund_earnings_surprise_pct",
     "fund_days_since_earnings",
     "fund_earnings_surprise_streak",
     "fund_revenue_growth_qoq",
     "fund_profit_margin_change",
 ]
+
+_PROMOTER_COLUMNS = [
+    "fund_promoter_pledge_pct",
+    "fund_pledge_change_qoq",
+    "fund_promoter_buying_30d",
+    "fund_insider_buy_sell_ratio",
+]
+
+_ALL_COLUMNS = _EARNINGS_COLUMNS + _PROMOTER_COLUMNS
 
 
 def _compute_surprise_series(earnings: pd.DataFrame) -> list[float]:
@@ -185,3 +215,59 @@ def _compute_surprise_streak(surprises: list[float]) -> list[float]:
         streaks.append(current_streak)
 
     return streaks
+
+
+def _compute_promoter_features(
+    result: pd.DataFrame,
+    ohlcv_df: pd.DataFrame,
+    promoter_df: pd.DataFrame,
+    insider_df: pd.DataFrame | None,
+) -> None:
+    """Compute 4 promoter/insider features using point-in-time logic."""
+    prom = promoter_df.copy()
+    prom["quarter_end"] = pd.to_datetime(prom["quarter_end"])
+    prom = prom.sort_values("quarter_end").reset_index(drop=True)
+
+    pledge_pct_arr = prom["pledge_pct"].values
+    quarter_ends = prom["quarter_end"].values
+
+    pledge_changes: list[float] = [np.nan]
+    for i in range(1, len(pledge_pct_arr)):
+        if pd.notna(pledge_pct_arr[i]) and pd.notna(pledge_pct_arr[i - 1]):
+            pledge_changes.append(pledge_pct_arr[i] - pledge_pct_arr[i - 1])
+        else:
+            pledge_changes.append(np.nan)
+
+    has_insider = insider_df is not None and not insider_df.empty
+    if has_insider:
+        ins = insider_df.copy()
+        ins["trade_date"] = pd.to_datetime(ins["trade_date"])
+
+    for idx in ohlcv_df.index:
+        ts = pd.Timestamp(idx)
+
+        mask = prom["quarter_end"] <= ts
+        last_q_idx = mask.sum() - 1
+
+        if last_q_idx >= 0:
+            result.loc[idx, "fund_promoter_pledge_pct"] = float(pledge_pct_arr[last_q_idx])
+            result.loc[idx, "fund_pledge_change_qoq"] = float(pledge_changes[last_q_idx])
+        else:
+            result.loc[idx, "fund_promoter_pledge_pct"] = np.nan
+            result.loc[idx, "fund_pledge_change_qoq"] = np.nan
+
+        if has_insider:
+            window_start = ts - pd.Timedelta(days=30)
+            recent = ins[(ins["trade_date"] >= window_start) & (ins["trade_date"] <= ts)]
+
+            buys = recent[recent["trade_type"] == "buy"]["value_lakhs"].sum()
+            sells = recent[recent["trade_type"] == "sell"]["value_lakhs"].sum()
+
+            result.loc[idx, "fund_promoter_buying_30d"] = int(buys > 0)
+            total = buys + sells
+            result.loc[idx, "fund_insider_buy_sell_ratio"] = (
+                buys / total if total > 0 else 0.5
+            )
+        else:
+            result.loc[idx, "fund_promoter_buying_30d"] = np.nan
+            result.loc[idx, "fund_insider_buy_sell_ratio"] = np.nan
