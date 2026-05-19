@@ -152,6 +152,138 @@ class EarningsResult(Base):
     )
 
 
+class PromoterHolding(Base):
+    """Quarterly promoter shareholding pattern (SEBI filing)."""
+
+    __tablename__ = "promoter_holdings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    quarter_end: Mapped[date] = mapped_column(Date, nullable=False)
+    promoter_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    pledge_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    public_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    fii_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    dii_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "quarter_end", name="uq_promoter_holding"),
+        Index("ix_promoter_holdings_symbol", "symbol"),
+        Index("ix_promoter_holdings_quarter", "quarter_end"),
+    )
+
+
+class InsiderTrade(Base):
+    """Insider (SAST) trading disclosures."""
+
+    __tablename__ = "insider_trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    person_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    person_category: Mapped[str] = mapped_column(String(100), nullable=True)
+    trade_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    shares: Mapped[int] = mapped_column(Integer, nullable=False)
+    value_lakhs: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        Index("ix_insider_trades_symbol", "symbol"),
+        Index("ix_insider_trades_date", "trade_date"),
+    )
+
+
+class NewsArticle(Base):
+    """Stored news articles for sentiment analysis."""
+
+    __tablename__ = "news_articles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=True)
+    published_date: Mapped[date] = mapped_column(Date, nullable=False)
+    sentiment_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("content_hash", name="uq_news_article_hash"),
+        Index("ix_news_articles_symbol_date", "symbol", "published_date"),
+        Index("ix_news_articles_date", "published_date"),
+    )
+
+
+class AlternativeData(Base):
+    """Monthly alternative data (auto sales, cement, PMI, credit growth)."""
+
+    __tablename__ = "alternative_data"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    data_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    period_date: Mapped[date] = mapped_column(Date, nullable=False)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    yoy_change: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("data_type", "period_date", name="uq_alternative_data"),
+        Index("ix_alternative_data_type_date", "data_type", "period_date"),
+    )
+
+
+class PaperTrade(Base):
+    """Paper trading prediction records — timestamped before market open."""
+
+    __tablename__ = "paper_trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    prediction_date: Mapped[date] = mapped_column(Date, nullable=False)
+    predicted_direction: Mapped[int] = mapped_column(Integer, nullable=False)
+    predicted_magnitude: Mapped[float] = mapped_column(Float, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    model_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    actual_return: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "prediction_date", name="uq_paper_trade"),
+        Index("ix_paper_trades_date", "prediction_date"),
+        Index("ix_paper_trades_symbol", "symbol"),
+    )
+
+
+class DailyPnL(Base):
+    """Daily paper portfolio P&L summary."""
+
+    __tablename__ = "daily_pnl"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
+    portfolio_value: Mapped[float] = mapped_column(Float, nullable=False)
+    daily_return: Mapped[float] = mapped_column(Float, nullable=False)
+    cumulative_return: Mapped[float] = mapped_column(Float, nullable=False)
+    n_positions: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_correct: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_total_predictions: Mapped[int] = mapped_column(Integer, nullable=False)
+    benchmark_return: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        Index("ix_daily_pnl_date", "date"),
+    )
+
+
 class Feature(Base):
     """Computed features stored for training-serving consistency."""
 

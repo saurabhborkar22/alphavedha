@@ -1,7 +1,7 @@
 # Feature Engineering — AlphaVedha
 
 ## Responsibility
-Compute all 145 features from raw market data. Features are grouped into 7 categories, each in its own module.
+Compute all 154 features from raw market data. Features are grouped into 8 categories, each in its own module.
 
 ## ABSOLUTE RULES
 1. **No future data.** Every feature at time T must use ONLY data available at or before T.
@@ -17,7 +17,7 @@ features/
 ├── technical.py           # 40 features (ta library): RSI, MACD, BB, ATR, OBV, ADX, etc.
 ├── returns.py             # 21 features: log returns, rolling stats, momentum, regime
 ├── calendar_features.py   # 18 features: F&O expiry, monsoon, RBI, result season
-├── microstructure.py      # 10 features: delivery %, z-score, volume anomaly
+├── microstructure.py      # 13 features: delivery %, z-score, volume anomaly, breakout
 ├── macro.py               # 25 features: VIX, FII/DII, FX, commodities, sector-relative
 ├── derivatives.py         # 20 features: futures OI, IV (Black-Scholes), PCR, max pain
 ├── sentiment.py           # 8 features: FinBERT news scores, velocity, article count

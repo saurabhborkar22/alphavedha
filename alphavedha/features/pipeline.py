@@ -24,7 +24,7 @@ from alphavedha.features.technical import compute_technical_features
 
 logger = structlog.get_logger(__name__)
 
-EXPECTED_FEATURE_COUNT = 150
+EXPECTED_FEATURE_COUNT = 154
 
 
 @dataclass
@@ -48,6 +48,9 @@ def compute_all_features(
     deriv_df: pd.DataFrame | None = None,
     daily_articles: dict[str, list[str]] | None = None,
     earnings_df: pd.DataFrame | None = None,
+    promoter_df: pd.DataFrame | None = None,
+    insider_df: pd.DataFrame | None = None,
+    alt_data_df: pd.DataFrame | None = None,
     frac_diff_col: str | None = None,
 ) -> FeatureResult:
     """Compute all features for a single symbol.
@@ -57,10 +60,10 @@ def compute_all_features(
     2. returns (20) — needs OHLCV + optional frac_diff
     3. calendar (18) — needs only DatetimeIndex
     4. microstructure (13) — needs delivery_pct column
-    5. macro (25) — needs macro_df
+    5. macro (25) — needs macro_df + alt_data_df
     6. derivatives (20) — needs deriv_df
     7. sentiment (8) — needs daily_articles
-    8. fundamental (5) — needs earnings_df
+    8. fundamental (9) — needs earnings_df + promoter_df + insider_df
     """
     start_time = time.perf_counter()
     warnings: list[str] = []
@@ -69,10 +72,10 @@ def compute_all_features(
     returns = compute_return_features(ohlcv_df, frac_diff_col=frac_diff_col)
     calendar = compute_calendar_features(ohlcv_df)
     micro = compute_microstructure_features(ohlcv_df)
-    macro = compute_macro_features(ohlcv_df, macro_df, fii_dii_df, sector_df)
+    macro = compute_macro_features(ohlcv_df, macro_df, fii_dii_df, sector_df, alt_data_df)
     deriv = compute_derivatives_features(ohlcv_df, deriv_df)
     sentiment = compute_sentiment_features(ohlcv_df, daily_articles)
-    fundamental = compute_fundamental_features(ohlcv_df, earnings_df)
+    fundamental = compute_fundamental_features(ohlcv_df, earnings_df, promoter_df, insider_df)
 
     all_features = pd.concat(
         [technical, returns, calendar, micro, macro, deriv, sentiment, fundamental],

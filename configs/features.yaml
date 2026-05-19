@@ -1,5 +1,5 @@
 # Feature Engineering Configuration
-# Total: 142 features across 7 groups
+# Total: 154 features across 8 groups
 
 technical:
   count: 40
@@ -186,7 +186,7 @@ sentiment:
     - {name: sent_neg_ratio, source: finbert, unit: ratio_0_1}
 
 fundamental:
-  count: 5
+  count: 9
   module: alphavedha.features.fundamental_features
   features:
     - {name: fund_earnings_surprise_pct, source: quarterly_results, unit: percentage}
@@ -194,11 +194,15 @@ fundamental:
     - {name: fund_earnings_surprise_streak, source: quarterly_results, unit: count}
     - {name: fund_revenue_growth_qoq, source: quarterly_results, unit: percentage}
     - {name: fund_profit_margin_change, source: quarterly_results, unit: percentage_points}
+    - {name: fund_promoter_pledge_pct, source: sebi_shareholding, unit: percentage}
+    - {name: fund_pledge_change_qoq, source: sebi_shareholding, unit: percentage_points}
+    - {name: fund_promoter_buying_30d, source: sebi_sast, unit: binary}
+    - {name: fund_insider_buy_sell_ratio, source: sebi_sast, unit: ratio_0_1}
 
 # Stub summary: 16 features return NaN/hardcoded values.
 # These need data providers that don't exist yet:
 #   - NSE participant-wise OI (4 deriv features)
-#   - PMI/macro data from government releases (4 macro features)
+#   - PMI/macro data from government releases (2 macro features, partially wired to alt_data)
 #   - Market breadth computation (2 macro features)
 #   - Options Greeks for GEX/delta (2 deriv features)
 #   - RBI G-Sec yield data (2 macro features)

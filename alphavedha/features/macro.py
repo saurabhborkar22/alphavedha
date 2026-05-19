@@ -161,6 +161,7 @@ def compute_macro_features(
     macro_df: pd.DataFrame | None = None,
     fii_dii_df: pd.DataFrame | None = None,
     sector_df: pd.DataFrame | None = None,
+    alt_data_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Compute 25 macro features."""
     result = pd.DataFrame(index=stock_df.index)
@@ -180,6 +181,9 @@ def compute_macro_features(
         result["macro_sector_ret_1d"] = sector_ret
         result["macro_sector_rel_ret_1d"] = stock_ret - sector_ret
 
+    if alt_data_df is not None and not alt_data_df.empty:
+        _compute_alt_data_features(result, alt_data_df, stock_df.index)
+
     for col in _ALL_MACRO_COLUMNS:
         if col not in result.columns:
             result[col] = np.nan
@@ -190,3 +194,30 @@ def compute_macro_features(
         n_rows=len(result),
     )
     return result
+
+
+def _compute_alt_data_features(
+    result: pd.DataFrame,
+    alt_data_df: pd.DataFrame,
+    index: pd.DatetimeIndex,
+) -> None:
+    """Compute macro features from alternative data (PMI, breadth, etc.)."""
+    alt = alt_data_df.copy()
+    if "period_date" in alt.columns:
+        alt["period_date"] = pd.to_datetime(alt["period_date"])
+
+    for data_type, col_name in [
+        ("pmi_manufacturing", "macro_pmi"),
+    ]:
+        subset = alt[alt["data_type"] == data_type] if "data_type" in alt.columns else pd.DataFrame()
+        if not subset.empty:
+            pmi_series = subset.set_index("period_date")["value"].sort_index()
+            pmi_aligned = pmi_series.reindex(index, method="ffill")
+            result[col_name] = pmi_aligned
+
+            staleness = pd.Series(np.nan, index=index)
+            for i, idx in enumerate(index):
+                valid = pmi_series.index[pmi_series.index <= idx]
+                if len(valid) > 0:
+                    staleness.iloc[i] = (idx - valid[-1]).days
+            result["macro_pmi_staleness_days"] = staleness
