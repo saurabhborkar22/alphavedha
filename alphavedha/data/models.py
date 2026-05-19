@@ -126,6 +126,32 @@ class DerivativesData(Base):
     )
 
 
+class EarningsResult(Base):
+    """Quarterly earnings results for PEAD analysis."""
+
+    __tablename__ = "earnings_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    quarter: Mapped[int] = mapped_column(Integer, nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    revenue_actual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    revenue_estimate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    revenue_surprise_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    profit_actual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    profit_estimate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    profit_surprise_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    expenses: Mapped[float | None] = mapped_column(Float, nullable=True)
+    announced_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "quarter", "year", name="uq_earnings_result"),
+        Index("ix_earnings_results_symbol", "symbol"),
+        Index("ix_earnings_results_announced", "announced_date"),
+    )
+
+
 class Feature(Base):
     """Computed features stored for training-serving consistency."""
 

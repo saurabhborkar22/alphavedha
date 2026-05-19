@@ -1,4 +1,4 @@
-"""Microstructure features — 10 India-specific delivery and volume signals.
+"""Microstructure features — 13 India-specific delivery and volume signals.
 
 Requires delivery_pct column from jugaad-data provider.
 Graceful degradation: returns zeros if delivery_pct is missing.
@@ -13,17 +13,17 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-MICROSTRUCTURE_FEATURE_COUNT = 10
+MICROSTRUCTURE_FEATURE_COUNT = 13
 
 
 def compute_microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute 10 microstructure features.
+    """Compute 13 microstructure features.
 
     Args:
         df: DataFrame with OHLCV columns and optional delivery_pct.
 
     Returns:
-        DataFrame with 10 micro_* columns, same index as input.
+        DataFrame with 13 micro_* columns, same index as input.
     """
     result = pd.DataFrame(index=df.index)
     close = df["close"].astype(float)
@@ -64,6 +64,22 @@ def compute_microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
     result["micro_ld_up"] = low_delivery * up_move
 
     result["micro_delivery_rolling_10d"] = delivery.rolling(10, min_periods=3).mean()
+
+    rolling_count = delivery.rolling(60, min_periods=10).count()
+    rolling_rank = delivery.rolling(60, min_periods=10).apply(
+        lambda x: x.rank().iloc[-1], raw=False,
+    )
+    result["micro_delivery_pct_rank"] = rolling_rank / rolling_count.replace(0, np.nan)
+
+    delivery_zscore = result["micro_delivery_zscore"]
+    result["micro_delivery_vol_combo"] = (
+        (delivery_zscore > 2.0) & (result["micro_vol_anomaly"] > 1.5)
+    ).astype(int)
+
+    rolling_20d_high = close.rolling(20, min_periods=5).max().shift(1)
+    result["micro_high_delivery_breakout"] = (
+        (delivery > 0.6) & (close > rolling_20d_high)
+    ).astype(int) if has_delivery else pd.Series(0, index=df.index, dtype=int)
 
     logger.info(
         "microstructure_features_computed",

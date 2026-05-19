@@ -239,6 +239,30 @@ def data_derivatives_refresh(
             console.print(f"  [dim]{sym}: {err}[/dim]")
 
 
+@data_app.command("earnings-refresh")
+def data_earnings_refresh(
+    tier: str = typer.Option("large", help="Market cap tier"),
+    symbol: str | None = typer.Option(None, help="Single symbol to fetch"),
+) -> None:
+    """Fetch quarterly earnings data for stocks."""
+    from alphavedha.data.ingestion import ingest_earnings
+
+    symbols = [symbol] if symbol else None
+    label = symbol or f"{tier} cap"
+
+    with console.status(f"Fetching earnings data for {label}..."):
+        result = asyncio.run(ingest_earnings(symbols=symbols, tier=tier))
+
+    console.print(
+        f"[green]Done:[/green] {result.symbols_succeeded}/{result.symbols_requested} symbols, "
+        f"{result.total_quarters} quarters stored"
+    )
+    if result.errors:
+        console.print(f"[yellow]Errors ({len(result.errors)}):[/yellow]")
+        for sym, err in list(result.errors.items())[:5]:
+            console.print(f"  [dim]{sym}: {err}[/dim]")
+
+
 app.add_typer(data_app, name="data")
 
 
@@ -386,6 +410,83 @@ def train_all_cmd(
 
 
 app.add_typer(train_app, name="train")
+
+
+# Backtest subcommands
+backtest_app = typer.Typer(help="Backtesting commands")
+
+
+@backtest_app.command("walk-forward")
+def backtest_walk_forward(
+    symbol: str = typer.Argument("TCS.NS", help="Stock symbol"),
+    start: str = typer.Option("2024-01-01", help="Test period start (YYYY-MM-DD)"),
+    end: str = typer.Option("2026-05-01", help="Test period end (YYYY-MM-DD)"),
+    tier: str = typer.Option("large", help="Market cap tier for costs"),
+) -> None:
+    """Run walk-forward backtest for a stock."""
+    from datetime import date as date_type
+
+    from alphavedha.backtest.walk_forward import run_walk_forward
+    from alphavedha.config import get_config
+
+    config = get_config()
+
+    console.print(f"Walk-forward backtest for [bold]{symbol}[/bold]")
+    console.print(f"Test period: {start} to {end}")
+    console.print("Loading data...")
+
+    def _run() -> None:
+        from alphavedha.data.store import load_ohlcv
+
+        ohlcv = asyncio.run(load_ohlcv(
+            symbol,
+            date_type.fromisoformat("2020-01-01"),
+            date_type.fromisoformat(end),
+        ))
+
+        if ohlcv.empty:
+            console.print("[red]No OHLCV data found. Run data backfill first.[/red]")
+            raise typer.Exit(code=1)
+
+        def dummy_predictions(train_df: object, test_df: object) -> object:
+            import pandas as _pd
+            import numpy as _np
+
+            idx = test_df.index  # type: ignore[union-attr]
+            rng = _np.random.default_rng(42)
+            return _pd.DataFrame({
+                "direction": rng.choice([-1, 0, 1], size=len(idx)),
+                "confidence": rng.uniform(0.4, 0.8, size=len(idx)),
+                "magnitude": rng.uniform(0.01, 0.05, size=len(idx)),
+            }, index=idx)
+
+        result = run_walk_forward(
+            ohlcv_df=ohlcv,
+            predictions_fn=dummy_predictions,
+            config=config.backtest,
+            start=date_type.fromisoformat(start),
+            end=date_type.fromisoformat(end),
+            market_cap_tier=tier,
+        )
+
+        console.print(f"\n[bold]{'='*50}[/bold]")
+        console.print(f"[bold]Walk-Forward Results[/bold]")
+        console.print(f"[bold]{'='*50}[/bold]")
+        console.print(f"  Folds:              {len(result.folds)}")
+        console.print(f"  Total trades:       {result.n_trades}")
+        console.print(f"  Total return:       {result.total_return:.2%}")
+        console.print(f"  Annualized return:  {result.annualized_return:.2%}")
+        console.print(f"  Sharpe ratio:       {result.sharpe_ratio:.4f}")
+        console.print(f"  Max drawdown:       {result.max_drawdown:.2%}")
+        console.print(f"  Win rate:           {result.win_rate:.2%}")
+        console.print(f"  Profit factor:      {result.profit_factor:.2f}")
+        console.print(f"  Benchmark return:   {result.benchmark_return:.2%}")
+        console.print(f"  Alpha:              {result.alpha_vs_benchmark:.2%}")
+
+    _run()
+
+
+app.add_typer(backtest_app, name="backtest")
 
 if __name__ == "__main__":
     app()

@@ -100,7 +100,7 @@ calendar:
     - {name: cal_days_in_quarter, source: date, unit: days}
 
 microstructure:
-  count: 10
+  count: 13
   module: alphavedha.features.microstructure
   features:
     - {name: micro_delivery_pct, source: jugaad_data, unit: ratio_0_1}
@@ -113,6 +113,9 @@ microstructure:
     - {name: micro_hd_down, source: delivery_close_open, unit: binary}
     - {name: micro_ld_up, source: delivery_close_open, unit: binary}
     - {name: micro_delivery_rolling_10d, window: 10, source: delivery_pct, unit: ratio_0_1}
+    - {name: micro_delivery_pct_rank, window: 60, source: delivery_pct, unit: ratio_0_1}
+    - {name: micro_delivery_vol_combo, window: 20, source: delivery_pct_volume, unit: binary}
+    - {name: micro_high_delivery_breakout, window: 20, source: delivery_pct_close, unit: binary}
 
 macro:
   count: 25
@@ -181,6 +184,16 @@ sentiment:
     - {name: sent_no_news_flag, source: article_count, unit: binary}
     - {name: sent_pos_ratio, source: finbert, unit: ratio_0_1}
     - {name: sent_neg_ratio, source: finbert, unit: ratio_0_1}
+
+fundamental:
+  count: 5
+  module: alphavedha.features.fundamental_features
+  features:
+    - {name: fund_earnings_surprise_pct, source: quarterly_results, unit: percentage}
+    - {name: fund_days_since_earnings, source: announced_date, unit: days}
+    - {name: fund_earnings_surprise_streak, source: quarterly_results, unit: count}
+    - {name: fund_revenue_growth_qoq, source: quarterly_results, unit: percentage}
+    - {name: fund_profit_margin_change, source: quarterly_results, unit: percentage_points}
 
 # Stub summary: 16 features return NaN/hardcoded values.
 # These need data providers that don't exist yet:

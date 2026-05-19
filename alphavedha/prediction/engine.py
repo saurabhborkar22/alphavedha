@@ -16,6 +16,7 @@ from alphavedha.models.conformal import ConformalPredictor
 from alphavedha.models.ensemble import EnsembleResult, StackingEnsemble
 from alphavedha.models.meta_model import MetaLabelingModel
 from alphavedha.models.regime import RegimeDetector, RegimeResult
+from alphavedha.prediction.regime_strategy import RegimeStrategySelector, StrategySelection
 from alphavedha.prediction.scorer import CompositeScorer
 from alphavedha.risk.portfolio import PortfolioState
 from alphavedha.risk.risk_manager import RiskManager
@@ -62,6 +63,7 @@ class PredictionEngine:
         conformal: ConformalPredictor,
         scorer: CompositeScorer,
         risk_manager: RiskManager,
+        regime_strategy: RegimeStrategySelector | None = None,
         model_version: str = "v0.1.0",
     ) -> None:
         self._models: dict[str, BaseModelProtocol] = {
@@ -75,6 +77,7 @@ class PredictionEngine:
         self._conformal = conformal
         self._scorer = scorer
         self._risk_manager = risk_manager
+        self._regime_strategy = regime_strategy or RegimeStrategySelector()
         self._model_version = model_version
 
     def predict(
@@ -90,14 +93,40 @@ class PredictionEngine:
 
         regime_name, regime_probs = self._run_regime(market_features, warnings)
 
+        strategy = self._regime_strategy.select(regime_name)
+        warnings.extend(strategy.warnings)
+
         base_predictions = self._run_base_models(features, warnings)
 
-        ensemble_result = self._ensemble.predict(base_predictions, regime_probs.reshape(1, -1))
+        if strategy.require_all_models_agree:
+            directions = [
+                int(p.direction[0]) for p in base_predictions.values()
+                if hasattr(p, "direction") and len(p.direction) > 0
+            ]
+            if len(set(directions)) > 1:
+                warnings.append(
+                    f"High-vol regime: models disagree ({directions}), marking untradeable"
+                )
+
+        ensemble_result = self._ensemble.predict(
+            base_predictions, regime_probs.reshape(1, -1),
+        )
         direction = int(ensemble_result.direction[0])
         magnitude = float(ensemble_result.magnitude[0])
         disagreement = float(ensemble_result.model_disagreement[0])
 
         meta_confidence, is_tradeable = self._run_meta(features, ensemble_result, warnings)
+
+        if meta_confidence < strategy.meta_confidence_threshold:
+            is_tradeable = False
+
+        if strategy.require_all_models_agree:
+            directions = [
+                int(p.direction[0]) for p in base_predictions.values()
+                if hasattr(p, "direction") and len(p.direction) > 0
+            ]
+            if len(set(directions)) > 1:
+                is_tradeable = False
 
         price_low, price_mid, price_high = self._run_conformal(features, warnings)
 
@@ -111,6 +140,8 @@ class PredictionEngine:
             sector=sector,
             portfolio=current_portfolio,
         )
+
+        position_size = risk.position_size_pct * strategy.kelly_fraction
 
         return StockPrediction(
             symbol=symbol,
@@ -126,7 +157,7 @@ class PredictionEngine:
             price_target_mid=price_mid,
             price_target_high=price_high,
             model_disagreement=disagreement,
-            position_size_pct=risk.position_size_pct,
+            position_size_pct=position_size,
             model_version=self._model_version,
             warnings=warnings,
         )
