@@ -13,7 +13,7 @@ import structlog
 
 from alphavedha.data.preprocessing.pipeline import run_pipeline
 from alphavedha.data.providers.yfinance_provider import YFinanceProvider
-from alphavedha.data.store import store_derivatives, store_fii_dii, store_ohlcv
+from alphavedha.data.store import store_derivatives, store_earnings, store_fii_dii, store_ohlcv
 from alphavedha.data.universe import (
     fetch_index_constituents,
     get_symbols_for_tier,
@@ -221,5 +221,49 @@ async def ingest_derivatives(
         succeeded=result.symbols_succeeded,
         requested=result.symbols_requested,
         rows=result.rows_stored,
+    )
+    return result
+
+
+@dataclass
+class EarningsIngestionResult:
+    """Summary of earnings ingestion."""
+
+    symbols_requested: int = 0
+    symbols_succeeded: int = 0
+    total_quarters: int = 0
+    errors: dict[str, str] = field(default_factory=dict)
+
+
+async def ingest_earnings(
+    symbols: list[str] | None = None,
+    tier: str = "large",
+) -> EarningsIngestionResult:
+    """Fetch quarterly earnings for symbols and store them."""
+    from alphavedha.data.providers.earnings_provider import EarningsProvider
+
+    if symbols is None:
+        symbols = await get_symbols_for_tier(tier)
+
+    provider = EarningsProvider()
+    result = EarningsIngestionResult(symbols_requested=len(symbols))
+
+    for symbol in symbols:
+        try:
+            nse_sym = symbol.replace(".NS", "").replace(".BO", "")
+            earnings = await provider.fetch_quarterly_results(nse_sym)
+            if earnings:
+                stored = await store_earnings(earnings)
+                result.symbols_succeeded += 1
+                result.total_quarters += stored
+        except Exception as e:
+            result.errors[symbol] = str(e)
+            logger.warning("earnings_ingest_error", symbol=symbol, error=str(e))
+
+    logger.info(
+        "earnings_ingested",
+        succeeded=result.symbols_succeeded,
+        requested=result.symbols_requested,
+        quarters=result.total_quarters,
     )
     return result

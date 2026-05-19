@@ -15,7 +15,13 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from alphavedha.data.database import get_session_factory
-from alphavedha.data.models import DailyOHLCV, DerivativesData, Feature, InstitutionalFlow
+from alphavedha.data.models import (
+    DailyOHLCV,
+    DerivativesData,
+    EarningsResult,
+    Feature,
+    InstitutionalFlow,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -359,3 +365,90 @@ async def load_derivatives(
     df = pd.DataFrame(records)
     df["date"] = pd.to_datetime(df["date"])
     return df
+
+
+async def store_earnings(rows: list[dict]) -> int:
+    """Store quarterly earnings results. Upserts on (symbol, quarter, year)."""
+    if not rows:
+        return 0
+
+    session_factory = get_session_factory()
+    stored = 0
+
+    async with session_factory() as session:
+        for row in rows:
+            values = {
+                "symbol": row["symbol"],
+                "quarter": row["quarter"],
+                "year": row["year"],
+                "revenue_actual": row.get("revenue_actual"),
+                "revenue_estimate": row.get("revenue_estimate"),
+                "revenue_surprise_pct": row.get("revenue_surprise_pct"),
+                "profit_actual": row.get("profit_actual"),
+                "profit_estimate": row.get("profit_estimate"),
+                "profit_surprise_pct": row.get("profit_surprise_pct"),
+                "expenses": row.get("expenses"),
+                "announced_date": row.get("announced_date"),
+            }
+            update_values = {
+                k: v for k, v in values.items()
+                if k not in ("symbol", "quarter", "year")
+            }
+
+            stmt = (
+                pg_insert(EarningsResult)
+                .values(**values)
+                .on_conflict_do_update(
+                    constraint="uq_earnings_result",
+                    set_=update_values,
+                )
+            )
+            await session.execute(stmt)
+            stored += 1
+
+        await session.commit()
+
+    logger.info("earnings_stored", rows=stored)
+    return stored
+
+
+async def load_earnings(
+    symbol: str,
+    min_year: int | None = None,
+) -> pd.DataFrame:
+    """Load earnings results for a symbol, optionally filtered by year."""
+    session_factory = get_session_factory()
+
+    async with session_factory() as session:
+        stmt = (
+            select(EarningsResult)
+            .where(EarningsResult.symbol == symbol)
+        )
+        if min_year is not None:
+            stmt = stmt.where(EarningsResult.year >= min_year)
+        stmt = stmt.order_by(EarningsResult.year, EarningsResult.quarter)
+
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    if not rows:
+        return pd.DataFrame()
+
+    records = [
+        {
+            "symbol": r.symbol,
+            "quarter": r.quarter,
+            "year": r.year,
+            "revenue_actual": r.revenue_actual,
+            "revenue_estimate": r.revenue_estimate,
+            "revenue_surprise_pct": r.revenue_surprise_pct,
+            "profit_actual": r.profit_actual,
+            "profit_estimate": r.profit_estimate,
+            "profit_surprise_pct": r.profit_surprise_pct,
+            "expenses": r.expenses,
+            "announced_date": r.announced_date,
+        }
+        for r in rows
+    ]
+
+    return pd.DataFrame(records)

@@ -15,6 +15,7 @@ import structlog
 
 from alphavedha.features.calendar_features import compute_calendar_features
 from alphavedha.features.derivatives import compute_derivatives_features
+from alphavedha.features.fundamental_features import compute_fundamental_features
 from alphavedha.features.macro import compute_macro_features
 from alphavedha.features.microstructure import compute_microstructure_features
 from alphavedha.features.returns import compute_return_features
@@ -23,7 +24,7 @@ from alphavedha.features.technical import compute_technical_features
 
 logger = structlog.get_logger(__name__)
 
-EXPECTED_FEATURE_COUNT = 142
+EXPECTED_FEATURE_COUNT = 150
 
 
 @dataclass
@@ -46,6 +47,7 @@ def compute_all_features(
     sector_df: pd.DataFrame | None = None,
     deriv_df: pd.DataFrame | None = None,
     daily_articles: dict[str, list[str]] | None = None,
+    earnings_df: pd.DataFrame | None = None,
     frac_diff_col: str | None = None,
 ) -> FeatureResult:
     """Compute all features for a single symbol.
@@ -54,10 +56,11 @@ def compute_all_features(
     1. technical (40) — needs only OHLCV
     2. returns (20) — needs OHLCV + optional frac_diff
     3. calendar (18) — needs only DatetimeIndex
-    4. microstructure (10) — needs delivery_pct column
+    4. microstructure (13) — needs delivery_pct column
     5. macro (25) — needs macro_df
     6. derivatives (20) — needs deriv_df
     7. sentiment (8) — needs daily_articles
+    8. fundamental (5) — needs earnings_df
     """
     start_time = time.perf_counter()
     warnings: list[str] = []
@@ -69,9 +72,10 @@ def compute_all_features(
     macro = compute_macro_features(ohlcv_df, macro_df, fii_dii_df, sector_df)
     deriv = compute_derivatives_features(ohlcv_df, deriv_df)
     sentiment = compute_sentiment_features(ohlcv_df, daily_articles)
+    fundamental = compute_fundamental_features(ohlcv_df, earnings_df)
 
     all_features = pd.concat(
-        [technical, returns, calendar, micro, macro, deriv, sentiment],
+        [technical, returns, calendar, micro, macro, deriv, sentiment, fundamental],
         axis=1,
     )
 

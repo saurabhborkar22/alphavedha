@@ -1,7 +1,7 @@
 # Feature Engineering — AlphaVedha
 
 ## Responsibility
-Compute all 142 features from raw market data. Features are grouped into 7 categories, each in its own module.
+Compute all 145 features from raw market data. Features are grouped into 7 categories, each in its own module.
 
 ## ABSOLUTE RULES
 1. **No future data.** Every feature at time T must use ONLY data available at or before T.
@@ -46,10 +46,10 @@ features/
 - F&O expiry: `_last_thursday_of_month()` helper
 - **Features:** cal_dow, cal_month, cal_quarter, cal_week_of_month, cal_days_to_monthly_expiry, cal_is_expiry_{week,day}, cal_days_to_rbi, cal_is_budget_month, cal_is_{january,december}, cal_monsoon_flag, cal_is_result_season, cal_doy, cal_year, cal_week_of_year, cal_is_monday, cal_days_in_quarter
 
-### microstructure.py (10 features)
+### microstructure.py (13 features)
 - Requires `delivery_pct` column from jugaad-data provider
 - Graceful degradation: returns zeros + warning if delivery_pct missing
-- **Features:** micro_delivery_pct, micro_delivery_zscore, micro_delivery_to_ma5, micro_delivery_trend_5d, micro_delivery_accel, micro_vol_anomaly, micro_hd_{up,down}, micro_ld_up, micro_delivery_rolling_10d
+- **Features:** micro_delivery_pct, micro_delivery_zscore, micro_delivery_to_ma5, micro_delivery_trend_5d, micro_delivery_accel, micro_vol_anomaly, micro_hd_{up,down}, micro_ld_up, micro_delivery_rolling_10d, micro_delivery_pct_rank, micro_delivery_vol_combo, micro_high_delivery_breakout
 
 ### macro.py (25 features)
 - Two-layer: `fetch_macro_data()` fetches via yfinance, `compute_macro_features()` computes
@@ -85,7 +85,7 @@ Features that return NaN because their data sources aren't built yet:
 - **Config:** All stubs marked with `stub: true` + `stub_reason` in `configs/features.yaml`
 
 ## Testing
-- Unit tests: `tests/unit/features/` — 65 tests covering all 7 modules + pipeline
+- Unit tests: `tests/unit/features/` — 70 tests covering all 7 modules + pipeline
 - Key assertions: bounded values (RSI 0-100, ratios 0-1), no look-ahead, graceful degradation, correct column counts
 - Run: `pytest tests/unit/features/ -v`
 
