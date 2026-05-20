@@ -35,3 +35,10 @@ class TestHealthEndpoints:
         data = resp.json()
         assert "models_loaded" in data
         assert "cache_available" in data
+        assert "database_available" in data
+        assert "ready" in data
+
+    def test_metrics_endpoint(self, client: TestClient) -> None:
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+        assert "http_request" in resp.text or "HELP" in resp.text

@@ -1,5 +1,6 @@
-"""MLOps monitoring — drift detection, performance tracking, and retraining."""
+"""MLOps monitoring — drift detection, performance tracking, retraining, and alerting."""
 
+from alphavedha.monitoring.alerts import AlertConfig, AlertLevel, EmailAlerter
 from alphavedha.monitoring.drift import DriftDetector, DriftReport, DriftResult
 from alphavedha.monitoring.performance import (
     PerformanceMonitor,
@@ -13,9 +14,12 @@ from alphavedha.monitoring.retrainer import (
 )
 
 __all__ = [
+    "AlertConfig",
+    "AlertLevel",
     "DriftDetector",
     "DriftReport",
     "DriftResult",
+    "EmailAlerter",
     "ModelVersion",
     "PerformanceMonitor",
     "PerformanceReport",
