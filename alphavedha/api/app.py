@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -141,5 +142,10 @@ def create_app(demo: bool | None = None) -> FastAPI:
     app.include_router(paper_trading.router)
     app.include_router(dashboard.router)
     app.include_router(public.router)
+
+    Instrumentator(
+        should_group_status_codes=True,
+        excluded_handlers=["/health", "/metrics"],
+    ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
     return app
