@@ -6,7 +6,7 @@ entry/exit signals. Works in all market regimes since it's market-neutral.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 
 import numpy as np

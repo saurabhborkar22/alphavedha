@@ -121,10 +121,7 @@ class RolloutBuffer:
         last_gae = 0.0
 
         for t in reversed(range(n)):
-            if t == n - 1:
-                next_value = 0.0
-            else:
-                next_value = self.values[t + 1]
+            next_value = 0.0 if t == n - 1 else self.values[t + 1]
 
             next_non_terminal = 0.0 if self.dones[t] else 1.0
             delta = self.rewards[t] + gamma * next_value * next_non_terminal - self.values[t]

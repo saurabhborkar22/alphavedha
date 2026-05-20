@@ -1,6 +1,7 @@
 """Risk management — position sizing, portfolio constraints, circuit breakers."""
 
 from alphavedha.risk.circuit_breaker import CircuitBreaker, CircuitBreakerState
+from alphavedha.risk.impact_model import ImpactEstimate, MarketImpactModel
 from alphavedha.risk.portfolio import (
     ConstraintResult,
     HoldingInfo,
@@ -15,6 +16,8 @@ __all__ = [
     "CircuitBreakerState",
     "ConstraintResult",
     "HoldingInfo",
+    "ImpactEstimate",
+    "MarketImpactModel",
     "PortfolioConstraints",
     "PortfolioState",
     "RiskAssessment",

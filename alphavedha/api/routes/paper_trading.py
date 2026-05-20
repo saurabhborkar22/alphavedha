@@ -8,10 +8,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
-import structlog
 
 logger = structlog.get_logger(__name__)
 
@@ -93,7 +92,7 @@ async def record_prediction(req: PaperTradeRequest) -> PaperTradeResponse:
         await store_paper_trade(row)
     except Exception as e:
         logger.error("paper_trade_store_failed", error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to store prediction")
+        raise HTTPException(status_code=500, detail="Failed to store prediction") from None
 
     return PaperTradeResponse(
         symbol=req.symbol,
@@ -121,7 +120,7 @@ async def record_outcome(req: TradeOutcomeRequest) -> dict:
         )
     except Exception as e:
         logger.error("paper_outcome_failed", error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to update outcome")
+        raise HTTPException(status_code=500, detail="Failed to update outcome") from None
 
     return {"status": "updated", "symbol": req.symbol, "date": req.prediction_date}
 
@@ -129,9 +128,9 @@ async def record_outcome(req: TradeOutcomeRequest) -> dict:
 @router.get("/dashboard", response_model=DashboardSummary)
 async def get_dashboard() -> DashboardSummary:
     """Get paper trading dashboard summary."""
-    from alphavedha.data.store import load_paper_trades
-
     import numpy as np
+
+    from alphavedha.data.store import load_paper_trades
 
     trades_df = await load_paper_trades()
 

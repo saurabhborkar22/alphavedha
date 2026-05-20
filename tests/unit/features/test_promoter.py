@@ -107,7 +107,7 @@ class TestPromoterFeatures:
         )
         valid = result["fund_promoter_buying_30d"].dropna()
         if not valid.empty:
-            assert set(valid.unique()).issubset({0, 1, 0.0, 1.0})
+            assert set(valid.unique()).issubset({0, 1})
 
     def test_no_lookahead_promoter(self) -> None:
         """Promoter data from Q3 2024 should not appear before that quarter ends."""

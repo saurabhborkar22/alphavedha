@@ -6,12 +6,11 @@ the system's prediction accuracy and paper trading performance.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
-
-from fastapi import APIRouter
-from pydantic import BaseModel
+from datetime import date
 
 import structlog
+from fastapi import APIRouter
+from pydantic import BaseModel
 
 logger = structlog.get_logger(__name__)
 
@@ -53,9 +52,8 @@ class PublicTrackRecord(BaseModel):
 @router.get("/track-record", response_model=PublicTrackRecord)
 async def get_track_record() -> PublicTrackRecord:
     """Get full public track record with accuracy breakdowns."""
-    from alphavedha.data.store import load_daily_pnl, load_paper_trades
 
-    import numpy as np
+    from alphavedha.data.store import load_daily_pnl, load_paper_trades
 
     trades_df = await load_paper_trades()
     pnl_df = await load_daily_pnl()

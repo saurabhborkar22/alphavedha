@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import requests
 import structlog
+import yaml
 
 from alphavedha.data.providers.base import RateLimiter
 
@@ -27,58 +29,17 @@ _HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/json",
 }
 
-_SYMBOL_TO_SCREENER_SLUG: dict[str, str] = {
-    "RELIANCE": "RELIANCE",
-    "TCS": "TCS",
-    "HDFCBANK": "HDFCBANK",
-    "INFY": "INFY",
-    "ICICIBANK": "ICICIBANK",
-    "HINDUNILVR": "HINDUNILVR",
-    "BHARTIARTL": "BHARTIARTL",
-    "ITC": "ITC",
-    "SBIN": "SBIN",
-    "BAJFINANCE": "BAJFINANCE",
-    "KOTAKBANK": "KOTAKBANK",
-    "LT": "LT",
-    "AXISBANK": "AXISBANK",
-    "WIPRO": "WIPRO",
-    "HCLTECH": "HCLTECH",
-    "ASIANPAINT": "ASIANPAINT",
-    "MARUTI": "MARUTI",
-    "SUNPHARMA": "SUNPHARMA",
-    "TITAN": "TITAN",
-    "TATAMOTORS": "TATAMOTORS",
-    "ULTRACEMCO": "ULTRACEMCO",
-    "NTPC": "NTPC",
-    "TATASTEEL": "TATASTEEL",
-    "POWERGRID": "POWERGRID",
-    "ONGC": "ONGC",
-    "NESTLEIND": "NESTLEIND",
-    "BAJAJFINSV": "BAJAJFINSV",
-    "INDUSINDBK": "INDUSINDBK",
-    "M&M": "M&M",
-    "ADANIENT": "ADANIENT",
-    "ADANIPORTS": "ADANIPORTS",
-    "COALINDIA": "COALINDIA",
-    "JSWSTEEL": "JSWSTEEL",
-    "TECHM": "TECHM",
-    "BAJAJ-AUTO": "BAJAJ-AUTO",
-    "GRASIM": "GRASIM",
-    "BPCL": "BPCL",
-    "HEROMOTOCO": "HEROMOTOCO",
-    "DIVISLAB": "DIVISLAB",
-    "DRREDDY": "DRREDDY",
-    "BRITANNIA": "BRITANNIA",
-    "CIPLA": "CIPLA",
-    "EICHERMOT": "EICHERMOT",
-    "APOLLOHOSP": "APOLLOHOSP",
-    "TATACONSUM": "TATACONSUM",
-    "SBILIFE": "SBILIFE",
-    "HDFCLIFE": "HDFCLIFE",
-    "HINDALCO": "HINDALCO",
-    "SHRIRAMFIN": "SHRIRAMFIN",
-    "WIPRO": "WIPRO",
-}
+_CONFIGS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "configs"
+
+
+def _load_screener_symbols() -> dict[str, str]:
+    path = _CONFIGS_DIR / "stocks.yaml"
+    with path.open() as f:
+        data = yaml.safe_load(f)
+    return data.get("screener_symbols", {})
+
+
+_SYMBOL_TO_SCREENER_SLUG: dict[str, str] = _load_screener_symbols()
 
 
 def _strip_suffix(symbol: str) -> str:
@@ -189,7 +150,7 @@ def _parse_screener_quarterly(
         revenue_row = _find_row(data, "Sales")
         expenses_row = _find_row(data, "Expenses")
         profit_row = _find_row(data, "Net Profit")
-        opm_row = _find_row(data, "OPM")
+        _opm_row = _find_row(data, "OPM")
     else:
         return results
 

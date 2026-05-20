@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from alphavedha.features.fundamental_features import (
     FUNDAMENTAL_FEATURE_COUNT,

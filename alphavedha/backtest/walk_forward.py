@@ -6,7 +6,7 @@ generate predictions, and measure P&L with full Indian market costs.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 
 import numpy as np

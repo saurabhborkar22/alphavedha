@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
-
 import numpy as np
 import pandas as pd
-import pytest
 
 from alphavedha.signals.pairs import PairsTrader
 from alphavedha.signals.pairs_universe import (
@@ -60,7 +57,7 @@ class TestPairUniverse:
 
     def test_validate_cointegrated_pair(self) -> None:
         a, b = _make_cointegrated_pair()
-        is_valid, pval, corr, hl, hr = validate_pair(a, b, max_pvalue=0.10)
+        _is_valid, pval, corr, _hl, _hr = validate_pair(a, b, max_pvalue=0.10)
         assert corr > 0.5
         assert pval < 1.0
 
@@ -80,7 +77,7 @@ class TestPairUniverse:
         assert results[0].sector == "Test"
 
     def test_scan_skips_missing_symbols(self) -> None:
-        a, b = _make_cointegrated_pair()
+        a, _b = _make_cointegrated_pair()
         price_data = {"SYM_A": a}
         candidates = [("SYM_A", "SYM_B", "Test")]
         results = scan_pair_universe(price_data, candidates)

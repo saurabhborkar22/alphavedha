@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from alphavedha.models.rl_agent import PPOAgent, PPOConfig, RolloutBuffer
 from alphavedha.models.trading_env import EnvConfig, TradingEnvironment

@@ -16,7 +16,7 @@ from alphavedha.models.conformal import ConformalPredictor
 from alphavedha.models.ensemble import EnsembleResult, StackingEnsemble
 from alphavedha.models.meta_model import MetaLabelingModel
 from alphavedha.models.regime import RegimeDetector, RegimeResult
-from alphavedha.prediction.regime_strategy import RegimeStrategySelector, StrategySelection
+from alphavedha.prediction.regime_strategy import RegimeStrategySelector
 from alphavedha.prediction.scorer import CompositeScorer
 from alphavedha.risk.portfolio import PortfolioState
 from alphavedha.risk.risk_manager import RiskManager

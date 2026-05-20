@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 
 import httpx
 import structlog

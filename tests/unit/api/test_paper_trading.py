@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from alphavedha.api.routes.paper_trading import (
-    DashboardSummary,
-    PaperTradeRequest,
-    PaperTradeResponse,
-    PredictionRecord,
-    TradeOutcomeRequest,
-)
 from alphavedha.api.routes.dashboard import (
     AccuracyByCategory,
     DailyPnLRecord,
     PublicTrackRecord,
+)
+from alphavedha.api.routes.paper_trading import (
+    DashboardSummary,
+    PaperTradeRequest,
+    PredictionRecord,
+    TradeOutcomeRequest,
 )
 
 
@@ -31,7 +30,7 @@ class TestPaperTradingSchemas:
         assert req.predicted_direction == 1
 
     def test_paper_trade_request_direction_bounds(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             PaperTradeRequest(
                 symbol="TCS.NS",
                 predicted_direction=2,
@@ -41,7 +40,7 @@ class TestPaperTradingSchemas:
             )
 
     def test_paper_trade_request_confidence_bounds(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             PaperTradeRequest(
                 symbol="TCS.NS",
                 predicted_direction=1,

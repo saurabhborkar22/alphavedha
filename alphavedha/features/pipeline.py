@@ -24,7 +24,7 @@ from alphavedha.features.technical import compute_technical_features
 
 logger = structlog.get_logger(__name__)
 
-EXPECTED_FEATURE_COUNT = 154
+EXPECTED_FEATURE_COUNT = 159
 
 
 @dataclass

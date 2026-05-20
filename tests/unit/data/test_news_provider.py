@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
-
-import pytest
-
 from alphavedha.data.providers.news_provider import NewsProvider
-
 
 _SAMPLE_RSS = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
