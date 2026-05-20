@@ -230,7 +230,7 @@ async def _load_tier_data(
     def _concat(parts: list[tuple[pd.DataFrame, pd.Series, pd.Series]]) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
         if not parts:
             return pd.DataFrame(), pd.Series(dtype=float), pd.Series(dtype=float)
-        Xs, ys, rs = zip(*parts)
+        Xs, ys, rs = zip(*parts, strict=True)
         return (
             pd.concat(Xs, ignore_index=True),
             pd.concat(ys, ignore_index=True),
@@ -417,7 +417,6 @@ def _train_lstm_on_data(
     config = get_config()
 
     X_train = _fill_nan_for_torch(data.X_train[top_features])
-    X_oof = _fill_nan_for_torch(data.X_oof[top_features])
     X_val = _fill_nan_for_torch(data.X_val[top_features])
 
     model = LSTMModel(config=config.models.lstm)
@@ -468,7 +467,7 @@ def _train_regime_on_data(
     config = get_config()
 
     all_returns: list[pd.Series] = []
-    for symbol, ohlcv_df in data.ohlcv_by_symbol.items():
+    for _symbol, ohlcv_df in data.ohlcv_by_symbol.items():
         if "close" in ohlcv_df.columns and len(ohlcv_df) > 50:
             rets = np.log(ohlcv_df["close"] / ohlcv_df["close"].shift(1)).dropna()
             all_returns.append(rets)
@@ -536,7 +535,7 @@ def _get_regime_probs(
         realized_vol = portfolio_returns.rolling(20).std().dropna()
         portfolio_returns = portfolio_returns.loc[realized_vol.index]
 
-        regime_result = detector.predict(portfolio_returns, realized_vol)
+        detector.predict(portfolio_returns, realized_vol)
         regime_features = detector.get_regime_features()
         probs = regime_features.values
 

@@ -15,10 +15,8 @@ from alphavedha.data.preprocessing.pipeline import run_pipeline
 from alphavedha.data.providers.yfinance_provider import YFinanceProvider
 from alphavedha.data.store import store_derivatives, store_earnings, store_fii_dii, store_ohlcv
 from alphavedha.data.universe import (
-    fetch_index_constituents,
     get_symbols_for_tier,
     refresh_universe,
-    save_constituents,
 )
 
 logger = structlog.get_logger(__name__)

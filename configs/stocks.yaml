@@ -1,0 +1,152 @@
+# Stock Reference Data — AlphaVedha
+#
+# Hardcoded stock maps used across the system. Update when Nifty 50
+# rebalances (semi-annually: March, September).
+#
+# Last updated: 2026-05-20
+
+# ─── Sector Classification ───────────────────────────────
+# Maps sectors to their constituent NSE symbols.
+# Used by: GNN graph builder (stock_graph.py)
+sectors:
+  banking:
+    - HDFCBANK
+    - ICICIBANK
+    - SBIN
+    - KOTAKBANK
+    - AXISBANK
+    - INDUSINDBK
+  it:
+    - TCS
+    - INFY
+    - WIPRO
+    - HCLTECH
+    - TECHM
+    - LTIM
+  energy:
+    - RELIANCE
+    - ONGC
+    - NTPC
+    - POWERGRID
+    - BPCL
+    - COALINDIA
+  auto:
+    - MARUTI
+    - TATAMOTORS
+    - "M&M"
+    - BAJAJ-AUTO
+    - HEROMOTOCO
+    - EICHERMOT
+  pharma:
+    - SUNPHARMA
+    - DRREDDY
+    - CIPLA
+    - DIVISLAB
+    - APOLLOHOSP
+  fmcg:
+    - HINDUNILVR
+    - ITC
+    - NESTLEIND
+    - BRITANNIA
+    - TATACONSUM
+  metals:
+    - TATASTEEL
+    - JSWSTEEL
+    - HINDALCO
+    - ADANIENT
+  financial:
+    - BAJFINANCE
+    - BAJAJFINSV
+    - SBILIFE
+    - HDFCLIFE
+  infra:
+    - LT
+    - ADANIPORTS
+    - ULTRACEMCO
+    - GRASIM
+    - SHRIRAMFIN
+  telecom:
+    - BHARTIARTL
+  conglomerate:
+    - RELIANCE
+    - LT
+    - ADANIENT
+
+# ─── Promoter Groups ─────────────────────────────────────
+# Conglomerate families that share promoter ownership.
+# Used by: GNN graph builder (stock_graph.py)
+promoter_groups:
+  tata:
+    - TCS
+    - TATAMOTORS
+    - TATASTEEL
+    - TATACONSUM
+  adani:
+    - ADANIENT
+    - ADANIPORTS
+  bajaj:
+    - BAJFINANCE
+    - BAJAJFINSV
+    - BAJAJ-AUTO
+  mahindra:
+    - "M&M"
+    - TECHM
+  birla:
+    - HINDALCO
+    - GRASIM
+    - ULTRACEMCO
+
+# ─── Screener Symbol Mapping ─────────────────────────────
+# Maps NSE symbols to Screener.in slugs for earnings scraping.
+# Used by: EarningsProvider (earnings_provider.py)
+# Most are identity mappings; override only when they differ.
+screener_symbols:
+  RELIANCE: RELIANCE
+  TCS: TCS
+  HDFCBANK: HDFCBANK
+  INFY: INFY
+  ICICIBANK: ICICIBANK
+  HINDUNILVR: HINDUNILVR
+  BHARTIARTL: BHARTIARTL
+  ITC: ITC
+  SBIN: SBIN
+  BAJFINANCE: BAJFINANCE
+  KOTAKBANK: KOTAKBANK
+  LT: LT
+  AXISBANK: AXISBANK
+  WIPRO: WIPRO
+  HCLTECH: HCLTECH
+  ASIANPAINT: ASIANPAINT
+  MARUTI: MARUTI
+  SUNPHARMA: SUNPHARMA
+  TITAN: TITAN
+  TATAMOTORS: TATAMOTORS
+  ULTRACEMCO: ULTRACEMCO
+  NTPC: NTPC
+  TATASTEEL: TATASTEEL
+  POWERGRID: POWERGRID
+  ONGC: ONGC
+  NESTLEIND: NESTLEIND
+  BAJAJFINSV: BAJAJFINSV
+  INDUSINDBK: INDUSINDBK
+  "M&M": "M&M"
+  ADANIENT: ADANIENT
+  ADANIPORTS: ADANIPORTS
+  COALINDIA: COALINDIA
+  JSWSTEEL: JSWSTEEL
+  TECHM: TECHM
+  BAJAJ-AUTO: BAJAJ-AUTO
+  GRASIM: GRASIM
+  BPCL: BPCL
+  HEROMOTOCO: HEROMOTOCO
+  DIVISLAB: DIVISLAB
+  DRREDDY: DRREDDY
+  BRITANNIA: BRITANNIA
+  CIPLA: CIPLA
+  EICHERMOT: EICHERMOT
+  APOLLOHOSP: APOLLOHOSP
+  TATACONSUM: TATACONSUM
+  SBILIFE: SBILIFE
+  HDFCLIFE: HDFCLIFE
+  HINDALCO: HINDALCO
+  SHRIRAMFIN: SHRIRAMFIN

@@ -229,7 +229,6 @@ def _compute_promoter_features(
     prom = prom.sort_values("quarter_end").reset_index(drop=True)
 
     pledge_pct_arr = prom["pledge_pct"].values
-    quarter_ends = prom["quarter_end"].values
 
     pledge_changes: list[float] = [np.nan]
     for i in range(1, len(pledge_pct_arr)):

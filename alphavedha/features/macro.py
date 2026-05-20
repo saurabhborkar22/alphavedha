@@ -1,6 +1,7 @@
-"""Macro/market-wide features — 25 features.
+"""Macro/market-wide features — 30 features.
 
-Sources: yfinance (VIX, FX, commodities), institutional_flows table (FII/DII),
+Sources: yfinance (VIX, FX, commodities, crude oil, US futures),
+institutional_flows table (FII/DII), universe stock prices (breadth),
 and computed sector-relative metrics.
 Column naming: macro_{indicator}.
 """
@@ -13,7 +14,7 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-MACRO_FEATURE_COUNT = 25
+MACRO_FEATURE_COUNT = 30
 
 MACRO_TICKERS = {
     "vix": "^INDIAVIX",
@@ -50,6 +51,11 @@ _ALL_MACRO_COLUMNS = [
     "macro_adv_dec_ratio",
     "macro_index_cpr",
     "macro_mktcap_flow",
+    "macro_crude_oil",
+    "macro_crude_oil_change_5d",
+    "macro_us_overnight_return",
+    "macro_forex_reserves",
+    "macro_forex_reserves_change",
 ]
 
 
@@ -162,8 +168,9 @@ def compute_macro_features(
     fii_dii_df: pd.DataFrame | None = None,
     sector_df: pd.DataFrame | None = None,
     alt_data_df: pd.DataFrame | None = None,
+    universe_prices: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Compute 25 macro features."""
+    """Compute 30 macro features."""
     result = pd.DataFrame(index=stock_df.index)
     stock_close = stock_df["close"].astype(float)
 
@@ -183,6 +190,9 @@ def compute_macro_features(
 
     if alt_data_df is not None and not alt_data_df.empty:
         _compute_alt_data_features(result, alt_data_df, stock_df.index)
+        _compute_energy_features(result, alt_data_df, stock_df.index)
+
+    _compute_breadth_features(result, universe_prices, stock_df.index)
 
     for col in _ALL_MACRO_COLUMNS:
         if col not in result.columns:
@@ -221,3 +231,82 @@ def _compute_alt_data_features(
                 if len(valid) > 0:
                     staleness.iloc[i] = (idx - valid[-1]).days
             result["macro_pmi_staleness_days"] = staleness
+
+
+def _compute_breadth_features(
+    result: pd.DataFrame,
+    universe_prices: pd.DataFrame | None,
+    index: pd.DatetimeIndex,
+) -> None:
+    """Compute market breadth features from universe stock prices.
+
+    universe_prices: DataFrame with columns = symbols, index = dates, values = close prices
+
+    macro_breadth_200sma: for each date, % of stocks with close > 200-day SMA
+    macro_adv_dec_ratio: for each date, count(stocks with positive return) / count(stocks with negative return)
+    macro_index_cpr: (high + low + close) / 3 for the index — uses the mean of universe as proxy
+    macro_mktcap_flow: placeholder using FII flow differential if available
+    """
+    if universe_prices is None or universe_prices.empty:
+        return
+
+    aligned = universe_prices.reindex(index, method="ffill")
+
+    sma_200 = aligned.rolling(200, min_periods=50).mean()
+    above_sma = (aligned > sma_200).sum(axis=1)
+    total_stocks = aligned.notna().sum(axis=1).replace(0, np.nan)
+    result["macro_breadth_200sma"] = above_sma / total_stocks
+
+    daily_returns = aligned.pct_change()
+    advancing = (daily_returns > 0).sum(axis=1)
+    declining = (daily_returns < 0).sum(axis=1).replace(0, np.nan)
+    result["macro_adv_dec_ratio"] = advancing / declining
+
+    if {"high", "low", "close"}.issubset(universe_prices.columns):
+        high = universe_prices["high"].reindex(index, method="ffill")
+        low = universe_prices["low"].reindex(index, method="ffill")
+        close = universe_prices["close"].reindex(index, method="ffill")
+        result["macro_index_cpr"] = (high + low + close) / 3.0
+    else:
+        mean_price = aligned.mean(axis=1)
+        result["macro_index_cpr"] = mean_price
+
+    if "macro_fii_net" in result.columns and "macro_dii_net" in result.columns:
+        result["macro_mktcap_flow"] = result["macro_fii_net"] - result["macro_dii_net"]
+
+
+def _compute_energy_features(
+    result: pd.DataFrame,
+    alt_data_df: pd.DataFrame,
+    index: pd.DatetimeIndex,
+) -> None:
+    """Compute crude oil, US overnight, and forex reserves macro features."""
+    alt = alt_data_df.copy()
+    if "period_date" in alt.columns:
+        alt["period_date"] = pd.to_datetime(alt["period_date"])
+
+    if "data_type" not in alt.columns:
+        return
+
+    crude_subset = alt[alt["data_type"] == "crude_oil"]
+    if not crude_subset.empty:
+        crude_series = crude_subset.set_index("period_date")["value"].sort_index()
+        crude_series = crude_series[~crude_series.index.duplicated(keep="last")]
+        crude_aligned = crude_series.reindex(index, method="ffill")
+        result["macro_crude_oil"] = crude_aligned
+        result["macro_crude_oil_change_5d"] = crude_aligned.pct_change(5)
+
+    us_subset = alt[alt["data_type"] == "us_overnight"]
+    if not us_subset.empty:
+        us_series = us_subset.set_index("period_date")["value"].sort_index()
+        us_series = us_series[~us_series.index.duplicated(keep="last")]
+        us_aligned = us_series.reindex(index, method="ffill")
+        result["macro_us_overnight_return"] = us_aligned
+
+    fx_subset = alt[alt["data_type"] == "forex_reserves"]
+    if not fx_subset.empty:
+        fx_series = fx_subset.set_index("period_date")["value"].sort_index()
+        fx_series = fx_series[~fx_series.index.duplicated(keep="last")]
+        fx_aligned = fx_series.reindex(index, method="ffill")
+        result["macro_forex_reserves"] = fx_aligned
+        result["macro_forex_reserves_change"] = fx_aligned.pct_change()

@@ -167,10 +167,15 @@ def data_backfill(
 @data_app.command("status")
 def data_status() -> None:
     """Show data freshness status."""
-    from alphavedha.data.database import get_session_factory
-    from alphavedha.data.models import DailyOHLCV, DerivativesData, IndexConstituent, InstitutionalFlow
-
     from sqlalchemy import func, select
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import (
+        DailyOHLCV,
+        DerivativesData,
+        IndexConstituent,
+        InstitutionalFlow,
+    )
 
     async def _status() -> None:
         session_factory = get_session_factory()
@@ -186,7 +191,7 @@ def data_status() -> None:
             deriv_count = (await session.execute(select(func.count(DerivativesData.id)))).scalar() or 0
             deriv_latest = (await session.execute(select(func.max(DerivativesData.date)))).scalar()
 
-        console.print(f"[bold]Database Status[/bold]")
+        console.print("[bold]Database Status[/bold]")
         console.print(f"  OHLCV rows:      {ohlcv_count:,}")
         console.print(f"  Symbols:         {symbol_count}")
         console.print(f"  Latest date:     {latest_date or 'no data'}")
@@ -282,7 +287,7 @@ def train_xgboost_cmd(
 
     if result.train_result:
         tr = result.train_result
-        console.print(f"\n[bold green]Training complete[/bold green]")
+        console.print("\n[bold green]Training complete[/bold green]")
         console.print(f"  Symbols:        {result.n_symbols}")
         console.print(f"  Train rows:     {result.n_train_rows:,}")
         console.print(f"  Val rows:       {result.n_val_rows:,}")
@@ -394,10 +399,10 @@ def train_all_cmd(
     failed = [m for m, r in results.items() if r.artifact_path is None]
 
     console.print(f"\n[bold]{'='*50}[/bold]")
-    console.print(f"[bold]Training Summary[/bold]")
+    console.print("[bold]Training Summary[/bold]")
     console.print(f"[bold]{'='*50}[/bold]")
 
-    for name, r in results.items():
+    for _name, r in results.items():
         _print_train_result(r)
 
     console.print(f"\n[bold green]Trained:[/bold green] {', '.join(trained) if trained else 'none'}")
@@ -449,8 +454,8 @@ def backtest_walk_forward(
             raise typer.Exit(code=1)
 
         def dummy_predictions(train_df: object, test_df: object) -> object:
-            import pandas as _pd
             import numpy as _np
+            import pandas as _pd
 
             idx = test_df.index  # type: ignore[union-attr]
             rng = _np.random.default_rng(42)
@@ -470,7 +475,7 @@ def backtest_walk_forward(
         )
 
         console.print(f"\n[bold]{'='*50}[/bold]")
-        console.print(f"[bold]Walk-Forward Results[/bold]")
+        console.print("[bold]Walk-Forward Results[/bold]")
         console.print(f"[bold]{'='*50}[/bold]")
         console.print(f"  Folds:              {len(result.folds)}")
         console.print(f"  Total trades:       {result.n_trades}")
