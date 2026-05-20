@@ -1,0 +1,32 @@
+[Unit]
+Description=AlphaVedha API Server
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=exec
+User=alphavedha
+Group=alphavedha
+WorkingDirectory=/opt/alphavedha
+EnvironmentFile=/opt/alphavedha/.env.prod
+ExecStart=/opt/alphavedha/.venv/bin/gunicorn alphavedha.api.app:app \
+    -w 2 \
+    -k uvicorn.workers.UvicornWorker \
+    --bind 127.0.0.1:8000 \
+    --timeout 120 \
+    --access-logfile /var/log/alphavedha/api-access.log \
+    --error-logfile /var/log/alphavedha/api-error.log
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/alphavedha/models/artifacts /var/log/alphavedha
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
