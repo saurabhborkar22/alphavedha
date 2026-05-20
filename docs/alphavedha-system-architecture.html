@@ -1,0 +1,2113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlphaVedha System Architecture</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3348;
+    --text: #e4e6f0;
+    --text-muted: #8b8fa8;
+    --accent: #6c63ff;
+    --accent2: #00d4aa;
+    --accent3: #ff6b6b;
+    --accent4: #ffd93d;
+    --accent5: #4ecdc4;
+    --gradient1: linear-gradient(135deg, #6c63ff 0%, #4ecdc4 100%);
+    --gradient2: linear-gradient(135deg, #ff6b6b 0%, #ffd93d 100%);
+    --gradient3: linear-gradient(135deg, #00d4aa 0%, #00b4d8 100%);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+  /* Hero */
+  .hero {
+    padding: 80px 0 60px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 800px;
+    background: radial-gradient(circle, rgba(108,99,255,0.1) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: 3.5rem;
+    font-weight: 800;
+    background: var(--gradient1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+  }
+  .hero .sanskrit {
+    font-size: 1.3rem;
+    color: var(--accent5);
+    margin-bottom: 16px;
+    font-style: italic;
+  }
+  .hero p {
+    font-size: 1.15rem;
+    color: var(--text-muted);
+    max-width: 700px;
+    margin: 0 auto 30px;
+  }
+  .badge-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .badge.green { border-color: #00d4aa55; color: var(--accent2); }
+  .badge.purple { border-color: #6c63ff55; color: var(--accent); }
+  .badge.yellow { border-color: #ffd93d55; color: var(--accent4); }
+  .badge.red { border-color: #ff6b6b55; color: var(--accent3); }
+
+  /* Stats bar */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+    margin: 40px 0;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-card .number {
+    font-size: 2rem;
+    font-weight: 800;
+    background: var(--gradient1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .stat-card .label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 4px;
+  }
+
+  /* TOC */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin: 40px 0;
+  }
+  .toc h2 {
+    font-size: 1.3rem;
+    margin-bottom: 16px;
+    color: var(--accent);
+  }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+  }
+  .toc a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+    display: block;
+  }
+  .toc a:hover { background: var(--surface2); color: var(--text); }
+  .toc a .num { color: var(--accent); font-weight: 700; margin-right: 8px; }
+
+  /* Sections */
+  section {
+    margin: 60px 0;
+    scroll-margin-top: 30px;
+  }
+  section > h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section > h2 .sec-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--gradient1);
+    color: white;
+    font-size: 1rem;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  section > .subtitle {
+    color: var(--text-muted);
+    font-size: 1rem;
+    margin-bottom: 24px;
+    padding-left: 52px;
+  }
+
+  h3 {
+    font-size: 1.25rem;
+    color: var(--accent5);
+    margin: 32px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  h4 { font-size: 1.05rem; color: var(--accent4); margin: 20px 0 8px; }
+
+  p { margin-bottom: 12px; }
+
+  /* Cards */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card .card-title {
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card .card-title .icon { font-size: 1.2rem; }
+  .card .card-desc { color: var(--text-muted); font-size: 0.88rem; }
+  .card ul { padding-left: 18px; margin-top: 8px; }
+  .card li { font-size: 0.88rem; color: var(--text-muted); margin-bottom: 4px; }
+
+  /* Flow diagrams */
+  .flow {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin: 20px 0;
+    overflow-x: auto;
+  }
+  .flow-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: var(--accent);
+  }
+  .flow-steps {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .flow-step {
+    text-align: center;
+    flex: 0 0 auto;
+    max-width: 140px;
+  }
+  .flow-step .step-box {
+    background: var(--surface2);
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .flow-step .step-box.green { border-color: var(--accent2); }
+  .flow-step .step-box.yellow { border-color: var(--accent4); }
+  .flow-step .step-box.red { border-color: var(--accent3); }
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    margin-top: 10px;
+  }
+
+  /* Vertical pipeline */
+  .pipeline {
+    position: relative;
+    padding-left: 40px;
+    margin: 16px 0;
+  }
+  .pipeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+  .pipeline-step {
+    position: relative;
+    margin-bottom: 20px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .pipeline-step::before {
+    content: attr(data-step);
+    position: absolute;
+    left: -40px;
+    top: 16px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 800;
+    z-index: 1;
+  }
+  .pipeline-step .step-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
+  .pipeline-step .step-desc { font-size: 0.85rem; color: var(--text-muted); }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.88rem;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: var(--surface);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td { color: var(--text-muted); }
+  tr:hover td { color: var(--text); }
+
+  /* Code blocks */
+  code {
+    background: var(--surface2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.85rem;
+    color: var(--accent2);
+  }
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    overflow-x: auto;
+    margin: 12px 0;
+    font-size: 0.82rem;
+    line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  /* Alert boxes */
+  .alert {
+    padding: 16px 20px;
+    border-radius: 10px;
+    margin: 16px 0;
+    font-size: 0.9rem;
+    border-left: 4px solid;
+  }
+  .alert.info { background: #6c63ff15; border-color: var(--accent); }
+  .alert.success { background: #00d4aa15; border-color: var(--accent2); }
+  .alert.warning { background: #ffd93d15; border-color: var(--accent4); }
+  .alert.danger { background: #ff6b6b15; border-color: var(--accent3); }
+  .alert strong { display: block; margin-bottom: 4px; }
+
+  /* Tag/Chip */
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tag.purple { background: #6c63ff30; color: #a29bfe; }
+  .tag.green { background: #00d4aa30; color: #00d4aa; }
+  .tag.yellow { background: #ffd93d30; color: #ffd93d; }
+  .tag.red { background: #ff6b6b30; color: #ff6b6b; }
+  .tag.blue { background: #00b4d830; color: #00b4d8; }
+
+  /* Separator */
+  hr { border: none; height: 1px; background: var(--border); margin: 60px 0; }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 40px 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 2.2rem; }
+    section > h2 { font-size: 1.5rem; }
+    .card-grid { grid-template-columns: 1fr; }
+    .flow-steps { flex-direction: column; align-items: center; }
+    .flow-arrow { transform: rotate(90deg); padding: 4px 0; }
+  }
+
+  /* Architecture diagram box */
+  .arch-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin: 20px 0;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text-muted);
+  }
+
+  /* Two column layout */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 16px 0;
+  }
+  @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* Highlight box */
+  .highlight-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 12px 0;
+  }
+  .highlight-box h4 { margin-top: 0; }
+
+  /* Model comparison grid */
+  .model-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .model-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    border-top: 3px solid var(--accent);
+  }
+  .model-card.lstm { border-top-color: var(--accent2); }
+  .model-card.tft { border-top-color: var(--accent4); }
+  .model-card.gnn { border-top-color: var(--accent3); }
+  .model-card.hmm { border-top-color: var(--accent5); }
+  .model-card .model-name {
+    font-weight: 800;
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+  }
+  .model-card .model-type {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+  }
+  .model-card ul { list-style: none; padding: 0; }
+  .model-card li {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .model-card li:last-child { border: none; }
+  .model-card li strong { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- ============= HERO ============= -->
+<div class="hero">
+  <div class="container">
+    <h1>AlphaVedha</h1>
+    <div class="sanskrit">AI-Powered Indian Stock Market Prediction Engine</div>
+    <p>
+      A quantitative ML system that combines ensemble models, India-specific microstructure signals,
+      graph neural networks, and alternative data to predict stock direction, magnitude, and price targets
+      for NSE/BSE markets.
+    </p>
+    <div class="badge-row">
+      <span class="badge purple">Python 3.12</span>
+      <span class="badge green">PyTorch + XGBoost</span>
+      <span class="badge yellow">FastAPI</span>
+      <span class="badge red">TimescaleDB</span>
+      <span class="badge purple">159 Features</span>
+      <span class="badge green">8 ML Models</span>
+      <span class="badge yellow">548 Tests</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- Stats -->
+<div class="stats-bar">
+  <div class="stat-card">
+    <div class="number">159</div>
+    <div class="label">Features</div>
+  </div>
+  <div class="stat-card">
+    <div class="number">8</div>
+    <div class="label">ML Models</div>
+  </div>
+  <div class="stat-card">
+    <div class="number">13</div>
+    <div class="label">Alt Data Sources</div>
+  </div>
+  <div class="stat-card">
+    <div class="number">548</div>
+    <div class="label">Tests</div>
+  </div>
+  <div class="stat-card">
+    <div class="number">~16K</div>
+    <div class="label">Lines of Code</div>
+  </div>
+  <div class="stat-card">
+    <div class="number">50+</div>
+    <div class="label">Stocks Tracked</div>
+  </div>
+</div>
+
+<!-- TOC -->
+<nav class="toc">
+  <h2>Table of Contents</h2>
+  <div class="toc-grid">
+    <a href="#arch"><span class="num">01</span> System Architecture Overview</a>
+    <a href="#data"><span class="num">02</span> Data Pipeline</a>
+    <a href="#features"><span class="num">03</span> Feature Engineering</a>
+    <a href="#models"><span class="num">04</span> ML Models</a>
+    <a href="#ensemble"><span class="num">05</span> Ensemble + Meta-Labeling</a>
+    <a href="#prediction"><span class="num">06</span> Prediction Engine</a>
+    <a href="#risk"><span class="num">07</span> Risk Management</a>
+    <a href="#execution"><span class="num">08</span> Execution Engine</a>
+    <a href="#gnn"><span class="num">09</span> Graph Neural Network</a>
+    <a href="#monitoring"><span class="num">10</span> Online Learning & Monitoring</a>
+    <a href="#scheduler"><span class="num">11</span> Daily Scheduler</a>
+    <a href="#altdata"><span class="num">12</span> Alternative Data</a>
+    <a href="#api"><span class="num">13</span> API & CLI</a>
+    <a href="#backtest"><span class="num">14</span> Backtesting Framework</a>
+    <a href="#infra"><span class="num">15</span> Infrastructure & Tech Stack</a>
+    <a href="#glossary"><span class="num">16</span> Glossary</a>
+  </div>
+</nav>
+
+<hr>
+
+<!-- ============= 1. ARCHITECTURE ============= -->
+<section id="arch">
+  <h2><span class="sec-num">01</span> System Architecture Overview</h2>
+  <p class="subtitle">How every component connects end-to-end</p>
+
+  <div class="arch-diagram">
+    <span style="color: var(--accent);">DATA LAYER</span>                    <span style="color: var(--accent2);">INTELLIGENCE LAYER</span>                <span style="color: var(--accent4);">OUTPUT LAYER</span>
+
+  +------------------+           +-------------------+           +------------------+
+  |  NSE / BSE       |           |   Feature Engine  |           |  Prediction API  |
+  |  (OHLCV, F&O,    |---+       |   (159 features)  |---+       |  (FastAPI)       |
+  |   FII/DII)       |   |       +-------------------+   |       +------------------+
+  +------------------+   |                                |               |
+                         |       +-------------------+   |       +------------------+
+  +------------------+   +------>|   Preprocessing   |---+------>|  CLI Interface   |
+  |  yfinance        |   |       |   (Corp Actions,  |   |       |  (Typer + Rich)  |
+  |  (Fallback)      |---+       |    FFD, Outliers)  |   |       +------------------+
+  +------------------+   |       +-------------------+   |               |
+                         |                                |       +------------------+
+  +------------------+   |       +-------------------+   |       |  Risk Manager    |
+  |  Alt Data        |---+       |   ML Models       |---+       |  (Kelly, CB,     |
+  |  (13 sources)    |   |       |   XGB+LSTM+TFT    |   |       |   Portfolio)     |
+  +------------------+   |       |   +GNN+HMM        |   |       +------------------+
+                         |       +-------------------+   |
+  +------------------+   |                                |       +------------------+
+  |  News / Sentiment|---+       +-------------------+   +------>|  Paper Trading   |
+  |  (FinBERT)       |           |   Ensemble Stack  |           |  Dashboard       |
+  +------------------+           |   + Meta-Label     |           +------------------+
+                                 |   + Conformal      |
+  +------------------+           +-------------------+           +------------------+
+  |  PostgreSQL      |                                           |  Public Track    |
+  |  (TimescaleDB)   |<========== Store & Retrieve ===========>|  Record          |
+  +------------------+                                           +------------------+
+         |
+  +------+-------+           +-------------------+
+  |  Redis Cache  |           |  Monitoring       |
+  |  (Feature TTL)|           |  Drift + Retrain  |
+  +--------------+           +-------------------+
+  </div>
+
+  <div class="alert info">
+    <strong>End-to-End Flow</strong>
+    Data providers fetch raw market data -> Preprocessing cleans and adjusts ->
+    Feature engine computes 159 features -> 5 base models make independent predictions ->
+    Stacking ensemble combines them -> Meta-labeling filters low-confidence ->
+    Conformal prediction adds uncertainty bounds -> Risk manager sizes positions ->
+    Output via API / CLI with full audit trail.
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 2. DATA PIPELINE ============= -->
+<section id="data">
+  <h2><span class="sec-num">02</span> Data Pipeline</h2>
+  <p class="subtitle">How raw market data flows from NSE/BSE into our feature store</p>
+
+  <h3>2.1 Data Sources</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F4CA;</span> jugaad-data <span class="tag green">PRIMARY</span></div>
+      <div class="card-desc">
+        Direct NSE data feed. Daily OHLCV with delivery percentage (India-unique metric).
+        Provides point-in-time data essential for avoiding look-ahead bias.
+      </div>
+      <ul>
+        <li>Open, High, Low, Close, Volume, Delivery %</li>
+        <li>Rate limit: configurable via YAML</li>
+        <li>Async bulk fetch with retry</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F4C8;</span> yfinance <span class="tag yellow">FALLBACK</span></div>
+      <div class="card-desc">
+        Yahoo Finance API. Used when jugaad-data is unavailable.
+        Provides adjusted prices (splits + dividends factored in).
+      </div>
+      <ul>
+        <li>Symbol format: TCS.NS (NSE), TCS.BO (BSE)</li>
+        <li>Rate limit: 2 req/sec</li>
+        <li>Bulk download support</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F3E6;</span> NSE Direct <span class="tag purple">INSTITUTIONAL</span></div>
+      <div class="card-desc">
+        Direct NSE website scraping for institutional and derivatives data
+        not available through standard APIs.
+      </div>
+      <ul>
+        <li>FII/DII daily buy/sell/net values</li>
+        <li>F&O bhavcopy (futures + options OI)</li>
+        <li>Circuit limit data</li>
+        <li>Rate limit: 1 req/2 sec</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F4F0;</span> News Sentiment <span class="tag blue">NLP</span></div>
+      <div class="card-desc">
+        Financial news from Finnhub and MarketAux APIs.
+        Processed through FinBERT (HuggingFace) for Indian market sentiment scoring.
+      </div>
+      <ul>
+        <li>Bearish/bullish/neutral scores</li>
+        <li>News volume as event detector</li>
+        <li>Sector-level aggregation</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F4D1;</span> SEBI Filings <span class="tag red">COMPLIANCE</span></div>
+      <div class="card-desc">
+        Corporate actions, promoter shareholding patterns, and insider trading
+        data from SEBI/BSE regulatory filings.
+      </div>
+      <ul>
+        <li>Promoter pledging percentage</li>
+        <li>Insider buy/sell transactions</li>
+        <li>Splits, bonuses, rights issues</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F4B0;</span> Earnings <span class="tag green">FUNDAMENTAL</span></div>
+      <div class="card-desc">
+        Quarterly and annual financial results from NSE filings and Screener.in.
+        Tracks post-earnings announcement drift (PEAD).
+      </div>
+      <ul>
+        <li>Revenue, profit, margins per quarter</li>
+        <li>Earnings surprise calculation</li>
+        <li>Consecutive beat/miss streaks</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>2.2 Preprocessing Pipeline</h3>
+  <p>Every row of data passes through 5 sequential processing stages before features are computed. Order matters.</p>
+
+  <div class="pipeline">
+    <div class="pipeline-step" data-step="1">
+      <div class="step-title">Corporate Action Adjustment</div>
+      <div class="step-desc">
+        Adjusts all historical prices for stock splits, bonus issues, and rights issues.
+        A 1:5 split means all prices before the split date are divided by 5. Without this,
+        a stock that splits from Rs.5000 to Rs.1000 looks like an 80% crash. Every price
+        column (open, high, low, close) and volume are adjusted. An audit log tracks every
+        adjustment made.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="2">
+      <div class="step-title">Circuit Limit Detection</div>
+      <div class="step-desc">
+        Indian stocks have circuit breakers at 5%, 10%, and 20%. When a stock hits its circuit,
+        trading halts and the price is artificially frozen. These days produce misleading signals.
+        This step flags circuit-hit days with a boolean column so downstream features can handle
+        them appropriately (usually by excluding from volatility and momentum calculations).
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="3">
+      <div class="step-title">Missing Data Handling</div>
+      <div class="step-desc">
+        Stocks can be suspended for days or weeks. Forward-fill is used with a maximum gap of
+        10 days. An <code>is_suspended</code> flag marks filled rows. Beyond 10 days, the gap is
+        left as-is to avoid propagating stale data. This is critical for backtesting — treating
+        suspended stocks as tradeable would be a dangerous error.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="4">
+      <div class="step-title">Fractional Differentiation (FFD)</div>
+      <div class="step-desc">
+        Raw price series are non-stationary (they trend upward over time). Standard differencing
+        (returns) makes them stationary but destroys memory. Fractional differentiation finds
+        the minimum <code>d</code> (between 0.1 and 0.8) that makes the series stationary (ADF
+        p-value < 0.05) while preserving maximum memory. The optimal <code>d</code> is calibrated
+        per stock using the ADF test and recomputed monthly.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="5">
+      <div class="step-title">Outlier Winsorization</div>
+      <div class="step-desc">
+        Extreme values are capped at the 1st and 99th percentiles. This prevents rare
+        events (flash crashes, fat-finger trades) from dominating model training.
+        Values below the 1st percentile are set to the 1st percentile value; above the
+        99th are set to the 99th. Applied per feature, per stock.
+      </div>
+    </div>
+  </div>
+
+  <h3>2.3 Data Storage</h3>
+  <div class="two-col">
+    <div class="highlight-box">
+      <h4>PostgreSQL + TimescaleDB</h4>
+      <p style="color: var(--text-muted); font-size: 0.88rem;">
+        Primary storage for all time-series data. TimescaleDB hypertables automatically partition
+        data by time (monthly chunks) for query performance. Indexed on <code>(symbol, timestamp)</code>.
+        Connection pooling via asyncpg (pool_size=10, max_overflow=20).
+      </p>
+      <table>
+        <tr><th>Table</th><th>Purpose</th></tr>
+        <tr><td>daily_ohlcv</td><td>Price + volume + delivery %</td></tr>
+        <tr><td>institutional_flows</td><td>FII/DII daily buy/sell/net</td></tr>
+        <tr><td>derivatives_data</td><td>F&O OI, PCR, IV, Greeks</td></tr>
+        <tr><td>corporate_actions</td><td>Splits, bonuses, rights</td></tr>
+        <tr><td>earnings_results</td><td>Quarterly financials</td></tr>
+        <tr><td>features</td><td>Computed feature cache</td></tr>
+      </table>
+    </div>
+    <div class="highlight-box">
+      <h4>Redis Cache</h4>
+      <p style="color: var(--text-muted); font-size: 0.88rem;">
+        In-memory cache for computed features and predictions. Uses market-hours-aware TTL:
+      </p>
+      <table>
+        <tr><th>Condition</th><th>TTL</th></tr>
+        <tr><td>During market hours (9:15-15:30 IST)</td><td>300 seconds (5 min)</td></tr>
+        <tr><td>After market close</td><td>Until next 9:15 AM</td></tr>
+      </table>
+      <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 12px;">
+        Cache key format: <code>predict:{symbol}:{model_version}</code>.
+        Graceful degradation: if Redis is unavailable, predictions still work (no caching).
+      </p>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 3. FEATURES ============= -->
+<section id="features">
+  <h2><span class="sec-num">03</span> Feature Engineering</h2>
+  <p class="subtitle">159 features across 9 categories computed from raw data</p>
+
+  <div class="alert info">
+    <strong>Critical Rule: No Look-Ahead Bias</strong>
+    Every feature is computed using ONLY past data available at prediction time.
+    All rolling windows look backward. No future data leaks into any feature.
+    This is the most common mistake in quant finance ML — AlphaVedha enforces it
+    at every level.
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Technical Indicators</div>
+      <div class="card-desc">Classical price and volume-based signals</div>
+      <ul>
+        <li><strong>Trend:</strong> SMA (10/20/50/200d), EMA (12/26d), MACD + signal</li>
+        <li><strong>Momentum:</strong> RSI (14d), Stochastic %K/%D, Williams %R, CCI</li>
+        <li><strong>Volatility:</strong> Bollinger Bands (width + %B), ATR (14d), NATR</li>
+        <li><strong>Trend Strength:</strong> ADX (14d), +DI, -DI</li>
+        <li><strong>Volume:</strong> OBV, Volume SMA ratio, VWAP distance</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Macro Features</div>
+      <div class="card-desc">Market-wide and economy-level indicators</div>
+      <ul>
+        <li><strong>Volatility:</strong> India VIX level, VIX change, VIX percentile</li>
+        <li><strong>Institutional:</strong> FII net flow (5d/10d), DII net flow, FII-DII divergence</li>
+        <li><strong>Indices:</strong> Nifty 50 return, Bank Nifty return, sector index moves</li>
+        <li><strong>Currency:</strong> USD/INR rate, INR momentum</li>
+        <li><strong>Commodities:</strong> Crude oil price, oil change %, gold movement</li>
+        <li><strong>Global:</strong> US overnight return (S&P 500 proxy)</li>
+        <li><strong>Economy:</strong> GST collections, PMI, credit growth, forex reserves</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Derivatives Features</div>
+      <div class="card-desc">Forward-looking signals from India's massive F&O market</div>
+      <ul>
+        <li><strong>Open Interest:</strong> Futures OI change %, buildup (long/short/covering/unwinding)</li>
+        <li><strong>Options:</strong> Put-Call Ratio (OI + volume), max pain distance</li>
+        <li><strong>Volatility:</strong> IV percentile (vs 252d), IV skew</li>
+        <li><strong>Greeks:</strong> Aggregate delta, gamma, vega exposure</li>
+        <li><strong>Basis:</strong> Futures premium/discount vs spot</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Fundamental Features</div>
+      <div class="card-desc">Financial health and valuation metrics</div>
+      <ul>
+        <li><strong>Valuation:</strong> P/E ratio, P/B ratio, dividend yield</li>
+        <li><strong>Profitability:</strong> ROE, operating margin, net margin</li>
+        <li><strong>Leverage:</strong> Debt/Equity ratio</li>
+        <li><strong>Growth:</strong> EPS growth, revenue growth QoQ</li>
+        <li><strong>Earnings:</strong> Surprise %, days since earnings, beat streak</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Microstructure Features</div>
+      <div class="card-desc">India-unique trading mechanics</div>
+      <ul>
+        <li><strong>Delivery:</strong> Delivery % (India-unique: % of traded volume that becomes actual holdings), delivery Z-score, delivery trend</li>
+        <li><strong>Breakout:</strong> High delivery + price breakout signal (delivery > 60% AND close > 20d high)</li>
+        <li><strong>Liquidity:</strong> Average daily turnover, bid-ask spread estimate</li>
+        <li><strong>Order Flow:</strong> Volume imbalance, VWAP deviation</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Sentiment Features</div>
+      <div class="card-desc">Natural language signals from financial news</div>
+      <ul>
+        <li><strong>Score:</strong> FinBERT sentiment (bearish/neutral/bullish) per stock</li>
+        <li><strong>Trend:</strong> 1-day and 5-day rolling sentiment average</li>
+        <li><strong>Momentum:</strong> Sentiment improving or deteriorating?</li>
+        <li><strong>Volume:</strong> News volume Z-score (event detection)</li>
+        <li><strong>Sector:</strong> Average sentiment across sector peers</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Calendar Features</div>
+      <div class="card-desc">Time-based patterns unique to Indian markets</div>
+      <ul>
+        <li><strong>Day patterns:</strong> Day of week, month, quarter (markets show weekday effects)</li>
+        <li><strong>Events:</strong> Days to/from earnings, F&O expiry (monthly/weekly)</li>
+        <li><strong>Rebalancing:</strong> Days to Nifty 50 rebalancing (March/September)</li>
+        <li><strong>Holidays:</strong> NSE trading holiday calendar</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Returns Features</div>
+      <div class="card-desc">Statistical properties of return distributions</div>
+      <ul>
+        <li><strong>Returns:</strong> Log returns (1d, 5d, 10d, 20d, 60d)</li>
+        <li><strong>Volatility:</strong> Rolling volatility (10d, 20d, 60d)</li>
+        <li><strong>Risk-adjusted:</strong> Rolling Sharpe ratio, Sortino ratio</li>
+        <li><strong>Distribution:</strong> Skewness, kurtosis (fat tails = higher risk)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Alternative Data Features</div>
+      <div class="card-desc">Non-traditional leading indicators</div>
+      <ul>
+        <li><strong>Auto sales:</strong> Monthly volumes for Maruti, Tata Motors, M&M</li>
+        <li><strong>Cement:</strong> Monthly dispatch for UltraTech, Shree, ACC</li>
+        <li><strong>Digital:</strong> UPI transaction volume (proxy for banking)</li>
+        <li><strong>Energy:</strong> Power consumption, crude oil daily</li>
+        <li><strong>Trade:</strong> Port cargo volume, forex reserves weekly</li>
+        <li><strong>Economy:</strong> GST collections, PMI, steel production</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 4. ML MODELS ============= -->
+<section id="models">
+  <h2><span class="sec-num">04</span> ML Models</h2>
+  <p class="subtitle">5 independent base models, each capturing different patterns</p>
+
+  <div class="alert success">
+    <strong>Why Multiple Models?</strong>
+    No single model can capture all market patterns. XGBoost excels at tabular feature interactions,
+    LSTM captures temporal dependencies, TFT adds attention for long-range patterns, GNN models
+    inter-stock relationships, and HMM detects regime changes. Their disagreement itself is a signal.
+  </div>
+
+  <div class="model-grid">
+    <div class="model-card">
+      <div class="model-name">XGBoost</div>
+      <div class="model-type">Gradient Boosted Trees</div>
+      <ul>
+        <li><strong>Strength:</strong> Tabular data king</li>
+        <li><strong>Input:</strong> 159 features (flat)</li>
+        <li><strong>Output:</strong> Direction (3-class) + magnitude</li>
+        <li><strong>Training:</strong> Dual models (classifier + regressor)</li>
+        <li><strong>Serialization:</strong> joblib</li>
+        <li><strong>Feature importance:</strong> Built-in (gain-based)</li>
+        <li><strong>Speed:</strong> Fastest inference</li>
+      </ul>
+    </div>
+    <div class="model-card lstm">
+      <div class="model-name">LSTM</div>
+      <div class="model-type">Recurrent Neural Network</div>
+      <ul>
+        <li><strong>Strength:</strong> Sequential patterns</li>
+        <li><strong>Input:</strong> 30-day sequences</li>
+        <li><strong>Architecture:</strong> 2-layer, 128 hidden units</li>
+        <li><strong>Output:</strong> Direction probs + magnitude</li>
+        <li><strong>Training:</strong> PyTorch, GPU-accelerated</li>
+        <li><strong>Serialization:</strong> safetensors</li>
+        <li><strong>Early stopping:</strong> Val loss patience</li>
+      </ul>
+    </div>
+    <div class="model-card tft">
+      <div class="model-name">Temporal Fusion Transformer</div>
+      <div class="model-type">Attention-Based Network</div>
+      <ul>
+        <li><strong>Strength:</strong> Long-range dependencies</li>
+        <li><strong>Architecture:</strong> GRN + VSN + Multi-Head Attention</li>
+        <li><strong>Multi-horizon:</strong> 7d, 15d, 30d predictions</li>
+        <li><strong>Interpretable:</strong> Attention weights show which time steps matter</li>
+        <li><strong>Variable selection:</strong> Auto-learns feature importance</li>
+        <li><strong>Serialization:</strong> safetensors</li>
+      </ul>
+    </div>
+    <div class="model-card gnn">
+      <div class="model-name">GraphSAGE (GNN)</div>
+      <div class="model-type">Graph Neural Network</div>
+      <ul>
+        <li><strong>Strength:</strong> Inter-stock relationships</li>
+        <li><strong>Architecture:</strong> 2-layer GraphSAGE (pure PyTorch)</li>
+        <li><strong>Graph:</strong> Sector + correlation + promoter edges</li>
+        <li><strong>Key insight:</strong> When TCS reports, Infosys/Wipro should update</li>
+        <li><strong>Aggregation:</strong> Mean neighbor features</li>
+        <li><strong>No dependency:</strong> No torch_geometric needed</li>
+      </ul>
+    </div>
+    <div class="model-card hmm">
+      <div class="model-name">HMM Regime Detector</div>
+      <div class="model-type">Hidden Markov Model</div>
+      <ul>
+        <li><strong>Purpose:</strong> Market state classification</li>
+        <li><strong>States:</strong> Bull, Bear, Sideways, High-Volatility</li>
+        <li><strong>Library:</strong> hmmlearn (Gaussian HMM)</li>
+        <li><strong>Output:</strong> State probabilities [4-dim vector]</li>
+        <li><strong>Usage:</strong> Adjusts strategy per regime</li>
+        <li><strong>Auto-labels:</strong> States labeled by mean return + vol</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>4.1 Training Discipline</h3>
+  <div class="two-col">
+    <div class="highlight-box">
+      <h4>What We Do (Correct)</h4>
+      <ul style="padding-left: 18px; font-size: 0.88rem; color: var(--text-muted);">
+        <li>Temporal train/val splits (never random for time-series)</li>
+        <li>20-day embargo between train and val sets</li>
+        <li>Purging: remove overlapping labels at split boundary</li>
+        <li>CPCV: Combinatorial Purged Cross-Validation for robust model selection</li>
+        <li>Out-of-fold (OOF) predictions for ensemble training</li>
+        <li>Fractionally differentiated features (not raw prices)</li>
+        <li>Sample weights with decay (recent data matters more)</li>
+        <li>Early stopping on validation loss</li>
+        <li>Gradient clipping (max_norm=1.0) for stability</li>
+      </ul>
+    </div>
+    <div class="highlight-box">
+      <h4>What We Avoid (Common Mistakes)</h4>
+      <ul style="padding-left: 18px; font-size: 0.88rem; color: var(--text-muted);">
+        <li>Random train/test splits (future data leaks into training)</li>
+        <li>Training on raw prices (non-stationary = garbage model)</li>
+        <li>Using the same data for training and validation</li>
+        <li>Ignoring survivorship bias (only using stocks that still exist)</li>
+        <li>Not adjusting for corporate actions before computing features</li>
+        <li>Including circuit-hit days in momentum calculations</li>
+        <li>Optimizing on in-sample metrics (overfitting)</li>
+        <li>Ignoring transaction costs in backtest</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>4.2 Labeling: Triple Barrier Method</h3>
+  <p>
+    Instead of predicting "will the stock go up tomorrow?", we use the Triple Barrier method from
+    Marcos Lopez de Prado. For each day, three barriers are set:
+  </p>
+  <div class="highlight-box">
+    <table>
+      <tr><th>Barrier</th><th>Trigger</th><th>Label</th></tr>
+      <tr><td>Upper Barrier (Take Profit)</td><td>Price rises by 2.0x ATR</td><td>+1 (Buy)</td></tr>
+      <tr><td>Lower Barrier (Stop Loss)</td><td>Price falls by 1.5x ATR</td><td>-1 (Sell)</td></tr>
+      <tr><td>Time Barrier (Holding Period)</td><td>Neither barrier hit within max days</td><td>0 (Hold)</td></tr>
+    </table>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 12px;">
+      The asymmetric barriers (2.0x up vs 1.5x down) create a natural "let profits run, cut losses
+      short" bias. ATR (Average True Range) makes barriers adaptive to each stock's volatility.
+    </p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 5. ENSEMBLE ============= -->
+<section id="ensemble">
+  <h2><span class="sec-num">05</span> Ensemble + Meta-Labeling</h2>
+  <p class="subtitle">How 5 model opinions become one calibrated prediction</p>
+
+  <h3>5.1 Stacking Ensemble (Meta-Learner)</h3>
+  <p>
+    Instead of simple averaging, we use a <strong>stacking ensemble</strong> with a RidgeClassifier
+    as the meta-learner. It learns HOW to combine models, not just equally weight them.
+  </p>
+
+  <div class="flow">
+    <div class="flow-title">Ensemble Pipeline</div>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-box">XGBoost<br>Probs [3]</div>
+      </div>
+      <div class="flow-arrow">+</div>
+      <div class="flow-step">
+        <div class="step-box green">LSTM<br>Probs [3]</div>
+      </div>
+      <div class="flow-arrow">+</div>
+      <div class="flow-step">
+        <div class="step-box yellow">TFT<br>Probs [3]</div>
+      </div>
+      <div class="flow-arrow">+</div>
+      <div class="flow-step">
+        <div class="step-box red">Regime<br>Probs [4]</div>
+      </div>
+      <div class="flow-arrow">+</div>
+      <div class="flow-step">
+        <div class="step-box">Disagree<br>[1]</div>
+      </div>
+      <div class="flow-arrow">=</div>
+      <div class="flow-step">
+        <div class="step-box" style="border-color: var(--accent2); background: #00d4aa15;">
+          14 Meta<br>Features
+        </div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box" style="border-color: var(--accent4); background: #ffd93d15;">
+          Ridge<br>Classifier
+        </div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box green">Final<br>Direction</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <h4>14 Meta-Features Explained</h4>
+    <table>
+      <tr><th>Feature</th><th>Source</th><th>Dimensions</th></tr>
+      <tr><td>XGBoost probabilities</td><td>P(sell), P(hold), P(buy)</td><td>3</td></tr>
+      <tr><td>LSTM probabilities</td><td>P(sell), P(hold), P(buy)</td><td>3</td></tr>
+      <tr><td>TFT probabilities</td><td>P(sell), P(hold), P(buy)</td><td>3</td></tr>
+      <tr><td>Regime probabilities</td><td>P(bull), P(bear), P(sideways), P(high-vol)</td><td>4</td></tr>
+      <tr><td>Disagreement score</td><td>How much do models disagree? (entropy-based)</td><td>1</td></tr>
+      <tr><th colspan="2">Total</th><th>14</th></tr>
+    </table>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 12px;">
+      <strong>OOF Training:</strong> The meta-learner is trained on out-of-fold predictions from
+      base models — it never sees the same data the base models trained on. This prevents the
+      meta-learner from simply memorizing which model is "right."
+    </p>
+  </div>
+
+  <h3>5.2 Meta-Labeling (Quality Gate)</h3>
+  <p>
+    The ensemble gives a direction, but should we actually trade it? Meta-labeling answers:
+    <strong>"Given this prediction, what is the probability it's correct?"</strong>
+  </p>
+
+  <div class="flow">
+    <div class="flow-title">Meta-Labeling Gate</div>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-box">Original<br>159 Features</div>
+      </div>
+      <div class="flow-arrow">+</div>
+      <div class="flow-step">
+        <div class="step-box green">Ensemble<br>Direction</div>
+      </div>
+      <div class="flow-arrow">+</div>
+      <div class="flow-step">
+        <div class="step-box yellow">Ensemble<br>Confidence</div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box" style="border-color: var(--accent3);">
+          XGBClassifier<br>(Binary)
+        </div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box red">P(correct)<br>Threshold 0.55</div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box green">TRADE<br>or SKIP</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert warning">
+    <strong>The 30-40% Filter</strong>
+    Meta-labeling typically filters out 30-40% of all signals. These are predictions where the
+    market context suggests low probability of success — even if the ensemble is confident.
+    Quality over quantity. The remaining 60-70% of trades should have significantly higher accuracy.
+  </div>
+
+  <h3>5.3 Conformal Prediction (Uncertainty Bounds)</h3>
+  <p>
+    Instead of just saying "the stock will go up by 2%", conformal prediction says
+    "the stock will move between -0.5% and +3.5% with 90% confidence." This uses MAPIE
+    with the jackknife+ method to produce calibrated prediction intervals.
+  </p>
+  <div class="highlight-box">
+    <table>
+      <tr><th>Output</th><th>Description</th></tr>
+      <tr><td>Price Target Low</td><td>Lower bound of 90% confidence interval</td></tr>
+      <tr><td>Price Target Mid</td><td>Point estimate (ensemble magnitude)</td></tr>
+      <tr><td>Price Target High</td><td>Upper bound of 90% confidence interval</td></tr>
+      <tr><td>Coverage</td><td>Target: 90% of actual outcomes fall within bounds</td></tr>
+    </table>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 6. PREDICTION ENGINE ============= -->
+<section id="prediction">
+  <h2><span class="sec-num">06</span> Prediction Engine</h2>
+  <p class="subtitle">The full 10-step pipeline from features to final prediction</p>
+
+  <div class="pipeline">
+    <div class="pipeline-step" data-step="1">
+      <div class="step-title">Receive Request</div>
+      <div class="step-desc">
+        Input: symbol (e.g., "TCS"), feature DataFrame (159 columns), current price, market-level
+        features (VIX, FII flows, index returns). Can be a single stock or batch of up to 20.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="2">
+      <div class="step-title">Regime Detection (HMM)</div>
+      <div class="step-desc">
+        Runs HMM on market-level features to classify the current regime. Returns 4 probabilities:
+        [P(bull), P(bear), P(sideways), P(high_vol)]. If market features unavailable, defaults to
+        uniform [0.25, 0.25, 0.25, 0.25]. The detected regime drives strategy selection.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="3">
+      <div class="step-title">Base Model Predictions</div>
+      <div class="step-desc">
+        Runs all 3 base models (XGBoost, LSTM, TFT) independently. Each returns: direction
+        probabilities [3], magnitude estimate, confidence score. <strong>Graceful degradation:</strong>
+        if one model fails, it gets neutral predictions [0.33, 0.34, 0.33]. Minimum 2 of 3 must
+        succeed, otherwise the entire prediction fails with PredictionError.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="4">
+      <div class="step-title">Stacking Ensemble</div>
+      <div class="step-desc">
+        Combines 14 meta-features (3 models x 3 probs + 4 regime probs + 1 disagreement) through
+        the RidgeClassifier meta-learner. Produces: calibrated direction (-1, 0, +1), calibrated
+        confidence (0-1), ensemble probability distribution.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="5">
+      <div class="step-title">Meta-Labeling Gate</div>
+      <div class="step-desc">
+        Binary XGBClassifier evaluates: "given these features AND the ensemble prediction, is this
+        trade likely to be correct?" If P(correct) >= 0.55, the signal is marked <code>is_tradeable = True</code>.
+        Below 0.55, the signal is still returned but flagged as non-tradeable — useful for monitoring.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="6">
+      <div class="step-title">Conformal Prediction</div>
+      <div class="step-desc">
+        Computes 90% prediction intervals using MAPIE jackknife+. Converts magnitude estimate into
+        three price targets: low, mid, high. Wide intervals indicate high uncertainty — a useful
+        risk signal even beyond the direction prediction.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="7">
+      <div class="step-title">Composite Scoring</div>
+      <div class="step-desc">
+        Computes a 0-100 composite score from 6 weighted sub-scores: technical momentum (25%),
+        derivatives sentiment (20%), macro alignment (20%), microstructure quality (15%),
+        news sentiment (10%), volatility risk (10%). Missing feature groups have weights
+        redistributed to available groups.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="8">
+      <div class="step-title">Regime Strategy Selection</div>
+      <div class="step-desc">
+        Based on the detected regime, adjusts thresholds and strategy parameters:
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="9">
+      <div class="step-title">Risk Assessment</div>
+      <div class="step-desc">
+        Position sizing via Half-Kelly formula, portfolio constraint checks (sector cap, correlation,
+        liquidity), and circuit breaker evaluation. See Section 07 for full details.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="10">
+      <div class="step-title">Output: StockPrediction</div>
+      <div class="step-desc">
+        Final output contains 16 fields: symbol, timestamp, direction, magnitude, composite_score,
+        meta_confidence, is_tradeable, regime, regime_probabilities, price_target_low/mid/high,
+        model_disagreement, position_size_pct, model_version, and any warnings from degraded models.
+      </div>
+    </div>
+  </div>
+
+  <h3>6.1 Regime Strategy Rules</h3>
+  <table>
+    <tr>
+      <th>Regime</th>
+      <th>Kelly Fraction</th>
+      <th>Strategy Focus</th>
+      <th>Meta-Label Threshold</th>
+    </tr>
+    <tr>
+      <td><span class="tag green">Bull Trending</span></td>
+      <td>Full Kelly (0.5)</td>
+      <td>Trust momentum, ride trends</td>
+      <td>0.55 (standard)</td>
+    </tr>
+    <tr>
+      <td><span class="tag red">Bear Trending</span></td>
+      <td>Quarter Kelly (0.125)</td>
+      <td>Mean-reversion, defensive</td>
+      <td>0.65 (stricter)</td>
+    </tr>
+    <tr>
+      <td><span class="tag yellow">Sideways</span></td>
+      <td>Half Kelly (0.25)</td>
+      <td>Pairs trading, delivery signals</td>
+      <td>0.60</td>
+    </tr>
+    <tr>
+      <td><span class="tag purple">High Volatility</span></td>
+      <td>Minimum (10% of normal)</td>
+      <td>Cash or fully hedged</td>
+      <td>0.70 (very strict)</td>
+    </tr>
+  </table>
+</section>
+
+<hr>
+
+<!-- ============= 7. RISK MANAGEMENT ============= -->
+<section id="risk">
+  <h2><span class="sec-num">07</span> Risk Management</h2>
+  <p class="subtitle">Every prediction passes through 4 layers of risk control</p>
+
+  <div class="alert danger">
+    <strong>Risk Management is Non-Negotiable</strong>
+    No prediction reaches the output without passing through position sizing, portfolio constraints,
+    and circuit breaker evaluation. This layer exists to protect capital from model errors, regime
+    changes, and black swan events.
+  </div>
+
+  <h3>7.1 Position Sizing: Half-Kelly Criterion</h3>
+  <div class="highlight-box">
+    <p style="font-size: 0.9rem; color: var(--text-muted);">
+      The Kelly Criterion calculates the mathematically optimal bet size to maximize long-term
+      wealth growth. We use <strong>Half-Kelly</strong> because full Kelly is too aggressive for
+      noisy markets.
+    </p>
+<pre><code>kelly_fraction = (2 * meta_confidence - 1)    # e.g., 0.65 confidence -> 0.30
+half_kelly = kelly_fraction * 0.5 * 100        # -> 15% of portfolio
+position_size = min(half_kelly, max_single_stock_pct)  # capped at 10%
+
+# Guards:
+# - meta_confidence < min_threshold (0.55) -> size = 0%
+# - magnitude <= 0 -> size = 0%
+# - negative kelly -> size = 0%
+</code></pre>
+  </div>
+
+  <h3>7.2 Portfolio Constraints</h3>
+  <table>
+    <tr><th>Constraint</th><th>Limit</th><th>Why</th></tr>
+    <tr><td>Sector concentration</td><td>Max 25% in one sector</td><td>Prevents sector blow-up (e.g., all banking stocks crash together)</td></tr>
+    <tr><td>Correlation cap</td><td>Max 0.7 pairwise</td><td>Ensures diversification — highly correlated positions are essentially the same bet</td></tr>
+    <tr><td>Min holding period</td><td>3 trading days</td><td>Prevents churn from noisy daily signals; reduces transaction costs</td></tr>
+    <tr><td>Liquidity floor</td><td>Rs 5 crore avg daily turnover</td><td>Ensures positions can be exited without moving the market</td></tr>
+    <tr><td>Max single stock</td><td>10% of portfolio</td><td>No single stock can destroy the portfolio</td></tr>
+  </table>
+
+  <h3>7.3 Circuit Breaker (Drawdown Protection)</h3>
+  <p>
+    Modeled after NSE's market-wide circuit breakers but applied to the portfolio. Three escalation
+    levels with automatic position reduction.
+  </p>
+
+  <div class="card-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="card" style="border-top: 3px solid var(--accent4);">
+      <div class="card-title">Level 1: Warning</div>
+      <div class="card-desc">
+        <strong>Trigger:</strong> Portfolio drawdown reaches 10%<br>
+        <strong>Action:</strong> Halve all position sizes (50% reduction)<br>
+        <strong>Effect:</strong> New and existing positions both affected
+      </div>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--accent3);">
+      <div class="card-title">Level 2: Alert</div>
+      <div class="card-desc">
+        <strong>Trigger:</strong> Portfolio drawdown reaches 15%<br>
+        <strong>Action:</strong> Block all new entries; existing positions at 50%<br>
+        <strong>Effect:</strong> Only exits allowed, no new risk
+      </div>
+    </div>
+    <div class="card" style="border-top: 3px solid #ff0000;">
+      <div class="card-title">Level 3: Emergency</div>
+      <div class="card-desc">
+        <strong>Trigger:</strong> Portfolio drawdown reaches 20%<br>
+        <strong>Action:</strong> Close all positions (size = 0%)<br>
+        <strong>Effect:</strong> Full de-risk until recovery
+      </div>
+    </div>
+  </div>
+  <p style="color: var(--text-muted); font-size: 0.88rem;">
+    <strong>Recovery:</strong> When portfolio value recovers to 95% of peak value, circuit breaker
+    resets to Level 0 and normal trading resumes.
+  </p>
+</section>
+
+<hr>
+
+<!-- ============= 8. EXECUTION ENGINE ============= -->
+<section id="execution">
+  <h2><span class="sec-num">08</span> Execution Engine</h2>
+  <p class="subtitle">Almgren-Chriss market impact model calibrated for Indian markets</p>
+
+  <p>
+    The execution engine determines WHEN and HOW to place orders to minimize slippage — the
+    difference between the predicted price and the actual execution price.
+  </p>
+
+  <h3>8.1 Market Impact Model</h3>
+  <p>Based on the Almgren-Chriss framework, adapted for Indian market microstructure:</p>
+
+<pre><code># Total impact = temporary impact + permanent impact
+
+temporary_impact = eta * sigma * (order_size / avg_daily_volume) ^ 0.6
+permanent_impact = gamma * sigma * (order_size / avg_daily_volume)
+bid_ask_cost = spread based on cap tier
+
+# Cap-tier calibrated spreads:
+#   Large cap (Nifty 50):  5 basis points  (0.05%)
+#   Mid cap (Midcap 150):  10 basis points (0.10%)
+#   Small cap:             20 basis points (0.20%)
+
+total_impact = temporary_impact + permanent_impact + bid_ask_cost
+</code></pre>
+
+  <h3>8.2 Execution Timing Rules</h3>
+  <table>
+    <tr><th>Time Window</th><th>Action</th><th>Reason</th></tr>
+    <tr><td>9:15 - 9:30 AM</td><td style="color: var(--accent3);">AVOID</td><td>Opening auction — high volatility, wide spreads, misleading prices</td></tr>
+    <tr><td>9:30 - 10:30 AM</td><td style="color: var(--accent4);">CAUTION</td><td>Post-open volatility settling, overnight news being digested</td></tr>
+    <tr><td style="color: var(--accent2);">10:30 - 11:30 AM</td><td style="color: var(--accent2);">PREFERRED</td><td>Stable prices + good liquidity. Best window for large orders.</td></tr>
+    <tr><td>11:30 - 2:00 PM</td><td>NORMAL</td><td>Lunch lull. Lower volume but stable spreads.</td></tr>
+    <tr><td style="color: var(--accent2);">2:00 - 2:45 PM</td><td style="color: var(--accent2);">PREFERRED</td><td>Afternoon activity picks up. Second-best window.</td></tr>
+    <tr><td>2:45 - 3:20 PM</td><td style="color: var(--accent4);">CAUTION</td><td>Pre-close positioning. Volume increases but so does volatility.</td></tr>
+    <tr><td>3:20 - 3:30 PM</td><td style="color: var(--accent3);">AVOID</td><td>Closing auction. Prices may spike or collapse.</td></tr>
+    <tr><td>F&O Expiry Hour</td><td style="color: var(--accent3);">AVOID</td><td>Last Thursday 2:30-3:30 PM. Extreme volatility from unwinding positions.</td></tr>
+  </table>
+
+  <h3>8.3 Order Sizing by Cap Tier</h3>
+  <table>
+    <tr><th>Cap Tier</th><th>Order Type</th><th>Strategy</th></tr>
+    <tr><td>Large Cap</td><td>Market order</td><td>Single order. Sufficient liquidity absorbs any retail-sized order.</td></tr>
+    <tr><td>Mid Cap</td><td>Limit order</td><td>Split into 2-3 tranches. Execute over 15-20 minutes. Max 2% of ADV.</td></tr>
+    <tr><td>Small Cap</td><td>VWAP</td><td>VWAP execution over 30 minutes. Max 1% of ADV. Skip if impact > 0.5%.</td></tr>
+  </table>
+
+  <div class="alert warning">
+    <strong>Participation Rate Guard</strong>
+    If the order size exceeds 5% of a stock's average daily volume, the execution engine flags it.
+    Above 10%, the order is rejected. Large orders in illiquid stocks would move the market against us.
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 9. GNN ============= -->
+<section id="gnn">
+  <h2><span class="sec-num">09</span> Graph Neural Network</h2>
+  <p class="subtitle">Modeling inter-stock relationships with GraphSAGE</p>
+
+  <p>
+    Stocks don't move in isolation. When TCS reports earnings, Infosys, Wipro, and HCL Tech
+    should update their expectations. When the Tata Group makes a strategic move, all Tata
+    companies are affected. The GNN captures these relationships.
+  </p>
+
+  <h3>9.1 Stock Graph Construction</h3>
+  <p>The graph has 50+ nodes (stocks) connected by 3 types of edges:</p>
+
+  <div class="card-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="card" style="border-top: 3px solid var(--accent);">
+      <div class="card-title">Sector Edges</div>
+      <div class="card-desc">
+        Stocks in the same sector are connected. E.g., TCS-Infosys-Wipro-HCL (IT sector),
+        HDFC-ICICI-SBI-Kotak (Banking). Loaded from <code>configs/stocks.yaml</code>. Weight: 1.0.
+      </div>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--accent2);">
+      <div class="card-title">Correlation Edges</div>
+      <div class="card-desc">
+        Computed dynamically from rolling return correlations. Stocks with correlation >= 0.6
+        get connected. Weight: absolute correlation value. Cross-sector pairs like
+        Reliance-ONGC emerge naturally.
+      </div>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--accent4);">
+      <div class="card-title">Promoter Group Edges</div>
+      <div class="card-desc">
+        Stocks owned by the same business group. E.g., Tata Motors-TCS-Titan-Tata Steel
+        (Tata Group), Reliance-Jio (Ambani). From <code>configs/stocks.yaml</code>. Weight: 1.0.
+      </div>
+    </div>
+  </div>
+
+  <h3>9.2 GraphSAGE Architecture</h3>
+  <div class="highlight-box">
+<pre><code># Pure PyTorch implementation (no torch_geometric dependency)
+
+Layer 1: GraphSAGELayer(159 features -> 64 hidden)
+  - For each node: aggregate neighbor features (mean)
+  - Concatenate: [self_features || neighbor_aggregate] (128 dim)
+  - Linear transform: 128 -> 64
+  - ReLU activation
+  - Dropout 0.3
+
+Layer 2: GraphSAGELayer(64 -> 64)
+  - Same aggregation on 64-dim embeddings
+  - Second hop of neighborhood
+
+Classification Head: Linear(64 -> 3)  # Sell / Hold / Buy
+Regression Head:     Linear(64 -> 1)  # Magnitude
+
+Training: Full-batch (all nodes at once, not mini-batch)
+Loss: 0.7 * CrossEntropy + 0.3 * MSE (weighted by sample weights)
+</code></pre>
+  </div>
+
+  <div class="alert info">
+    <strong>Key Insight</strong>
+    Without graph structure (empty edges), GraphSAGE degrades to a standard MLP — the neighbor
+    aggregation produces zeros, and only self-features drive predictions. This means the GNN
+    model gracefully handles stocks with no relationships.
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 10. MONITORING ============= -->
+<section id="monitoring">
+  <h2><span class="sec-num">10</span> Online Learning & Monitoring</h2>
+  <p class="subtitle">Detecting model drift and triggering retraining automatically</p>
+
+  <p>
+    Markets evolve. A model trained in a bull market will fail in a bear market. Online learning
+    monitors model health in real-time and triggers retraining before accuracy degrades.
+  </p>
+
+  <h3>10.1 Drift Detection</h3>
+  <p>Two statistical tests run on every feature, comparing recent data against training data:</p>
+
+  <div class="two-col">
+    <div class="highlight-box">
+      <h4>PSI (Population Stability Index)</h4>
+      <p style="font-size: 0.85rem; color: var(--text-muted);">
+        Measures how much a feature's distribution has shifted from training time.
+        Divides values into 10 quantile bins and compares bin frequencies.
+      </p>
+<pre><code>PSI = sum((current% - reference%) * ln(current% / reference%))
+
+PSI < 0.1  -> No drift (stable)
+PSI 0.1-0.2 -> Warning (moderate shift)
+PSI > 0.2  -> Alert (significant drift, retrain!)
+</code></pre>
+    </div>
+    <div class="highlight-box">
+      <h4>KS Test (Kolmogorov-Smirnov)</h4>
+      <p style="font-size: 0.85rem; color: var(--text-muted);">
+        Non-parametric test comparing two distributions. Returns a statistic (0-1) and p-value.
+        Low p-value = distributions are different = feature has drifted.
+      </p>
+<pre><code>statistic, p_value = ks_2samp(reference, current)
+
+# Used as secondary confirmation alongside PSI
+# If both PSI > 0.2 AND KS p-value < 0.05
+#   -> strong evidence of drift
+</code></pre>
+    </div>
+  </div>
+
+  <h3>10.2 Performance Monitoring</h3>
+  <p>
+    Tracks prediction quality using rolling windows of 7, 30, and 90 days:
+  </p>
+  <table>
+    <tr><th>Metric</th><th>Description</th><th>Alert Threshold</th></tr>
+    <tr><td>Accuracy</td><td>% of correct direction predictions</td><td>< 48% (barely random)</td></tr>
+    <tr><td>Precision (Buy)</td><td>Of BUY signals, % that actually went up</td><td>< 50%</td></tr>
+    <tr><td>Precision (Sell)</td><td>Of SELL signals, % that actually went down</td><td>< 50%</td></tr>
+    <tr><td>Magnitude MAE</td><td>Mean absolute error of magnitude predictions</td><td>Increasing trend</td></tr>
+    <tr><td>Profitable %</td><td>% of trades that made money (direction * actual > 0)</td><td>< 50%</td></tr>
+    <tr><td>Alpha vs Benchmark</td><td>Strategy return minus Nifty 50 return (30d)</td><td>Negative alpha</td></tr>
+  </table>
+
+  <h3>10.3 Retraining Triggers</h3>
+  <p>Three independent triggers can fire retraining. Any one is sufficient:</p>
+
+  <div class="card-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="card" style="border-top: 3px solid var(--accent2);">
+      <div class="card-title">Calendar Trigger</div>
+      <div class="card-desc">
+        <strong>Frequency:</strong> Weekly (configurable)<br>
+        <strong>Logic:</strong> If days since last training >= schedule interval<br>
+        <strong>Why:</strong> Ensures models stay fresh even without explicit degradation
+      </div>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--accent4);">
+      <div class="card-title">Drift Trigger</div>
+      <div class="card-desc">
+        <strong>Condition:</strong> Any feature PSI > 0.2<br>
+        <strong>Logic:</strong> DriftReport.requires_retrain = True<br>
+        <strong>Why:</strong> Feature distributions have shifted; model was trained on different data
+      </div>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--accent3);">
+      <div class="card-title">Performance Trigger</div>
+      <div class="card-desc">
+        <strong>Condition:</strong> Rolling accuracy < min_accuracy (48%)<br>
+        <strong>Logic:</strong> PerformanceReport.requires_retrain = True<br>
+        <strong>Why:</strong> Model is underperforming; market dynamics have changed
+      </div>
+    </div>
+  </div>
+
+  <h3>10.4 Shadow Deployment</h3>
+  <div class="pipeline">
+    <div class="pipeline-step" data-step="1">
+      <div class="step-title">Retrain Triggered</div>
+      <div class="step-desc">
+        New model trained on rolling 2-year window using latest data. CPCV validation must pass.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="2">
+      <div class="step-title">Shadow Registration</div>
+      <div class="step-desc">
+        New model registered as "shadow" status. It generates predictions in parallel with the
+        active model but predictions are logged, not acted upon.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="3">
+      <div class="step-title">Shadow Period (20 Trading Days)</div>
+      <div class="step-desc">
+        Both models run for 20 trading days (~1 month). Shadow model's predictions are compared
+        against actual outcomes to verify performance.
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="4">
+      <div class="step-title">Promotion Decision</div>
+      <div class="step-desc">
+        If shadow model outperforms or matches the active model, it's promoted to "active" status.
+        The previous active model is retired. If shadow underperforms, it's discarded.
+        Last 5 versions are kept for rollback.
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 11. SCHEDULER ============= -->
+<section id="scheduler">
+  <h2><span class="sec-num">11</span> Daily Scheduler</h2>
+  <p class="subtitle">How the system operates on a daily cycle aligned with Indian market hours</p>
+
+  <div class="alert info">
+    <strong>Indian Market Hours</strong>
+    Pre-open: 9:00-9:15 AM IST | Trading: 9:15 AM - 3:30 PM IST | Settlement: T+1
+  </div>
+
+  <h3>11.1 Daily Schedule</h3>
+  <div class="pipeline">
+    <div class="pipeline-step" data-step="&#x2600;">
+      <div class="step-title">6:00 AM IST — Data Refresh</div>
+      <div class="step-desc">
+        <strong>What:</strong> Fetch latest OHLCV data (previous day's close), FII/DII flows,
+        F&O data, corporate actions, news. Update alt data if monthly sources have refreshed.<br>
+        <strong>How:</strong> <code>cron: 0 6 * * 1-5</code> (weekdays only)<br>
+        <strong>Command:</strong> <code>alphavedha data refresh</code><br>
+        <strong>Duration:</strong> ~5-10 minutes for 50 stocks + institutional data
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="&#x1F9EE;">
+      <div class="step-title">7:00 AM IST — Feature Computation</div>
+      <div class="step-desc">
+        <strong>What:</strong> Recompute all 159 features for all tracked stocks using updated data.
+        Features are stored in PostgreSQL feature store and Redis cache.<br>
+        <strong>How:</strong> <code>cron: 0 7 * * 1-5</code><br>
+        <strong>Duration:</strong> ~2-3 minutes for 50 stocks
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="&#x1F52E;">
+      <div class="step-title">8:30 AM IST — Generate Predictions</div>
+      <div class="step-desc">
+        <strong>What:</strong> Run the full prediction pipeline (regime -> models -> ensemble ->
+        meta-label -> conformal -> risk). Generate predictions for all tracked stocks. Timestamp
+        each prediction (before market open = verified forward-looking).<br>
+        <strong>How:</strong> <code>cron: 30 8 * * 1-5</code><br>
+        <strong>Command:</strong> <code>alphavedha scan large --json > predictions_$(date +%F).json</code><br>
+        <strong>Duration:</strong> ~1-2 minutes
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="&#x1F4CA;">
+      <div class="step-title">9:15 AM IST — Market Opens</div>
+      <div class="step-desc">
+        <strong>What:</strong> Predictions are already generated and stored. Paper trading module
+        logs the "entry prices" at market open. If using real trading (future), execution engine
+        determines optimal entry timing (prefer 10:30-11:30 window, not opening auction).<br>
+        <strong>Action:</strong> No cron needed — this is real-time or manual
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="&#x1F3AF;">
+      <div class="step-title">3:45 PM IST — Outcome Evaluation</div>
+      <div class="step-desc">
+        <strong>What:</strong> After market close, compare today's predictions against actual outcomes.
+        Update paper trading P&L. Store prediction-vs-actual pairs for monitoring.<br>
+        <strong>How:</strong> <code>cron: 45 15 * * 1-5</code><br>
+        <strong>Updates:</strong> Rolling accuracy (7d/30d/90d), profitable %, alpha vs Nifty 50
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="&#x1F50D;">
+      <div class="step-title">4:00 PM IST — Drift Check</div>
+      <div class="step-desc">
+        <strong>What:</strong> Run drift detector on today's features vs training distribution.
+        Check PSI and KS test for each feature. Run performance monitor on recent predictions.
+        If retrain is triggered, queue it for overnight.<br>
+        <strong>How:</strong> <code>cron: 0 16 * * 5</code> (weekly, Fridays only)<br>
+        <strong>Duration:</strong> ~30 seconds
+      </div>
+    </div>
+    <div class="pipeline-step" data-step="&#x1F504;">
+      <div class="step-title">11:00 PM IST — Retraining (If Triggered)</div>
+      <div class="step-desc">
+        <strong>What:</strong> If drift/performance/calendar trigger fired, retrain on rolling
+        2-year window. Run CPCV validation. If passes, deploy as shadow model.<br>
+        <strong>How:</strong> <code>cron: 0 23 * * 6</code> (Saturday night, if trigger set)<br>
+        <strong>Command:</strong> <code>alphavedha train all</code><br>
+        <strong>Duration:</strong> ~20-30 minutes for all models
+      </div>
+    </div>
+  </div>
+
+  <h3>11.2 Implementation (cron-based for personal use)</h3>
+  <div class="highlight-box">
+<pre><code># crontab -e
+# AlphaVedha Daily Schedule (IST = UTC+5:30, so subtract 5:30 for UTC cron)
+
+# 6:00 AM IST = 0:30 UTC — Data refresh
+30 0 * * 1-5 cd /home/user/alphavedha && python -m alphavedha.cli.main data refresh >> logs/data.log 2>&1
+
+# 8:30 AM IST = 3:00 UTC — Generate predictions
+0 3 * * 1-5 cd /home/user/alphavedha && python -m alphavedha.cli.main scan large --json >> predictions/$(date +\%F).json 2>&1
+
+# 3:45 PM IST = 10:15 UTC — Evaluate outcomes
+15 10 * * 1-5 cd /home/user/alphavedha && python -m alphavedha.cli.main evaluate >> logs/evaluate.log 2>&1
+
+# 4:00 PM IST Fridays = 10:30 UTC — Weekly drift check
+30 10 * * 5 cd /home/user/alphavedha && python -m alphavedha.cli.main monitor drift >> logs/drift.log 2>&1
+</code></pre>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 12. ALT DATA ============= -->
+<section id="altdata">
+  <h2><span class="sec-num">12</span> Alternative Data</h2>
+  <p class="subtitle">13 non-traditional data sources that provide an information edge</p>
+
+  <p>
+    Alternative data is AlphaVedha's moat. These are publicly available data points that most
+    retail traders and even some institutional investors don't systematically track. Many of
+    these indicators are published BEFORE earnings, making them leading indicators.
+  </p>
+
+  <table>
+    <tr><th>#</th><th>Data Source</th><th>Frequency</th><th>Stocks Affected</th><th>Why It Matters</th></tr>
+    <tr><td>1</td><td>GST Collections</td><td>Monthly</td><td>All (economy proxy)</td><td>Higher GST = more economic activity = bullish for equities</td></tr>
+    <tr><td>2</td><td>Auto Sales</td><td>Monthly</td><td>Maruti, Tata Motors, M&M</td><td>Published 1st of every month, before quarterly earnings. Direct revenue proxy.</td></tr>
+    <tr><td>3</td><td>Cement Dispatch</td><td>Monthly</td><td>UltraTech, Shree, ACC, Ambuja</td><td>Proxy for infrastructure and real estate activity</td></tr>
+    <tr><td>4</td><td>Power Consumption</td><td>Monthly</td><td>Power Grid, NTPC, Tata Power</td><td>Industrial power = economic activity gauge</td></tr>
+    <tr><td>5</td><td>Port Cargo Volume</td><td>Monthly</td><td>Adani Ports</td><td>Trade volume = export/import health</td></tr>
+    <tr><td>6</td><td>UPI Transactions</td><td>Monthly</td><td>Banks, Paytm</td><td>Digital payment volume = consumer spending proxy</td></tr>
+    <tr><td>7</td><td>Credit Growth</td><td>Bi-weekly</td><td>All banks</td><td>RBI publishes credit growth. Rising = banks lending more = bullish</td></tr>
+    <tr><td>8</td><td>Forex Reserves</td><td>Weekly</td><td>IT exporters (TCS, Infosys)</td><td>Rising reserves = strong INR flows = FII confidence</td></tr>
+    <tr><td>9</td><td>Crude Oil</td><td>Daily</td><td>Oil companies, paint, airlines</td><td>Input cost for many industries. Rising crude = bearish for importers</td></tr>
+    <tr><td>10</td><td>US Overnight Return</td><td>Daily</td><td>All (sentiment)</td><td>S&P 500 close influences Indian market opening</td></tr>
+    <tr><td>11</td><td>Job Postings</td><td>Monthly</td><td>IT, Banking sectors</td><td>Hiring trends predict revenue growth with 1-2 quarter lag</td></tr>
+    <tr><td>12</td><td>PMI (Manufacturing/Services)</td><td>Monthly</td><td>All manufacturing/services</td><td>Leading indicator of industrial output</td></tr>
+    <tr><td>13</td><td>Steel Production</td><td>Monthly</td><td>Tata Steel, JSW, SAIL</td><td>Infrastructure and construction demand proxy</td></tr>
+  </table>
+
+  <div class="alert success">
+    <strong>Leading vs Lagging Indicators</strong>
+    Auto sales (published 1st of the month) predict Maruti's quarterly revenue BEFORE the
+    earnings announcement. This is not insider information — it's public data that most traders
+    don't systematically incorporate. This timing edge is AlphaVedha's key advantage.
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 13. API & CLI ============= -->
+<section id="api">
+  <h2><span class="sec-num">13</span> API & CLI</h2>
+  <p class="subtitle">Two interfaces for interacting with the prediction engine</p>
+
+  <h3>13.1 REST API (FastAPI)</h3>
+  <div class="highlight-box">
+    <h4>Architecture</h4>
+    <p style="font-size: 0.88rem; color: var(--text-muted);">
+      App factory pattern with lifespan management. On startup: initialize models, connect Redis.
+      On shutdown: graceful cleanup. Middleware: slowapi rate limiting, structured error responses,
+      CORS (when configured).
+    </p>
+  </div>
+
+  <table>
+    <tr><th>Endpoint</th><th>Method</th><th>Auth</th><th>Description</th></tr>
+    <tr><td colspan="4" style="color: var(--accent); font-weight: 700;">Health & Status</td></tr>
+    <tr><td><code>/health</code></td><td>GET</td><td>No</td><td>Liveness probe (always returns ok)</td></tr>
+    <tr><td><code>/ready</code></td><td>GET</td><td>No</td><td>Readiness probe (checks models + cache)</td></tr>
+    <tr><td colspan="4" style="color: var(--accent); font-weight: 700;">Predictions (Auth Required)</td></tr>
+    <tr><td><code>/predict/{symbol}</code></td><td>GET</td><td>Yes</td><td>Single stock prediction with full details</td></tr>
+    <tr><td><code>/predict/batch</code></td><td>POST</td><td>Yes</td><td>Batch prediction (up to 20 symbols)</td></tr>
+    <tr><td><code>/scan/{tier}</code></td><td>GET</td><td>Yes</td><td>Scan entire tier (large/mid/small), rank by score</td></tr>
+    <tr><td colspan="4" style="color: var(--accent); font-weight: 700;">Paper Trading</td></tr>
+    <tr><td><code>/paper/open-position</code></td><td>POST</td><td>Yes</td><td>Open a paper position</td></tr>
+    <tr><td><code>/paper/close-position</code></td><td>POST</td><td>Yes</td><td>Close a paper position</td></tr>
+    <tr><td><code>/paper/portfolio</code></td><td>GET</td><td>Yes</td><td>Current paper portfolio</td></tr>
+    <tr><td><code>/paper/trades</code></td><td>GET</td><td>Yes</td><td>Trade history</td></tr>
+    <tr><td><code>/paper/performance</code></td><td>GET</td><td>Yes</td><td>P&L and metrics</td></tr>
+    <tr><td colspan="4" style="color: var(--accent); font-weight: 700;">Dashboard</td></tr>
+    <tr><td><code>/dashboard/summary</code></td><td>GET</td><td>Yes</td><td>Portfolio overview</td></tr>
+    <tr><td><code>/dashboard/allocations</code></td><td>GET</td><td>Yes</td><td>Current allocation breakdown</td></tr>
+    <tr><td><code>/dashboard/sector-breakdown</code></td><td>GET</td><td>Yes</td><td>Sector-wise exposure</td></tr>
+    <tr><td colspan="4" style="color: var(--accent); font-weight: 700;">Public Track Record (No Auth)</td></tr>
+    <tr><td><code>/public/track-record</code></td><td>GET</td><td>No</td><td>Full performance summary with breakdowns</td></tr>
+    <tr><td><code>/public/predictions</code></td><td>GET</td><td>No</td><td>All historical predictions (paginated, filterable)</td></tr>
+    <tr><td><code>/public/equity-curve</code></td><td>GET</td><td>No</td><td>Portfolio vs benchmark equity curve</td></tr>
+    <tr><td><code>/public/monthly-returns</code></td><td>GET</td><td>No</td><td>Month-by-month returns</td></tr>
+    <tr><td><code>/public/predictions/export</code></td><td>GET</td><td>No</td><td>Download all predictions as CSV/JSON</td></tr>
+    <tr><td><code>/public/model-info</code></td><td>GET</td><td>No</td><td>Model architecture and version info</td></tr>
+  </table>
+
+  <h3>13.2 CLI (Typer + Rich)</h3>
+  <div class="highlight-box">
+<pre><code># Single stock prediction with beautiful Rich output
+alphavedha predict TCS --demo
+
+# Scan all large-cap stocks, show top 5
+alphavedha scan large --demo --top-n 5
+
+# JSON output for piping to other tools
+alphavedha predict TCS --demo --json
+
+# Start API server
+alphavedha serve --demo --port 8000
+
+# Data management
+alphavedha data refresh           # Daily OHLCV + features
+alphavedha data backfill --start 2005-01-01
+alphavedha data fii-refresh       # FII/DII flows
+alphavedha data derivatives-refresh
+alphavedha data earnings-refresh
+
+# Model training
+alphavedha train xgboost
+alphavedha train lstm
+alphavedha train tft
+alphavedha train regime
+alphavedha train all              # Train everything sequentially
+
+# Backtesting
+alphavedha backtest portfolio     # Walk-forward backtest
+</code></pre>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 14. BACKTEST ============= -->
+<section id="backtest">
+  <h2><span class="sec-num">14</span> Backtesting Framework</h2>
+  <p class="subtitle">Walk-forward validation with realistic Indian market costs</p>
+
+  <h3>14.1 Walk-Forward Methodology</h3>
+  <p>
+    The gold standard for strategy validation. For each month, train on all prior data, predict
+    the current month, and measure actual P&L. No hindsight, no data leakage.
+  </p>
+
+  <div class="flow">
+    <div class="flow-title">Walk-Forward: 30-Month Simulation (Jan 2024 - May 2026)</div>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-box">Train on<br>2020-2023</div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box green">Predict<br>Jan 2024</div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box yellow">Measure<br>Actual P&L</div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box">Retrain on<br>2020-Jan24</div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box green">Predict<br>Feb 2024</div>
+      </div>
+      <div class="flow-arrow">&#x2192;</div>
+      <div class="flow-step">
+        <div class="step-box yellow">Repeat<br>30 months</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>14.2 Indian Market Cost Model</h3>
+  <table>
+    <tr><th>Cost Component</th><th>Rate</th><th>Applied To</th></tr>
+    <tr><td>Brokerage</td><td>0.03% or Rs 20 per order (whichever lower)</td><td>Both buy and sell</td></tr>
+    <tr><td>STT (Securities Transaction Tax)</td><td>0.1% delivery, 0.025% intraday</td><td>Buy + sell (delivery), sell only (intraday)</td></tr>
+    <tr><td>Exchange Charges</td><td>0.00345%</td><td>Both sides</td></tr>
+    <tr><td>GST on Brokerage</td><td>18% of brokerage</td><td>On brokerage amount</td></tr>
+    <tr><td>SEBI Charges</td><td>Rs 10 per crore</td><td>On turnover</td></tr>
+    <tr><td>Stamp Duty</td><td>0.015%</td><td>Buy side only</td></tr>
+    <tr><td>Slippage (Estimated)</td><td>5-20 bps (cap-tier dependent)</td><td>Both sides</td></tr>
+  </table>
+
+  <h3>14.3 CPCV (Combinatorial Purged Cross-Validation)</h3>
+  <p style="color: var(--text-muted); font-size: 0.9rem;">
+    Standard k-fold CV is invalid for time-series (data leakage). CPCV generates all combinatorial
+    train/test splits while purging overlapping labels at boundaries and applying embargo (20-day
+    gap). This produces a distribution of model performance, not a single overfit number.
+  </p>
+
+  <h3>14.4 Target Metrics</h3>
+  <table>
+    <tr><th>Metric</th><th>Target</th><th>What It Means</th></tr>
+    <tr><td>Sharpe Ratio</td><td>> 1.5</td><td>Risk-adjusted return (top quant funds: 1.5-2.5)</td></tr>
+    <tr><td>Max Drawdown</td><td>< 12%</td><td>Worst peak-to-trough decline</td></tr>
+    <tr><td>Annual Return</td><td>Nifty 50 + 10%</td><td>Meaningful outperformance after costs</td></tr>
+    <tr><td>Win Rate</td><td>> 55%</td><td>More winning trades than losing</td></tr>
+    <tr><td>Profit Factor</td><td>> 1.8</td><td>Gross profits / gross losses</td></tr>
+    <tr><td>Post-Meta-Label Accuracy</td><td>> 55%</td><td>After filtering low-confidence signals</td></tr>
+  </table>
+</section>
+
+<hr>
+
+<!-- ============= 15. INFRASTRUCTURE ============= -->
+<section id="infra">
+  <h2><span class="sec-num">15</span> Infrastructure & Tech Stack</h2>
+  <p class="subtitle">Complete technology stack and deployment architecture</p>
+
+  <h3>15.1 Tech Stack</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Core Language</div>
+      <ul>
+        <li><strong>Python 3.12</strong> — strict type hints everywhere</li>
+        <li><strong>structlog</strong> — structured JSON logging</li>
+        <li><strong>Pydantic v2</strong> — all config and API validation</li>
+        <li><strong>pathlib.Path</strong> — no os.path anywhere</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">ML / Deep Learning</div>
+      <ul>
+        <li><strong>PyTorch 2.3+</strong> — LSTM, TFT, GNN, RL agent</li>
+        <li><strong>XGBoost 2.1+</strong> — gradient boosted trees</li>
+        <li><strong>scikit-learn 1.4+</strong> — preprocessing, metrics</li>
+        <li><strong>hmmlearn</strong> — Hidden Markov Model for regime</li>
+        <li><strong>MAPIE</strong> — conformal prediction intervals</li>
+        <li><strong>safetensors</strong> — safe PyTorch model serialization</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Data & Storage</div>
+      <ul>
+        <li><strong>PostgreSQL 16</strong> — primary database</li>
+        <li><strong>TimescaleDB</strong> — time-series hypertables</li>
+        <li><strong>Redis 7</strong> — feature cache, rate limiting</li>
+        <li><strong>SQLAlchemy 2.0</strong> — async ORM (asyncpg)</li>
+        <li><strong>pandas + numpy</strong> — data manipulation</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">API & CLI</div>
+      <ul>
+        <li><strong>FastAPI</strong> — async REST API</li>
+        <li><strong>uvicorn</strong> — ASGI server (dev)</li>
+        <li><strong>gunicorn</strong> — WSGI/ASGI server (prod)</li>
+        <li><strong>slowapi</strong> — rate limiting</li>
+        <li><strong>Typer</strong> — CLI framework</li>
+        <li><strong>Rich</strong> — beautiful terminal output</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Data Providers</div>
+      <ul>
+        <li><strong>jugaad-data</strong> — primary NSE data</li>
+        <li><strong>yfinance</strong> — fallback data source</li>
+        <li><strong>httpx + aiohttp</strong> — async HTTP clients</li>
+        <li><strong>FinBERT (HuggingFace)</strong> — news NLP</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Testing & Quality</div>
+      <ul>
+        <li><strong>pytest</strong> — test framework (548 tests)</li>
+        <li><strong>pytest-asyncio</strong> — async test support</li>
+        <li><strong>fakeredis</strong> — Redis mocking</li>
+        <li><strong>ruff</strong> — linter + formatter</li>
+        <li><strong>mypy</strong> — strict type checking</li>
+        <li><strong>VectorBT</strong> — backtesting engine</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>15.2 Project Structure</h3>
+  <div class="highlight-box">
+<pre><code>alphavedha/
++-- alphavedha/               # Main package (~15,800 LOC)
+|   +-- data/                 # Data ingestion, preprocessing, storage
+|   |   +-- providers/        # 6 data providers (jugaad, yfinance, NSE, SEBI, earnings, news)
+|   |   +-- preprocessing/    # 5-stage pipeline (corp actions, circuits, missing, FFD, outliers)
+|   |   +-- stock_graph.py    # GNN graph builder
+|   |   +-- store.py          # Feature store
+|   |   +-- database.py       # Async SQLAlchemy + connection pooling
+|   +-- features/             # 9 feature modules (159 total features)
+|   +-- labels/               # Triple barrier + sample weights
+|   +-- models/               # 8 ML models (XGB, LSTM, TFT, GNN, HMM, Ensemble, Meta, Conformal)
+|   +-- prediction/           # Engine, scorer, ranker, regime strategy
+|   +-- risk/                 # Kelly sizing, portfolio constraints, circuit breaker, impact model
+|   +-- signals/              # Pairs trading, execution timing
+|   +-- monitoring/           # Drift detection, performance tracking, auto-retrainer
+|   +-- training/             # Training pipelines for all models
+|   +-- backtest/             # Walk-forward, CPCV, cost model
+|   +-- services/             # Service layer (ModelRegistry, Cache, PredictionService)
+|   +-- api/                  # FastAPI routes (health, predictions, paper trading, public dashboard)
+|   +-- cli/                  # Typer CLI (predict, scan, serve, data, train, backtest)
+|   +-- config.py             # Pydantic config loader
+|   +-- exceptions.py         # Custom exception hierarchy
++-- tests/                    # 548 tests (~7,500 LOC)
+|   +-- unit/                 # 56 test files across all modules
+|   +-- integration/          # DB integration tests (planned)
++-- configs/                  # YAML configuration
+|   +-- default.yaml          # All parameters (universe, features, models, risk, backtest)
+|   +-- stocks.yaml           # Stock sectors, promoter groups, screener symbols
++-- docs/                     # Design specs, plans, this document
++-- docker-compose.yml        # PostgreSQL (TimescaleDB) + Redis
++-- Makefile                  # Build, test, train, serve targets
++-- pyproject.toml            # Dependencies, tool config (ruff, mypy, pytest)
+</code></pre>
+  </div>
+
+  <h3>15.3 Deployment (Personal Use)</h3>
+  <div class="highlight-box">
+    <h4>Recommended: Local Machine</h4>
+    <p style="font-size: 0.88rem; color: var(--text-muted);">
+      For personal use, run everything locally. No cloud services needed.
+      Total cost: electricity only.
+    </p>
+<pre><code># One-time setup
+make setup                    # Create venv, install deps
+make docker-up                # Start PostgreSQL + Redis
+make data-backfill            # Fetch 20 years of historical data
+make train                    # Train all models (~30 min)
+
+# Daily operation (via cron)
+make data-refresh             # Fetch latest data
+alphavedha scan large --json  # Generate predictions
+alphavedha serve --port 8000  # API accessible at localhost:8000/docs
+</code></pre>
+  </div>
+</section>
+
+<hr>
+
+<!-- ============= 16. GLOSSARY ============= -->
+<section id="glossary">
+  <h2><span class="sec-num">16</span> Glossary</h2>
+  <p class="subtitle">Key terms and concepts used throughout this system</p>
+
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td>ATR</td><td>Average True Range — volatility measure based on daily high-low range over 14 days</td></tr>
+    <tr><td>CPCV</td><td>Combinatorial Purged Cross-Validation — time-series-safe model evaluation method</td></tr>
+    <tr><td>Conformal Prediction</td><td>Statistical method to produce prediction intervals with guaranteed coverage probability</td></tr>
+    <tr><td>Delivery %</td><td>India-unique metric: percentage of traded shares actually delivered (transferred to demat). High delivery = genuine buying, not just day-trading</td></tr>
+    <tr><td>Drawdown</td><td>Peak-to-trough decline in portfolio value. Max drawdown is the worst such decline ever.</td></tr>
+    <tr><td>Embargo</td><td>Gap (20 days) between training and validation data to prevent label leakage at boundaries</td></tr>
+    <tr><td>FFD</td><td>Fractionally Differentiated Series — makes price series stationary while preserving memory</td></tr>
+    <tr><td>FII</td><td>Foreign Institutional Investors — foreign funds investing in Indian equities</td></tr>
+    <tr><td>DII</td><td>Domestic Institutional Investors — Indian mutual funds, insurance companies, pension funds</td></tr>
+    <tr><td>F&O</td><td>Futures & Options — derivatives segment of NSE. India has the world's largest options market.</td></tr>
+    <tr><td>GNN</td><td>Graph Neural Network — neural network that operates on graph structures (nodes + edges)</td></tr>
+    <tr><td>GraphSAGE</td><td>Graph Sample and Aggregate — GNN variant that learns by aggregating neighbor features</td></tr>
+    <tr><td>Half-Kelly</td><td>Half of the Kelly Criterion bet size — optimal growth rate with reduced volatility</td></tr>
+    <tr><td>HMM</td><td>Hidden Markov Model — probabilistic model for detecting hidden market regimes</td></tr>
+    <tr><td>LSTM</td><td>Long Short-Term Memory — RNN variant that captures temporal dependencies in sequences</td></tr>
+    <tr><td>MAPIE</td><td>Model Agnostic Prediction Interval Estimator — library for conformal prediction</td></tr>
+    <tr><td>Meta-Labeling</td><td>Binary classifier that predicts whether the primary model's prediction is correct. Quality gate.</td></tr>
+    <tr><td>OI</td><td>Open Interest — total number of outstanding derivative contracts. Changes indicate new money flow.</td></tr>
+    <tr><td>OOF</td><td>Out-of-Fold — predictions made on data the model didn't train on (used for ensemble training)</td></tr>
+    <tr><td>PCR</td><td>Put-Call Ratio — ratio of put options to call options. High PCR = bearish sentiment.</td></tr>
+    <tr><td>PEAD</td><td>Post-Earnings Announcement Drift — stocks that beat estimates continue outperforming 60-90 days</td></tr>
+    <tr><td>PSI</td><td>Population Stability Index — measures distribution shift between two datasets (drift detection)</td></tr>
+    <tr><td>Profit Factor</td><td>Gross profits divided by gross losses. > 1.0 means profitable, > 1.8 is excellent.</td></tr>
+    <tr><td>Purging</td><td>Removing training samples whose labels overlap with validation data at the boundary</td></tr>
+    <tr><td>Regime</td><td>Market state — bull (trending up), bear (trending down), sideways, or high-volatility</td></tr>
+    <tr><td>Sharpe Ratio</td><td>Risk-adjusted return = (return - risk-free rate) / volatility. > 1.5 is excellent.</td></tr>
+    <tr><td>Slippage</td><td>Difference between expected execution price and actual price. Caused by market impact.</td></tr>
+    <tr><td>STT</td><td>Securities Transaction Tax — Indian tax on stock transactions (0.1% delivery, 0.025% intraday)</td></tr>
+    <tr><td>TFT</td><td>Temporal Fusion Transformer — attention-based model for multi-horizon time-series prediction</td></tr>
+    <tr><td>Triple Barrier</td><td>Labeling method: profit target (up), stop loss (down), time limit — first barrier hit determines label</td></tr>
+    <tr><td>VWAP</td><td>Volume Weighted Average Price — fair price based on volume distribution throughout the day</td></tr>
+    <tr><td>Walk-Forward</td><td>Backtest method: train on past, predict next period, roll forward. Simulates real-world usage.</td></tr>
+    <tr><td>Winsorization</td><td>Capping extreme values at percentiles (e.g., 1st and 99th) to reduce outlier influence</td></tr>
+  </table>
+</section>
+
+<hr>
+
+<footer>
+  <div class="container">
+    <p><strong>AlphaVedha</strong> &mdash; Built by Saurabh Borkar</p>
+    <p style="margin-top: 8px;">
+      Python 3.12 | PyTorch | XGBoost | FastAPI | TimescaleDB | 548 Tests | ~16K LOC
+    </p>
+    <p style="margin-top: 8px; font-size: 0.8rem;">
+      Document generated: May 2026 | For personal use only
+    </p>
+  </div>
+</footer>
+
+</div>
+</body>
+</html>
