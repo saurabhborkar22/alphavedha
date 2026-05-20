@@ -8,6 +8,7 @@ from alphavedha.models.base import (
 )
 from alphavedha.models.conformal import ConformalPredictor, ConformalResult
 from alphavedha.models.ensemble import EnsembleResult, StackingEnsemble
+from alphavedha.models.gnn_model import GNNModel
 from alphavedha.models.lstm_model import LSTMModel
 from alphavedha.models.meta_model import MetaLabelingModel, MetaLabelResult
 from alphavedha.models.regime import RegimeDetector, RegimeResult
@@ -19,6 +20,7 @@ __all__ = [
     "ConformalPredictor",
     "ConformalResult",
     "EnsembleResult",
+    "GNNModel",
     "LSTMModel",
     "MetaLabelResult",
     "MetaLabelingModel",

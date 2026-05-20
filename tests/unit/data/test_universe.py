@@ -19,11 +19,10 @@ class TestIndexURLs:
 
 
 class TestFetchConstituents:
-    def test_unknown_index_raises(self):
+    @pytest.mark.asyncio
+    async def test_unknown_index_raises(self):
         with pytest.raises(ValueError, match="Unknown index"):
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(fetch_index_constituents("INVALID_INDEX"))
+            await fetch_index_constituents("INVALID_INDEX")
 
 
 class TestConfig:

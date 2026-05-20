@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -12,10 +13,13 @@ import structlog
 from alphavedha.config import get_config
 from alphavedha.exceptions import ModelNotFoundError
 from alphavedha.models.base import PredictionResult
-from alphavedha.models.conformal import ConformalResult
-from alphavedha.models.ensemble import EnsembleResult
-from alphavedha.models.meta_model import MetaLabelResult
-from alphavedha.models.regime import RegimeResult
+from alphavedha.models.conformal import ConformalPredictor, ConformalResult
+from alphavedha.models.ensemble import EnsembleResult, StackingEnsemble
+from alphavedha.models.lstm_model import LSTMModel
+from alphavedha.models.meta_model import MetaLabelingModel, MetaLabelResult
+from alphavedha.models.regime import RegimeDetector, RegimeResult
+from alphavedha.models.temporal_attention import TemporalAttentionModel
+from alphavedha.models.xgboost_model import XGBoostModel
 from alphavedha.prediction.engine import PredictionEngine
 from alphavedha.prediction.scorer import CompositeScorer
 from alphavedha.risk.risk_manager import RiskManager
@@ -218,6 +222,7 @@ class ModelRegistry:
 
     def __init__(self, demo: bool = False, artifact_dir: Path | None = None) -> None:
         self._demo = demo
+        self._real_version = "v0.1.0"
         if artifact_dir is not None:
             self._artifact_dir = artifact_dir
         else:
@@ -234,7 +239,7 @@ class ModelRegistry:
         """Return the model version string."""
         if self._demo:
             return "demo-v0.1.0"
-        return "v0.1.0"
+        return self._real_version
 
     def get_prediction_engine(self) -> PredictionEngine:
         """Build and return a PredictionEngine with loaded models.
@@ -302,7 +307,6 @@ class ModelRegistry:
                 "Train models first with `make train`, or use demo mode."
             )
 
-        # Check for required subdirectories
         required = ["xgboost", "lstm", "tft", "regime", "ensemble", "meta_labeling", "conformal"]
         missing = [name for name in required if not (artifact_dir / name).exists()]
         if missing:
@@ -311,9 +315,40 @@ class ModelRegistry:
                 "Train models first with `make train`, or use demo mode."
             )
 
-        # Real model loading will be implemented when trained models exist.
-        # For now, raise a clear error.
-        raise ModelNotFoundError(
-            "Real model loading is not yet implemented. Use demo mode (--demo) "
-            "or train models first."
+        logger.info("loading_real_models", artifact_dir=str(artifact_dir))
+
+        xgboost = XGBoostModel.load(artifact_dir / "xgboost")
+        lstm = LSTMModel.load(artifact_dir / "lstm")
+        tft = TemporalAttentionModel.load(artifact_dir / "tft")
+        regime = RegimeDetector.load(artifact_dir / "regime")
+        ensemble = StackingEnsemble.load(artifact_dir / "ensemble")
+        meta_model = MetaLabelingModel.load(artifact_dir / "meta_labeling")
+        conformal = ConformalPredictor.load(artifact_dir / "conformal")
+
+        version_file = artifact_dir / "version.json"
+        if version_file.exists():
+            self._real_version = json.loads(version_file.read_text()).get("version", "v0.1.0")
+        else:
+            self._real_version = "v0.1.0"
+
+        config = get_config()
+        risk_manager = RiskManager(
+            position_config=config.risk.position_sizing,
+            portfolio_config=config.risk.portfolio,
+            circuit_breaker_config=config.risk.circuit_breaker,
+        )
+
+        logger.info("real_models_loaded", model_version=self._real_version)
+
+        return PredictionEngine(
+            xgboost=xgboost,
+            lstm=lstm,
+            tft=tft,
+            regime=regime,
+            ensemble=ensemble,
+            meta_model=meta_model,
+            conformal=conformal,
+            scorer=CompositeScorer(),
+            risk_manager=risk_manager,
+            model_version=self._real_version,
         )
