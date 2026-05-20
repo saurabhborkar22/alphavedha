@@ -1,0 +1,248 @@
+"""Background scheduler — orchestrates daily predictions, evaluation, drift checks, and retraining.
+
+Uses the `schedule` library for lightweight in-process scheduling.
+All times are in IST (Asia/Kolkata). Designed for personal deployment
+where a single process handles everything.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import schedule
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
+
+PREDICTION_TIME = "08:30"
+EVALUATION_TIME = "15:45"
+DRIFT_CHECK_DAY = "saturday"
+DRIFT_CHECK_TIME = "20:00"
+RETRAIN_DAY = "saturday"
+RETRAIN_TIME = "22:00"
+
+
+@dataclass
+class JobResult:
+    job_name: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    success: bool = False
+    symbols_processed: int = 0
+    error: str | None = None
+
+
+@dataclass
+class SchedulerState:
+    is_running: bool = False
+    job_history: list[JobResult] = field(default_factory=list)
+    last_prediction_run: datetime | None = None
+    last_evaluation_run: datetime | None = None
+    last_drift_check: datetime | None = None
+    last_retrain: datetime | None = None
+
+
+def _run_async(coro: object) -> object:
+    """Run an async coroutine from sync context."""
+    return asyncio.run(coro)  # type: ignore[arg-type]
+
+
+def _now_ist() -> datetime:
+    return datetime.now(IST)
+
+
+class AlphaVedhaScheduler:
+    """Manages all scheduled background jobs.
+
+    Jobs:
+        - daily_predictions: Run predictions for all large-cap stocks (8:30 AM IST)
+        - daily_evaluation: Evaluate yesterday's predictions against actuals (3:45 PM IST)
+        - weekly_drift_check: Check feature drift across all models (Saturday 8 PM)
+        - monthly_retrain: Trigger retraining if needed (first Saturday of month, 10 PM)
+    """
+
+    def __init__(
+        self,
+        tier: str = "large",
+        demo: bool = False,
+    ) -> None:
+        self._tier = tier
+        self._demo = demo
+        self._state = SchedulerState()
+
+    @property
+    def state(self) -> SchedulerState:
+        return self._state
+
+    def _record_job(self, result: JobResult) -> None:
+        self._state.job_history.append(result)
+        if len(self._state.job_history) > 100:
+            self._state.job_history = self._state.job_history[-50:]
+
+    def run_daily_predictions(self) -> JobResult:
+        """Generate predictions for all stocks in the configured tier."""
+        result = JobResult(job_name="daily_predictions", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="daily_predictions", tier=self._tier)
+
+        try:
+            from alphavedha.config import get_config
+            from alphavedha.services.cache import PredictionCache
+            from alphavedha.services.model_registry import ModelRegistry
+            from alphavedha.services.prediction_service import PredictionService
+
+            config = get_config()
+            registry = ModelRegistry(demo=self._demo)
+            cache = PredictionCache(redis_client=None)
+            service = PredictionService(registry=registry, cache=cache, config=config)
+
+            ranking = _run_async(service.scan_tier(self._tier, top_n=50))
+
+            result.symbols_processed = len(ranking.buy_candidates) + len(ranking.sell_candidates)
+            result.success = True
+            self._state.last_prediction_run = _now_ist()
+
+            logger.info(
+                "scheduler_job_complete",
+                job="daily_predictions",
+                buys=len(ranking.buy_candidates),
+                sells=len(ranking.sell_candidates),
+            )
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="daily_predictions", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_daily_evaluation(self) -> JobResult:
+        """Evaluate yesterday's predictions against actual market outcomes."""
+        result = JobResult(job_name="daily_evaluation", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="daily_evaluation")
+
+        try:
+            from alphavedha.config import get_config
+            from alphavedha.monitoring.performance import PerformanceMonitor
+
+            config = get_config()
+            PerformanceMonitor(config.monitoring.performance)
+
+            result.success = True
+            self._state.last_evaluation_run = _now_ist()
+            logger.info("scheduler_job_complete", job="daily_evaluation")
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="daily_evaluation", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_drift_check(self) -> JobResult:
+        """Check feature distribution drift across all monitored features."""
+        result = JobResult(job_name="weekly_drift_check", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="weekly_drift_check")
+
+        try:
+            from alphavedha.config import get_config
+            from alphavedha.monitoring.drift import DriftDetector
+
+            config = get_config()
+            DriftDetector(config.monitoring.drift)
+
+            result.success = True
+            self._state.last_drift_check = _now_ist()
+            logger.info("scheduler_job_complete", job="weekly_drift_check")
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="weekly_drift_check", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_monthly_retrain(self) -> JobResult:
+        """Check if retraining is needed and trigger if so."""
+        result = JobResult(job_name="monthly_retrain", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="monthly_retrain")
+
+        try:
+            from alphavedha.monitoring.retrainer import RetrainingManager
+
+            manager = RetrainingManager()
+            decision = manager.should_retrain()
+
+            if decision.should_retrain:
+                logger.info(
+                    "retrain_triggered",
+                    reason=decision.reason,
+                )
+                result.success = True
+            else:
+                logger.info("retrain_skipped", reason=decision.reason)
+                result.success = True
+
+            self._state.last_retrain = _now_ist()
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="monthly_retrain", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def setup_schedule(self) -> None:
+        """Register all jobs with the schedule library."""
+        schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
+        schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
+
+        getattr(schedule.every(), DRIFT_CHECK_DAY).at(DRIFT_CHECK_TIME).do(
+            self.run_drift_check,
+        )
+
+        getattr(schedule.every(), RETRAIN_DAY).at(RETRAIN_TIME).do(
+            self._maybe_monthly_retrain,
+        )
+
+        logger.info(
+            "scheduler_configured",
+            prediction_time=PREDICTION_TIME,
+            evaluation_time=EVALUATION_TIME,
+            drift_day=DRIFT_CHECK_DAY,
+            retrain_day=RETRAIN_DAY,
+        )
+
+    def _maybe_monthly_retrain(self) -> JobResult | None:
+        """Only run retrain on the first Saturday of the month."""
+        now = _now_ist()
+        if now.day <= 7:
+            return self.run_monthly_retrain()
+        logger.debug("retrain_skipped_not_first_week", day=now.day)
+        return None
+
+    def run_forever(self, poll_interval: float = 60.0) -> None:
+        """Start the scheduler loop. Blocks until interrupted."""
+        self.setup_schedule()
+        self._state.is_running = True
+
+        logger.info("scheduler_started", tier=self._tier, demo=self._demo)
+
+        try:
+            while self._state.is_running:
+                schedule.run_pending()
+                time.sleep(poll_interval)
+        except KeyboardInterrupt:
+            logger.info("scheduler_stopped_by_user")
+        finally:
+            self._state.is_running = False
+            logger.info("scheduler_stopped")
+
+    def stop(self) -> None:
+        """Signal the scheduler to stop."""
+        self._state.is_running = False

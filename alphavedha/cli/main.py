@@ -493,5 +493,78 @@ def backtest_walk_forward(
 
 app.add_typer(backtest_app, name="backtest")
 
+
+# Scheduler subcommands
+scheduler_app = typer.Typer(help="Background scheduler commands")
+
+
+@scheduler_app.command("start")
+def scheduler_start(
+    tier: str = typer.Option("large", help="Market cap tier to schedule predictions for"),
+    demo: bool = typer.Option(False, "--demo", help="Use demo mode (no real data/models needed)"),
+) -> None:
+    """Start the background scheduler (blocks until Ctrl+C)."""
+    from alphavedha.scheduler import AlphaVedhaScheduler
+
+    console.print("[bold]Starting AlphaVedha Scheduler[/bold]")
+    console.print(f"  Tier: {tier}")
+    console.print(f"  Demo: {demo}")
+    console.print("  Predictions:  daily at 08:30 IST")
+    console.print("  Evaluation:   daily at 15:45 IST")
+    console.print("  Drift check:  Saturday at 20:00 IST")
+    console.print("  Retrain:      1st Saturday at 22:00 IST")
+    console.print("\nPress Ctrl+C to stop.\n")
+
+    sched = AlphaVedhaScheduler(tier=tier, demo=demo)
+    sched.run_forever()
+
+
+@scheduler_app.command("run-now")
+def scheduler_run_now(
+    job: str = typer.Argument(..., help="Job to run: predictions, evaluation, drift, retrain"),
+    tier: str = typer.Option("large", help="Market cap tier"),
+    demo: bool = typer.Option(False, "--demo", help="Use demo mode"),
+) -> None:
+    """Run a specific scheduler job immediately."""
+    from alphavedha.scheduler import AlphaVedhaScheduler
+
+    sched = AlphaVedhaScheduler(tier=tier, demo=demo)
+
+    job_map = {
+        "predictions": sched.run_daily_predictions,
+        "evaluation": sched.run_daily_evaluation,
+        "drift": sched.run_drift_check,
+        "retrain": sched.run_monthly_retrain,
+    }
+
+    if job not in job_map:
+        console.print(f"[red]Unknown job:[/red] {job}")
+        console.print(f"Available: {', '.join(job_map.keys())}")
+        raise typer.Exit(code=1)
+
+    console.print(f"Running [bold]{job}[/bold] job...")
+    result = job_map[job]()
+
+    if result.success:
+        console.print(f"[green]Done:[/green] {result.job_name}")
+        if result.symbols_processed:
+            console.print(f"  Symbols processed: {result.symbols_processed}")
+    else:
+        console.print(f"[red]Failed:[/red] {result.error}")
+        raise typer.Exit(code=1)
+
+
+@scheduler_app.command("status")
+def scheduler_status() -> None:
+    """Show scheduler job schedule and last run times."""
+    console.print("[bold]Scheduler Configuration[/bold]")
+    console.print("  Daily predictions:  08:30 IST (pre-market)")
+    console.print("  Daily evaluation:   15:45 IST (post-market)")
+    console.print("  Weekly drift check: Saturday 20:00 IST")
+    console.print("  Monthly retrain:    1st Saturday 22:00 IST")
+
+
+app.add_typer(scheduler_app, name="scheduler")
+
 if __name__ == "__main__":
     app()
