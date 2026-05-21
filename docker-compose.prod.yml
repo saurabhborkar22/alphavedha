@@ -1,0 +1,76 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alphavedha-app
+    env_file: .env.prod
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - model-artifacts:/app/models/artifacts
+      - app-logs:/app/logs
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alphavedha-scheduler
+    env_file: .env.prod
+    command: ["python", "-m", "alphavedha.cli.main", "scheduler", "start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - model-artifacts:/app/models/artifacts
+      - app-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "print('ok')"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: alphavedha-db
+    env_file: .env.prod
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-alphavedha}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: alphavedha-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-}"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:
+  model-artifacts:
+  app-logs:
