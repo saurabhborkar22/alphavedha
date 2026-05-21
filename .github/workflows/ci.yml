@@ -71,3 +71,20 @@ jobs:
           name: coverage-report
           path: coverage.xml
           retention-days: 30
+
+  security:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies and pip-audit
+        run: pip install -e ".[dev]" pip-audit
+
+      - name: Audit dependencies
+        run: pip-audit --strict --desc
+        continue-on-error: true

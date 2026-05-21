@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import re
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from alphavedha.api.deps import get_service, verify_api_key
 from alphavedha.api.schemas import (
@@ -16,6 +18,16 @@ from alphavedha.services.prediction_service import PredictionService
 
 router = APIRouter(tags=["predictions"], dependencies=[Depends(verify_api_key)])
 
+_SYMBOL_RE = re.compile(r"^[A-Z0-9&_.-]{1,20}$")
+_VALID_TIERS = {"large", "mid", "small", "all"}
+
+
+def _validate_symbol(symbol: str) -> str:
+    s = symbol.upper().strip()
+    if not _SYMBOL_RE.match(s):
+        raise HTTPException(status_code=400, detail=f"Invalid symbol format: {symbol}")
+    return s
+
 
 @router.get("/predict/{symbol}")
 async def predict_single(
@@ -23,7 +35,8 @@ async def predict_single(
     service: PredictionService = Depends(get_service),
 ) -> PredictionResponse:
     """Predict direction, magnitude, and price targets for a single stock."""
-    prediction = await service.predict_single(symbol.upper())
+    symbol = _validate_symbol(symbol)
+    prediction = await service.predict_single(symbol)
     return PredictionResponse.from_stock_prediction(prediction)
 
 
@@ -37,7 +50,8 @@ async def predict_batch(
     failed: list[dict[str, str]] = []
     for sym in body.symbols:
         try:
-            pred = await service.predict_single(sym.upper())
+            validated = _validate_symbol(sym)
+            pred = await service.predict_single(validated)
             predictions.append(PredictionResponse.from_stock_prediction(pred))
         except Exception as e:
             failed.append({"symbol": sym, "error": str(e)})
@@ -54,10 +68,13 @@ async def predict_batch(
 @router.get("/scan/{tier}")
 async def scan_tier(
     tier: str,
-    top_n: int = 10,
+    top_n: int = Query(default=10, ge=1, le=50),
     service: PredictionService = Depends(get_service),
 ) -> ScanResponse:
     """Scan a universe tier and rank stocks into buy/sell candidates."""
+    tier = tier.lower().strip()
+    if tier not in _VALID_TIERS:
+        raise HTTPException(status_code=400, detail=f"Invalid tier: {tier}. Use: {_VALID_TIERS}")
     result = await service.scan_tier(tier, top_n=top_n)
     return ScanResponse(
         tier=tier,

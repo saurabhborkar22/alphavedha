@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 
-from alphavedha.api.deps import get_service, set_service, verify_api_key
+from alphavedha.api.deps import get_service, hash_api_key, set_service, verify_api_key
 
 
 class TestSetGetService:
@@ -29,12 +29,14 @@ class TestVerifyApiKey:
     def test_no_env_var_passes_any_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("ALPHAVEDHA_API_KEY", None)
+            os.environ.pop("ALPHAVEDHA_API_KEY_SECONDARY", None)
             result = verify_api_key(None)
             assert result is None
 
     def test_no_env_var_passes_with_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("ALPHAVEDHA_API_KEY", None)
+            os.environ.pop("ALPHAVEDHA_API_KEY_SECONDARY", None)
             result = verify_api_key("some-key")
             assert result is None
 
@@ -59,3 +61,31 @@ class TestVerifyApiKey:
         with patch.dict(os.environ, {"ALPHAVEDHA_API_KEY": ""}):
             result = verify_api_key(None)
             assert result is None
+
+    def test_secondary_key_accepted(self) -> None:
+        env = {"ALPHAVEDHA_API_KEY": "primary", "ALPHAVEDHA_API_KEY_SECONDARY": "secondary"}
+        with patch.dict(os.environ, env, clear=False):
+            assert verify_api_key("secondary") == "secondary"
+
+    def test_primary_still_works_with_secondary_set(self) -> None:
+        env = {"ALPHAVEDHA_API_KEY": "primary", "ALPHAVEDHA_API_KEY_SECONDARY": "secondary"}
+        with patch.dict(os.environ, env, clear=False):
+            assert verify_api_key("primary") == "primary"
+
+    def test_wrong_key_rejected_with_both_set(self) -> None:
+        env = {"ALPHAVEDHA_API_KEY": "primary", "ALPHAVEDHA_API_KEY_SECONDARY": "secondary"}
+        with patch.dict(os.environ, env, clear=False):
+            with pytest.raises(HTTPException) as exc_info:
+                verify_api_key("wrong")
+            assert exc_info.value.status_code == 403
+
+
+class TestHashApiKey:
+    def test_deterministic(self) -> None:
+        assert hash_api_key("test-key") == hash_api_key("test-key")
+
+    def test_different_keys_differ(self) -> None:
+        assert hash_api_key("key-a") != hash_api_key("key-b")
+
+    def test_truncated_to_16_chars(self) -> None:
+        assert len(hash_api_key("any-key")) == 16
