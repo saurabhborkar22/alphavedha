@@ -67,7 +67,8 @@ def compute_microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
 
     rolling_count = delivery.rolling(60, min_periods=10).count()
     rolling_rank = delivery.rolling(60, min_periods=10).apply(
-        lambda x: x.rank().iloc[-1], raw=False,
+        lambda x: x.rank().iloc[-1],
+        raw=False,
     )
     result["micro_delivery_pct_rank"] = rolling_rank / rolling_count.replace(0, np.nan)
 
@@ -78,8 +79,10 @@ def compute_microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
 
     rolling_20d_high = close.rolling(20, min_periods=5).max().shift(1)
     result["micro_high_delivery_breakout"] = (
-        (delivery > 0.6) & (close > rolling_20d_high)
-    ).astype(int) if has_delivery else pd.Series(0, index=df.index, dtype=int)
+        ((delivery > 0.6) & (close > rolling_20d_high)).astype(int)
+        if has_delivery
+        else pd.Series(0, index=df.index, dtype=int)
+    )
 
     logger.info(
         "microstructure_features_computed",

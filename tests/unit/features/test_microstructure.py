@@ -92,7 +92,8 @@ class TestMicrostructureFeatures:
             assert df["close"].iloc[day_loc] > prev_window.max()
 
     def test_new_features_graceful_without_delivery(
-        self, sample_ohlcv_long: pd.DataFrame,
+        self,
+        sample_ohlcv_long: pd.DataFrame,
     ) -> None:
         result = compute_microstructure_features(sample_ohlcv_long)
         assert len(result.columns) == MICROSTRUCTURE_FEATURE_COUNT

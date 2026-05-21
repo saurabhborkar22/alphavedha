@@ -75,7 +75,8 @@ class XGBoostModel(BaseModel):
             eval_set_cls = [(X_val, y_cls_val)]
 
         self._classifier.fit(
-            X_train, y_cls_train,
+            X_train,
+            y_cls_train,
             eval_set=eval_set_cls or None,
             sample_weight=weight_arr,
             verbose=False,
@@ -109,21 +110,18 @@ class XGBoostModel(BaseModel):
                 eval_set_reg = [(X_val, return_val)]
 
             self._regressor.fit(
-                X_train, return_train,
+                X_train,
+                return_train,
                 eval_set=eval_set_reg or None,
                 sample_weight=weight_arr,
                 verbose=False,
             )
 
             reg_train_pred = self._regressor.predict(X_train)
-            train_metrics["rmse"] = float(
-                np.sqrt(mean_squared_error(return_train, reg_train_pred))
-            )
+            train_metrics["rmse"] = float(np.sqrt(mean_squared_error(return_train, reg_train_pred)))
             if return_val is not None and X_val is not None:
                 reg_val_pred = self._regressor.predict(X_val)
-                val_metrics["rmse"] = float(
-                    np.sqrt(mean_squared_error(return_val, reg_val_pred))
-                )
+                val_metrics["rmse"] = float(np.sqrt(mean_squared_error(return_val, reg_val_pred)))
 
         fi_raw = self._classifier.feature_importances_
         fi = pd.Series(fi_raw, index=self._feature_names, name="importance")

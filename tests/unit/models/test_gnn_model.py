@@ -68,10 +68,14 @@ class TestStockGraph:
         assert (graph.edge_type == 0).any()
 
     def test_correlation_edges_with_high_corr(
-        self, small_symbols: list[str], returns_df: pd.DataFrame,
+        self,
+        small_symbols: list[str],
+        returns_df: pd.DataFrame,
     ) -> None:
         graph = build_stock_graph(
-            small_symbols, returns_df=returns_df, correlation_threshold=0.3,
+            small_symbols,
+            returns_df=returns_df,
+            correlation_threshold=0.3,
         )
         corr_mask = graph.edge_type == 1
         assert corr_mask.any()
@@ -167,8 +171,10 @@ class TestGNNModel:
         X, y = synthetic_data
         model = GNNModel(config=gnn_config)
         result = model.fit(
-            X_train=X[:80], y_train=y[:80],
-            X_val=X[80:], y_val=y[80:],
+            X_train=X[:80],
+            y_train=y[:80],
+            X_val=X[80:],
+            y_val=y[80:],
         )
         assert isinstance(result, TrainResult)
         assert "accuracy" in result.train_metrics
@@ -266,11 +272,14 @@ class TestGNNModel:
         np.testing.assert_array_equal(pred_before.direction, pred_after.direction)
         np.testing.assert_allclose(pred_before.magnitude, pred_after.magnitude, atol=1e-5)
         np.testing.assert_allclose(
-            pred_before.probabilities, pred_after.probabilities, atol=1e-5,
+            pred_before.probabilities,
+            pred_after.probabilities,
+            atol=1e-5,
         )
 
     def test_feature_importance_returns_none(
-        self, gnn_config: dict[str, object],
+        self,
+        gnn_config: dict[str, object],
     ) -> None:
         model = GNNModel(config=gnn_config)
         assert model.get_feature_importance() is None
@@ -285,7 +294,9 @@ class TestGNNModel:
         weights = pd.Series(rng.uniform(0.1, 5.0, size=80))
         model = GNNModel(config=gnn_config)
         result = model.fit(
-            X_train=X[:80], y_train=y[:80], sample_weight=weights,
+            X_train=X[:80],
+            y_train=y[:80],
+            sample_weight=weights,
         )
         assert isinstance(result, TrainResult)
 

@@ -100,7 +100,8 @@ class PredictionEngine:
 
         if strategy.require_all_models_agree:
             directions = [
-                int(p.direction[0]) for p in base_predictions.values()
+                int(p.direction[0])
+                for p in base_predictions.values()
                 if hasattr(p, "direction") and len(p.direction) > 0
             ]
             if len(set(directions)) > 1:
@@ -109,7 +110,8 @@ class PredictionEngine:
                 )
 
         ensemble_result = self._ensemble.predict(
-            base_predictions, regime_probs.reshape(1, -1),
+            base_predictions,
+            regime_probs.reshape(1, -1),
         )
         direction = int(ensemble_result.direction[0])
         magnitude = float(ensemble_result.magnitude[0])
@@ -122,7 +124,8 @@ class PredictionEngine:
 
         if strategy.require_all_models_agree:
             directions = [
-                int(p.direction[0]) for p in base_predictions.values()
+                int(p.direction[0])
+                for p in base_predictions.values()
                 if hasattr(p, "direction") and len(p.direction) > 0
             ]
             if len(set(directions)) > 1:

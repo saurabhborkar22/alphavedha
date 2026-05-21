@@ -279,9 +279,7 @@ class DailyPnL(Base):
     benchmark_return: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
-    __table_args__ = (
-        Index("ix_daily_pnl_date", "date"),
-    )
+    __table_args__ = (Index("ix_daily_pnl_date", "date"),)
 
 
 class Feature(Base):

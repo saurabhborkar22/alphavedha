@@ -63,7 +63,9 @@ class ActorCritic(nn.Module):
         return action.clamp(-1, 1), log_prob, value.squeeze(-1)
 
     def evaluate(
-        self, obs: torch.Tensor, actions: torch.Tensor,
+        self,
+        obs: torch.Tensor,
+        actions: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         dist, value = self(obs)
         log_prob = dist.log_prob(actions).sum(-1)
@@ -149,11 +151,14 @@ class PPOAgent:
         self._device = torch.device(device_name)
 
         self._network = ActorCritic(
-            obs_size, action_size, self._config.hidden_size,
+            obs_size,
+            action_size,
+            self._config.hidden_size,
         ).to(self._device)
 
         self._optimizer = torch.optim.Adam(
-            self._network.parameters(), lr=self._config.lr,
+            self._network.parameters(),
+            lr=self._config.lr,
         )
 
     def select_action(self, obs: np.ndarray) -> tuple[np.ndarray, float, float]:
@@ -173,7 +178,8 @@ class PPOAgent:
     def update(self, buffer: RolloutBuffer) -> dict[str, float]:
         """Run PPO update on collected rollout data."""
         advantages, returns = buffer.compute_returns(
-            self._config.gamma, self._config.gae_lambda,
+            self._config.gamma,
+            self._config.gae_lambda,
         )
 
         adv_mean = advantages.mean()
@@ -209,7 +215,10 @@ class PPOAgent:
 
                 ratio = (new_log_probs - b_old_lp).exp()
                 surr1 = ratio * b_adv
-                surr2 = torch.clamp(ratio, 1 - self._config.clip_epsilon, 1 + self._config.clip_epsilon) * b_adv
+                surr2 = (
+                    torch.clamp(ratio, 1 - self._config.clip_epsilon, 1 + self._config.clip_epsilon)
+                    * b_adv
+                )
                 policy_loss = -torch.min(surr1, surr2).mean()
 
                 value_loss = nn.functional.mse_loss(values, b_returns)
@@ -243,6 +252,7 @@ class PPOAgent:
         torch.save(self._network.state_dict(), directory / "ppo_weights.pt")
 
         import json
+
         meta = {
             "obs_size": self._obs_size,
             "action_size": self._action_size,

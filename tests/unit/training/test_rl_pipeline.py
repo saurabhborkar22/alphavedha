@@ -11,7 +11,9 @@ from alphavedha.training.rl_pipeline import RLTrainingResult, train_rl_agent
 
 
 def _make_training_data(
-    n_steps: int = 100, n_stocks: int = 2, seed: int = 42,
+    n_steps: int = 100,
+    n_stocks: int = 2,
+    seed: int = 42,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     rng = np.random.default_rng(seed)
     dates = pd.bdate_range("2024-01-01", periods=n_steps)

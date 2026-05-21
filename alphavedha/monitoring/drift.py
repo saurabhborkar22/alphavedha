@@ -41,9 +41,7 @@ class DriftDetector:
     def __init__(self, config: DriftConfig | None = None) -> None:
         self._config = config or DriftConfig()
 
-    def compute_psi(
-        self, reference: np.ndarray, current: np.ndarray, n_bins: int = 10
-    ) -> float:
+    def compute_psi(self, reference: np.ndarray, current: np.ndarray, n_bins: int = 10) -> float:
         """Population Stability Index between two distributions.
 
         PSI = sum((current_pct - reference_pct) * ln(current_pct / reference_pct))
@@ -73,9 +71,7 @@ class DriftDetector:
         psi = np.sum((cur_pct - ref_pct) * np.log(cur_pct / ref_pct))
         return float(psi)
 
-    def compute_ks(
-        self, reference: np.ndarray, current: np.ndarray
-    ) -> tuple[float, float]:
+    def compute_ks(self, reference: np.ndarray, current: np.ndarray) -> tuple[float, float]:
         """Kolmogorov-Smirnov test. Returns (statistic, p-value)."""
         reference = reference[~np.isnan(reference)]
         current = current[~np.isnan(current)]

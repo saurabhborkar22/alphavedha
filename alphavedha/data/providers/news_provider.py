@@ -53,9 +53,22 @@ _SYMBOL_KEYWORDS: dict[str, list[str]] = {
 }
 
 _MARKET_KEYWORDS = [
-    "nifty", "sensex", "market", "rbi", "sebi", "inflation",
-    "gdp", "rupee", "fii", "dii", "ipo", "mutual fund",
-    "interest rate", "repo rate", "crude oil", "gold price",
+    "nifty",
+    "sensex",
+    "market",
+    "rbi",
+    "sebi",
+    "inflation",
+    "gdp",
+    "rupee",
+    "fii",
+    "dii",
+    "ipo",
+    "mutual fund",
+    "interest rate",
+    "repo rate",
+    "crude oil",
+    "gold price",
 ]
 
 
@@ -139,14 +152,16 @@ class NewsProvider:
             symbol = self._match_symbol(title)
             content_hash = hashlib.sha256(f"{source}:{title}".encode()).hexdigest()
 
-            articles.append(NewsArticleRecord(
-                source=source,
-                title=title[:500],
-                url=url[:1000] if url else None,
-                published_date=pub_date,
-                symbol=symbol,
-                content_hash=content_hash,
-            ))
+            articles.append(
+                NewsArticleRecord(
+                    source=source,
+                    title=title[:500],
+                    url=url[:1000] if url else None,
+                    published_date=pub_date,
+                    symbol=symbol,
+                    content_hash=content_hash,
+                )
+            )
 
         return articles
 
@@ -158,6 +173,7 @@ class NewsProvider:
                 date_str = match.group(1).strip()
                 try:
                     from dateutil.parser import parse as parse_date
+
                     return parse_date(date_str).date()
                 except (ValueError, ImportError):
                     pass

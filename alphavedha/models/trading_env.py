@@ -160,7 +160,11 @@ class TradingEnvironment:
                     reward += self._config.reward_sharpe_bonus
 
         if drawdown > self._config.max_drawdown_threshold:
-            reward -= self._config.drawdown_penalty * (drawdown - self._config.max_drawdown_threshold) * 100
+            reward -= (
+                self._config.drawdown_penalty
+                * (drawdown - self._config.max_drawdown_threshold)
+                * 100
+            )
 
         self._state.step += 1
         done = self._state.step >= self._max_steps
@@ -180,15 +184,16 @@ class TradingEnvironment:
         features = self._features.iloc[self._state.step].values.astype(np.float32)
         features = np.nan_to_num(features, nan=0.0)
 
-        positions = np.array([
-            self._state.positions.get(sym, 0.0)
-            for sym in self._symbols
-        ], dtype=np.float32)
+        positions = np.array(
+            [self._state.positions.get(sym, 0.0) for sym in self._symbols], dtype=np.float32
+        )
         prices = self._get_prices(self._state.step)
         pos_values = positions * prices
         pos_weights = pos_values / max(self._state.portfolio_value, 1.0)
 
-        pv_norm = np.array([self._state.portfolio_value / self._config.initial_capital], dtype=np.float32)
+        pv_norm = np.array(
+            [self._state.portfolio_value / self._config.initial_capital], dtype=np.float32
+        )
 
         regime_oh = np.zeros(4, dtype=np.float32)
         if self._regimes is not None and self._state.step < len(self._regimes):
@@ -199,7 +204,9 @@ class TradingEnvironment:
         else:
             regime_oh[2] = 1.0
 
-        dd = (self._state.peak_value - self._state.portfolio_value) / max(self._state.peak_value, 1.0)
+        dd = (self._state.peak_value - self._state.portfolio_value) / max(
+            self._state.peak_value, 1.0
+        )
         dd_arr = np.array([dd], dtype=np.float32)
 
         return np.concatenate([features, pos_weights, pv_norm, regime_oh, dd_arr])

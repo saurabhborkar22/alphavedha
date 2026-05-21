@@ -19,8 +19,10 @@ class TestSampleWeights:
     def test_returns_series(self, default_config: SampleWeightsConfig) -> None:
         dates = pd.bdate_range("2024-01-02", periods=100, freq="B")
         labels_df = pd.DataFrame(
-            {"label": np.random.default_rng(42).choice([-1, 0, 1], size=100),
-             "days_to_hit": np.full(100, 5)},
+            {
+                "label": np.random.default_rng(42).choice([-1, 0, 1], size=100),
+                "days_to_hit": np.full(100, 5),
+            },
             index=dates,
         )
         result = compute_sample_weights(labels_df, default_config)
@@ -30,8 +32,10 @@ class TestSampleWeights:
     def test_weights_sum_to_n(self, default_config: SampleWeightsConfig) -> None:
         dates = pd.bdate_range("2024-01-02", periods=100, freq="B")
         labels_df = pd.DataFrame(
-            {"label": np.random.default_rng(42).choice([-1, 0, 1], size=100),
-             "days_to_hit": np.full(100, 5)},
+            {
+                "label": np.random.default_rng(42).choice([-1, 0, 1], size=100),
+                "days_to_hit": np.full(100, 5),
+            },
             index=dates,
         )
         result = compute_sample_weights(labels_df, default_config)
@@ -40,8 +44,10 @@ class TestSampleWeights:
     def test_all_weights_positive(self, default_config: SampleWeightsConfig) -> None:
         dates = pd.bdate_range("2024-01-02", periods=100, freq="B")
         labels_df = pd.DataFrame(
-            {"label": np.random.default_rng(42).choice([-1, 0, 1], size=100),
-             "days_to_hit": np.full(100, 5)},
+            {
+                "label": np.random.default_rng(42).choice([-1, 0, 1], size=100),
+                "days_to_hit": np.full(100, 5),
+            },
             index=dates,
         )
         result = compute_sample_weights(labels_df, default_config)
@@ -51,8 +57,7 @@ class TestSampleWeights:
         """Most recent sample should have the highest weight (all else equal)."""
         dates = pd.bdate_range("2024-01-02", periods=100, freq="B")
         labels_df = pd.DataFrame(
-            {"label": np.ones(100, dtype=int),
-             "days_to_hit": np.ones(100)},
+            {"label": np.ones(100, dtype=int), "days_to_hit": np.ones(100)},
             index=dates,
         )
         result = compute_sample_weights(labels_df, default_config)
@@ -62,8 +67,7 @@ class TestSampleWeights:
         """Non-overlapping labels should have uniqueness weight = 1."""
         dates = pd.bdate_range("2024-01-02", periods=100, freq="B")
         labels_df = pd.DataFrame(
-            {"label": np.ones(100, dtype=int),
-             "days_to_hit": np.ones(100)},
+            {"label": np.ones(100, dtype=int), "days_to_hit": np.ones(100)},
             index=dates,
         )
         config = SampleWeightsConfig(uniqueness=True, recency_halflife=999999)

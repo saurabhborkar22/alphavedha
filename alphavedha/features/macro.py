@@ -75,9 +75,7 @@ async def load_fii_dii_for_features(start: str, end: str) -> pd.DataFrame:
     if raw.empty:
         return pd.DataFrame()
 
-    pivoted = raw.pivot_table(
-        index="date", columns="category", values="net_value", aggfunc="first"
-    )
+    pivoted = raw.pivot_table(index="date", columns="category", values="net_value", aggfunc="first")
 
     result = pd.DataFrame(index=pivoted.index)
     result["fii_net"] = pivoted.get("FII", pivoted.get("FPI", np.nan))
@@ -219,7 +217,9 @@ def _compute_alt_data_features(
     for data_type, col_name in [
         ("pmi_manufacturing", "macro_pmi"),
     ]:
-        subset = alt[alt["data_type"] == data_type] if "data_type" in alt.columns else pd.DataFrame()
+        subset = (
+            alt[alt["data_type"] == data_type] if "data_type" in alt.columns else pd.DataFrame()
+        )
         if not subset.empty:
             pmi_series = subset.set_index("period_date")["value"].sort_index()
             pmi_aligned = pmi_series.reindex(index, method="ffill")

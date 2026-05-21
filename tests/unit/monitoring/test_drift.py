@@ -67,14 +67,18 @@ class TestCheckDrift:
     def test_check_drift_no_alerts(self, detector: DriftDetector) -> None:
         rng = np.random.default_rng(42)
         n = 500
-        reference = pd.DataFrame({
-            "feat_a": rng.normal(0, 1, n),
-            "feat_b": rng.normal(10, 2, n),
-        })
-        current = pd.DataFrame({
-            "feat_a": rng.normal(0, 1, n),
-            "feat_b": rng.normal(10, 2, n),
-        })
+        reference = pd.DataFrame(
+            {
+                "feat_a": rng.normal(0, 1, n),
+                "feat_b": rng.normal(10, 2, n),
+            }
+        )
+        current = pd.DataFrame(
+            {
+                "feat_a": rng.normal(0, 1, n),
+                "feat_b": rng.normal(10, 2, n),
+            }
+        )
         report = detector.check_drift(reference, current)
         assert isinstance(report, DriftReport)
         assert report.features_checked == 2
@@ -84,14 +88,18 @@ class TestCheckDrift:
     def test_check_drift_with_alerts(self, detector: DriftDetector) -> None:
         rng = np.random.default_rng(42)
         n = 500
-        reference = pd.DataFrame({
-            "feat_a": rng.normal(0, 1, n),
-            "feat_b": rng.normal(0, 1, n),
-        })
-        current = pd.DataFrame({
-            "feat_a": rng.normal(5, 1, n),
-            "feat_b": rng.normal(0, 1, n),
-        })
+        reference = pd.DataFrame(
+            {
+                "feat_a": rng.normal(0, 1, n),
+                "feat_b": rng.normal(0, 1, n),
+            }
+        )
+        current = pd.DataFrame(
+            {
+                "feat_a": rng.normal(5, 1, n),
+                "feat_b": rng.normal(0, 1, n),
+            }
+        )
         report = detector.check_drift(reference, current)
         assert len(report.alerts) >= 1
         alert_names = [a.feature_name for a in report.alerts]
@@ -108,14 +116,18 @@ class TestCheckDrift:
     def test_check_drift_missing_columns_handled(self, detector: DriftDetector) -> None:
         rng = np.random.default_rng(42)
         n = 100
-        reference = pd.DataFrame({
-            "feat_a": rng.normal(0, 1, n),
-            "feat_b": rng.normal(0, 1, n),
-        })
-        current = pd.DataFrame({
-            "feat_a": rng.normal(0, 1, n),
-            "feat_c": rng.normal(0, 1, n),
-        })
+        reference = pd.DataFrame(
+            {
+                "feat_a": rng.normal(0, 1, n),
+                "feat_b": rng.normal(0, 1, n),
+            }
+        )
+        current = pd.DataFrame(
+            {
+                "feat_a": rng.normal(0, 1, n),
+                "feat_c": rng.normal(0, 1, n),
+            }
+        )
         report = detector.check_drift(reference, current)
         assert report.features_checked == 1
 
@@ -129,14 +141,18 @@ class TestCheckDrift:
     def test_check_drift_overall_psi(self, strict_detector: DriftDetector) -> None:
         rng = np.random.default_rng(42)
         n = 500
-        reference = pd.DataFrame({
-            "a": rng.normal(0, 1, n),
-            "b": rng.normal(0, 1, n),
-        })
-        current = pd.DataFrame({
-            "a": rng.normal(0, 1, n),
-            "b": rng.normal(0, 1, n),
-        })
+        reference = pd.DataFrame(
+            {
+                "a": rng.normal(0, 1, n),
+                "b": rng.normal(0, 1, n),
+            }
+        )
+        current = pd.DataFrame(
+            {
+                "a": rng.normal(0, 1, n),
+                "b": rng.normal(0, 1, n),
+            }
+        )
         report = strict_detector.check_drift(reference, current)
         assert report.overall_psi >= 0.0
         assert isinstance(report.overall_psi, float)

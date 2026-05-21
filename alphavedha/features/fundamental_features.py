@@ -140,8 +140,7 @@ def _compute_surprise_series(earnings: pd.DataFrame) -> list[float]:
     profit = earnings["profit_actual"].values
 
     has_estimates = (
-        "profit_estimate" in earnings.columns
-        and earnings["profit_estimate"].notna().any()
+        "profit_estimate" in earnings.columns and earnings["profit_estimate"].notna().any()
     )
 
     for i in range(len(earnings)):
@@ -264,9 +263,7 @@ def _compute_promoter_features(
 
             result.loc[idx, "fund_promoter_buying_30d"] = int(buys > 0)
             total = buys + sells
-            result.loc[idx, "fund_insider_buy_sell_ratio"] = (
-                buys / total if total > 0 else 0.5
-            )
+            result.loc[idx, "fund_insider_buy_sell_ratio"] = buys / total if total > 0 else 0.5
         else:
             result.loc[idx, "fund_promoter_buying_30d"] = np.nan
             result.loc[idx, "fund_insider_buy_sell_ratio"] = np.nan

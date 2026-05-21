@@ -123,9 +123,13 @@ class TestRunCPCV:
             return XGBoostModel(config=config)
 
         result = run_cpcv(
-            X=sample_features_500, y=y, returns=returns,
-            sample_weight=None, model_factory=model_factory,
-            config=default_cpcv_config, acceptance=default_acceptance,
+            X=sample_features_500,
+            y=y,
+            returns=returns,
+            sample_weight=None,
+            model_factory=model_factory,
+            config=default_cpcv_config,
+            acceptance=default_acceptance,
         )
 
         for pr in result.path_results:
@@ -152,8 +156,12 @@ class TestRunCPCV:
             return XGBoostModel(config=config)
 
         result = run_cpcv(
-            X=sample_features_500, y=y, returns=returns,
-            sample_weight=None, model_factory=model_factory,
-            config=default_cpcv_config, acceptance=easy_accept,
+            X=sample_features_500,
+            y=y,
+            returns=returns,
+            sample_weight=None,
+            model_factory=model_factory,
+            config=default_cpcv_config,
+            acceptance=easy_accept,
         )
         assert result.passed is True

@@ -65,7 +65,7 @@ class MarketImpactModel:
         participation_rate = order_size_shares / avg_daily_volume if avg_daily_volume > 0 else 1.0
         is_feasible = participation_rate < 0.20
 
-        temporary_impact = eta * daily_volatility * (participation_rate ** 0.6)
+        temporary_impact = eta * daily_volatility * (participation_rate**0.6)
         permanent_impact = gamma * daily_volatility * participation_rate
         total_impact = temporary_impact + permanent_impact
 

@@ -58,9 +58,7 @@ class TestPredictionCache:
         assert cached.symbol == "TCS"
         assert cached.direction == 1
         assert cached.composite_score == 78.5
-        np.testing.assert_array_almost_equal(
-            cached.regime_probabilities, [0.7, 0.1, 0.1, 0.1]
-        )
+        np.testing.assert_array_almost_equal(cached.regime_probabilities, [0.7, 0.1, 0.1, 0.1])
 
     @pytest.mark.asyncio
     async def test_health_check_with_fake_redis(self, cache: PredictionCache) -> None:

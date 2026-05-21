@@ -54,6 +54,7 @@ class PredictionService:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     features_df = pool.submit(
                         asyncio.run, load_features(symbol, start, today)
@@ -89,10 +90,9 @@ class PredictionService:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor() as pool:
-                    ohlcv_df = pool.submit(
-                        asyncio.run, load_ohlcv(symbol, start, today)
-                    ).result()
+                    ohlcv_df = pool.submit(asyncio.run, load_ohlcv(symbol, start, today)).result()
             else:
                 ohlcv_df = asyncio.run(load_ohlcv(symbol, start, today))
         except Exception:
@@ -118,6 +118,7 @@ class PredictionService:
         if self._registry.is_demo:
             return self._registry.get_demo_symbols()
         from alphavedha.data.universe import get_symbols_for_tier
+
         return get_symbols_for_tier(tier)
 
     async def predict_single(self, symbol: str, sector: str = "") -> StockPrediction:

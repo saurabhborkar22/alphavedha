@@ -145,14 +145,18 @@ def build_stock_graph(
 
     if returns_df is not None and not returns_df.empty:
         corr_edges, corr_types, corr_weights = _add_correlation_edges(
-            symbols, symbol_to_idx, returns_df, correlation_threshold,
+            symbols,
+            symbol_to_idx,
+            returns_df,
+            correlation_threshold,
         )
         all_edges.extend(corr_edges)
         all_types.extend(corr_types)
         all_weights.extend(corr_weights)
 
     promoter_edges, promoter_types, promoter_weights = _add_promoter_edges(
-        symbol_set, symbol_to_idx,
+        symbol_set,
+        symbol_to_idx,
     )
     all_edges.extend(promoter_edges)
     all_types.extend(promoter_types)

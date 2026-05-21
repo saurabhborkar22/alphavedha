@@ -21,10 +21,17 @@ from alphavedha.data.ingestion import (
 @pytest.fixture
 def mock_provider() -> MagicMock:
     provider = MagicMock()
-    provider.fetch_ohlcv = AsyncMock(return_value=pd.DataFrame({
-        "open": [100.0], "high": [105.0], "low": [98.0],
-        "close": [103.0], "volume": [1000000],
-    }))
+    provider.fetch_ohlcv = AsyncMock(
+        return_value=pd.DataFrame(
+            {
+                "open": [100.0],
+                "high": [105.0],
+                "low": [98.0],
+                "close": [103.0],
+                "volume": [1000000],
+            }
+        )
+    )
     return provider
 
 
@@ -87,7 +94,11 @@ class TestIngestSymbol:
 class TestIngestUniverse:
     @pytest.mark.asyncio
     async def test_empty_universe(self) -> None:
-        with patch("alphavedha.data.ingestion.get_symbols_for_tier", new_callable=AsyncMock, return_value=[]):
+        with patch(
+            "alphavedha.data.ingestion.get_symbols_for_tier",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
             result = await ingest_universe("large", date(2024, 1, 1), date(2024, 1, 31))
             assert isinstance(result, IngestionResult)
             assert result.symbols_requested == 0
@@ -95,8 +106,16 @@ class TestIngestUniverse:
     @pytest.mark.asyncio
     async def test_tracks_failures(self) -> None:
         with (
-            patch("alphavedha.data.ingestion.get_symbols_for_tier", new_callable=AsyncMock, return_value=["TCS", "INFY"]),
-            patch("alphavedha.data.ingestion.ingest_symbol", new_callable=AsyncMock, side_effect=Exception("provider down")),
+            patch(
+                "alphavedha.data.ingestion.get_symbols_for_tier",
+                new_callable=AsyncMock,
+                return_value=["TCS", "INFY"],
+            ),
+            patch(
+                "alphavedha.data.ingestion.ingest_symbol",
+                new_callable=AsyncMock,
+                side_effect=Exception("provider down"),
+            ),
         ):
             result = await ingest_universe("large", date(2024, 1, 1), date(2024, 1, 31))
             assert result.symbols_failed == 2

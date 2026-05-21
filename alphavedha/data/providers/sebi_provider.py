@@ -122,7 +122,10 @@ class SebiProvider:
                         )
                         resp = await client.get(
                             url,
-                            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bseindia.com"},
+                            headers={
+                                "User-Agent": "Mozilla/5.0",
+                                "Referer": "https://www.bseindia.com",
+                            },
                         )
                         if resp.status_code == 200 and resp.text.strip():
                             parsed = self._parse_shareholding(resp.json(), symbol, quarter_end)
@@ -231,13 +234,16 @@ class SebiProvider:
         """Parse a single insider trade row."""
         try:
             trade_type_raw = str(row.get("BUYSELL", row.get("TRANSACTIONTYPE", ""))).lower()
-            trade_type = "buy" if "buy" in trade_type_raw or "acquisition" in trade_type_raw else "sell"
+            trade_type = (
+                "buy" if "buy" in trade_type_raw or "acquisition" in trade_type_raw else "sell"
+            )
 
             date_str = row.get("TRADE_DATE", row.get("TRANSACTIONDATE", ""))
             if not date_str:
                 return None
 
             from dateutil.parser import parse as parse_date
+
             trade_date = parse_date(str(date_str)).date()
 
             return InsiderTradeRecord(
@@ -279,15 +285,17 @@ def build_promoter_from_manual(
             qe = row["quarter_end"]
             if isinstance(qe, str):
                 qe = date.fromisoformat(qe)
-            results.append(PromoterHoldingRecord(
-                symbol=row["symbol"],
-                quarter_end=qe,
-                promoter_pct=float(row.get("promoter_pct", 0)),
-                pledge_pct=float(row.get("pledge_pct", 0)),
-                public_pct=float(row.get("public_pct", 0)),
-                fii_pct=float(row.get("fii_pct", 0)),
-                dii_pct=float(row.get("dii_pct", 0)),
-            ))
+            results.append(
+                PromoterHoldingRecord(
+                    symbol=row["symbol"],
+                    quarter_end=qe,
+                    promoter_pct=float(row.get("promoter_pct", 0)),
+                    pledge_pct=float(row.get("pledge_pct", 0)),
+                    public_pct=float(row.get("public_pct", 0)),
+                    fii_pct=float(row.get("fii_pct", 0)),
+                    dii_pct=float(row.get("dii_pct", 0)),
+                )
+            )
         except (KeyError, ValueError) as e:
             logger.warning("manual_promoter_parse_failed", error=str(e))
     return results

@@ -83,7 +83,9 @@ class StockGNN(nn.Module):
         self.reg_head = nn.Linear(hidden_size, 1)
 
     def forward(
-        self, x: torch.Tensor, edge_index: torch.Tensor,
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         h = self.layer1(x, edge_index)
         h = self.dropout(h)
@@ -139,11 +141,13 @@ class GNNModel(BaseModel):
         edge_index = self._prepare_edge_index(graph)
 
         X_train_t = torch.tensor(
-            X_train.values.astype(np.float32), device=self._device,
+            X_train.values.astype(np.float32),
+            device=self._device,
         )
         y_dir_train = self._map_labels(y_train)
         y_mag_train = torch.tensor(
-            np.zeros(len(y_train), dtype=np.float32), device=self._device,
+            np.zeros(len(y_train), dtype=np.float32),
+            device=self._device,
         )
         weights_train = (
             torch.tensor(sample_weight.values.astype(np.float32), device=self._device)
@@ -160,7 +164,8 @@ class GNNModel(BaseModel):
             y_mag_val = torch.zeros(len(y_val), device=self._device)
 
         optimizer = torch.optim.Adam(
-            self._network.parameters(), lr=cfg["learning_rate"],
+            self._network.parameters(),
+            lr=cfg["learning_rate"],
         )
         early_stop = EarlyStopping(patience=cfg["early_stopping_patience"])
         best_state: dict[str, torch.Tensor] | None = None
@@ -172,13 +177,16 @@ class GNNModel(BaseModel):
 
             cls_logits, reg_output = self._network(X_train_t, edge_index)
             ce_loss = nn.functional.cross_entropy(
-                cls_logits, y_dir_train, reduction="none",
+                cls_logits,
+                y_dir_train,
+                reduction="none",
             )
             mse_loss = nn.functional.mse_loss(
-                reg_output, y_mag_train, reduction="none",
+                reg_output,
+                y_mag_train,
+                reduction="none",
             )
-            loss = (0.7 * (ce_loss * weights_train).mean()
-                    + 0.3 * (mse_loss * weights_train).mean())
+            loss = 0.7 * (ce_loss * weights_train).mean() + 0.3 * (mse_loss * weights_train).mean()
 
             optimizer.zero_grad()
             loss.backward()
@@ -203,10 +211,7 @@ class GNNModel(BaseModel):
                     break
                 if current_val_loss < best_val_loss:
                     best_val_loss = current_val_loss
-                    best_state = {
-                        k: v.cpu().clone()
-                        for k, v in self._network.state_dict().items()
-                    }
+                    best_state = {k: v.cpu().clone() for k, v in self._network.state_dict().items()}
 
         if best_state is not None:
             self._network.load_state_dict(best_state)
@@ -246,13 +251,17 @@ class GNNModel(BaseModel):
         return self._predict_internal(X, graph=None)
 
     def predict_with_graph(
-        self, X: pd.DataFrame, graph: StockGraph,
+        self,
+        X: pd.DataFrame,
+        graph: StockGraph,
     ) -> PredictionResult:
         """Predict with graph structure for neighbor aggregation."""
         return self._predict_internal(X, graph=graph)
 
     def _predict_internal(
-        self, X: pd.DataFrame, graph: StockGraph | None,
+        self,
+        X: pd.DataFrame,
+        graph: StockGraph | None,
     ) -> PredictionResult:
         if not self._is_fitted or self._network is None:
             raise ModelTrainingError("GNNModel is not fitted. Call fit() first.")
@@ -297,7 +306,9 @@ class GNNModel(BaseModel):
 
     @classmethod
     def _load_model_artifacts(
-        cls, directory: Path, config: dict[str, Any],
+        cls,
+        directory: Path,
+        config: dict[str, Any],
     ) -> GNNModel:
         model = cls(name="gnn", config=config)
 
@@ -366,7 +377,12 @@ class GNNModel(BaseModel):
         return {
             "accuracy": float(accuracy_score(y_true, cls_pred)),
             "f1_weighted": float(f1_score(y_true, cls_pred, average="weighted")),
-            "rmse": float(np.sqrt(mean_squared_error(
-                np.zeros_like(reg_pred), reg_pred,
-            ))),
+            "rmse": float(
+                np.sqrt(
+                    mean_squared_error(
+                        np.zeros_like(reg_pred),
+                        reg_pred,
+                    )
+                )
+            ),
         }

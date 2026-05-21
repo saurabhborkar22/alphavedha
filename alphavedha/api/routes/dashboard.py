@@ -88,12 +88,14 @@ async def get_track_record() -> PublicTrackRecord:
         for regime, grp in evaluated.groupby("regime"):
             if regime is None:
                 continue
-            regime_acc.append(AccuracyByCategory(
-                category=str(regime),
-                total=len(grp),
-                correct=int(grp["is_correct"].sum()),
-                accuracy=float(grp["is_correct"].mean()),
-            ))
+            regime_acc.append(
+                AccuracyByCategory(
+                    category=str(regime),
+                    total=len(grp),
+                    correct=int(grp["is_correct"].sum()),
+                    accuracy=float(grp["is_correct"].mean()),
+                )
+            )
 
     conf_acc: list[AccuracyByCategory] = []
     if not evaluated.empty and "confidence" in evaluated.columns:
@@ -101,12 +103,14 @@ async def get_track_record() -> PublicTrackRecord:
         for lo, hi, label in bins:
             grp = evaluated[(evaluated["confidence"] >= lo) & (evaluated["confidence"] < hi)]
             if not grp.empty:
-                conf_acc.append(AccuracyByCategory(
-                    category=label,
-                    total=len(grp),
-                    correct=int(grp["is_correct"].sum()),
-                    accuracy=float(grp["is_correct"].mean()),
-                ))
+                conf_acc.append(
+                    AccuracyByCategory(
+                        category=label,
+                        total=len(grp),
+                        correct=int(grp["is_correct"].sum()),
+                        accuracy=float(grp["is_correct"].mean()),
+                    )
+                )
 
     monthly_rets: list[dict] = []
     if not pnl_df.empty:
@@ -115,11 +119,13 @@ async def get_track_record() -> PublicTrackRecord:
         )
         pnl_df["month"] = pnl_df["date"].apply(lambda d: d.strftime("%Y-%m"))
         for month, grp in pnl_df.groupby("month"):
-            monthly_rets.append({
-                "month": month,
-                "return": float(grp["daily_return"].sum()),
-                "predictions": int(grp["n_total_predictions"].sum()),
-            })
+            monthly_rets.append(
+                {
+                    "month": month,
+                    "return": float(grp["daily_return"].sum()),
+                    "predictions": int(grp["n_total_predictions"].sum()),
+                }
+            )
 
     dates = trades_df["prediction_date"]
     start = str(dates.min()) if not dates.empty else None
