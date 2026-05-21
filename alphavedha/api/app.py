@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import Limiter
@@ -87,6 +88,16 @@ def create_app(demo: bool | None = None) -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    cors_origins = os.environ.get("ALPHAVEDHA_CORS_ORIGINS", "").strip()
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[o.strip() for o in cors_origins.split(",")],
+            allow_credentials=True,
+            allow_methods=["GET", "POST"],
+            allow_headers=["X-API-Key", "Content-Type"],
+        )
 
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)

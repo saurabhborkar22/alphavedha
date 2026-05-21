@@ -38,14 +38,25 @@ def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         url = get_database_url()
+        pool_size = int(os.environ.get("DB_POOL_SIZE", "10"))
+        max_overflow = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
+        pool_timeout = int(os.environ.get("DB_POOL_TIMEOUT", "30"))
+        pool_recycle = int(os.environ.get("DB_POOL_RECYCLE", "1800"))
         _engine = create_async_engine(
             url,
-            pool_size=10,
-            max_overflow=20,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            pool_recycle=pool_recycle,
             pool_pre_ping=True,
             echo=False,
         )
-        logger.info("database_engine_created", url=url.split("@")[-1])
+        logger.info(
+            "database_engine_created",
+            url=url.split("@")[-1],
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+        )
     return _engine
 
 

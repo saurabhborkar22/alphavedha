@@ -88,3 +88,30 @@ class TestScanEndpoint:
         assert "sell_candidates" in data
         assert "excluded" in data
         assert data["total_scanned"] > 0
+
+    def test_scan_invalid_tier_returns_400(self, client: TestClient) -> None:
+        resp = client.get("/scan/invalid_tier")
+        assert resp.status_code == 400
+
+    def test_scan_top_n_exceeds_max_returns_422(self, client: TestClient) -> None:
+        resp = client.get("/scan/large?top_n=100")
+        assert resp.status_code == 422
+
+
+class TestInputValidation:
+    def test_symbol_with_special_chars_rejected(self, client: TestClient) -> None:
+        resp = client.get("/predict/TCS;DROP TABLE")
+        assert resp.status_code == 400
+
+    def test_symbol_with_sql_injection_rejected(self, client: TestClient) -> None:
+        resp = client.get("/predict/' OR 1=1 --")
+        assert resp.status_code == 400
+
+    def test_valid_nse_symbol_accepted(self, client: TestClient) -> None:
+        resp = client.get("/predict/M&M")
+        assert resp.status_code == 200
+
+    def test_symbol_lowercased_normalized(self, client: TestClient) -> None:
+        resp = client.get("/predict/tcs")
+        assert resp.status_code == 200
+        assert resp.json()["symbol"] == "TCS"
