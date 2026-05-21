@@ -34,6 +34,9 @@ jobs:
       - name: Ruff check
         run: ruff check alphavedha/ tests/
 
+      - name: Ruff format check
+        run: ruff format --check alphavedha/ tests/
+
       - name: Mypy
         run: mypy alphavedha/ --ignore-missing-imports --no-strict
 
