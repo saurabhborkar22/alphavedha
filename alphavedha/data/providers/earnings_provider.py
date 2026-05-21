@@ -55,7 +55,10 @@ def _parse_quarter_label(label: str) -> tuple[int, int] | None:
     if len(parts) != 2:
         return None
     month_map = {
-        "Mar": 4, "Jun": 1, "Sep": 2, "Dec": 3,
+        "Mar": 4,
+        "Jun": 1,
+        "Sep": 2,
+        "Dec": 3,
     }
     month_str, year_str = parts
     quarter = month_map.get(month_str)
@@ -101,7 +104,8 @@ class EarningsProvider:
         return "earnings"
 
     async def fetch_quarterly_results(
-        self, symbol: str,
+        self,
+        symbol: str,
     ) -> list[dict[str, Any]]:
         """Fetch quarterly P&L for a symbol from screener.in."""
         await self._rate_limiter.acquire()
@@ -125,7 +129,8 @@ class EarningsProvider:
         return await asyncio.to_thread(_fetch)
 
     async def fetch_bulk(
-        self, symbols: list[str],
+        self,
+        symbols: list[str],
     ) -> dict[str, list[dict[str, Any]]]:
         """Fetch earnings for multiple symbols sequentially (rate-limited)."""
         results: dict[str, list[dict[str, Any]]] = {}
@@ -140,7 +145,8 @@ class EarningsProvider:
 
 
 def _parse_screener_quarterly(
-    data: dict | list, symbol: str,
+    data: dict | list,
+    symbol: str,
 ) -> list[dict[str, Any]]:
     """Parse screener.in quarterly API response into earnings rows."""
     results: list[dict[str, Any]] = []
@@ -167,19 +173,21 @@ def _parse_screener_quarterly(
         profit = _safe_float(profit_row, i) if profit_row else None
         expenses = _safe_float(expenses_row, i) if expenses_row else None
 
-        results.append({
-            "symbol": symbol,
-            "quarter": quarter,
-            "year": year,
-            "revenue_actual": revenue,
-            "revenue_estimate": None,
-            "revenue_surprise_pct": None,
-            "profit_actual": profit,
-            "profit_estimate": None,
-            "profit_surprise_pct": None,
-            "expenses": expenses,
-            "announced_date": _announced_date_estimate(quarter, year),
-        })
+        results.append(
+            {
+                "symbol": symbol,
+                "quarter": quarter,
+                "year": year,
+                "revenue_actual": revenue,
+                "revenue_estimate": None,
+                "revenue_surprise_pct": None,
+                "profit_actual": profit,
+                "profit_estimate": None,
+                "profit_surprise_pct": None,
+                "expenses": expenses,
+                "announced_date": _announced_date_estimate(quarter, year),
+            }
+        )
 
     return results
 
@@ -236,16 +244,12 @@ def build_earnings_from_manual(
         if entry["revenue_actual"] and entry["revenue_estimate"]:
             est = entry["revenue_estimate"]
             if est != 0:
-                entry["revenue_surprise_pct"] = (
-                    (entry["revenue_actual"] - est) / abs(est)
-                ) * 100.0
+                entry["revenue_surprise_pct"] = ((entry["revenue_actual"] - est) / abs(est)) * 100.0
 
         if entry["profit_actual"] and entry["profit_estimate"]:
             est = entry["profit_estimate"]
             if est != 0:
-                entry["profit_surprise_pct"] = (
-                    (entry["profit_actual"] - est) / abs(est)
-                ) * 100.0
+                entry["profit_surprise_pct"] = ((entry["profit_actual"] - est) / abs(est)) * 100.0
 
         results.append(entry)
     return results

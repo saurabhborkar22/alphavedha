@@ -48,8 +48,12 @@ AVOID_WINDOWS = [
 ]
 
 OPTIMAL_WINDOWS = [
-    ExecutionWindow(time(10, 30), time(11, 30), "optimal", "post-opening stability, good liquidity"),
-    ExecutionWindow(time(14, 0), time(14, 45), "optimal", "afternoon session, before closing pressure"),
+    ExecutionWindow(
+        time(10, 30), time(11, 30), "optimal", "post-opening stability, good liquidity"
+    ),
+    ExecutionWindow(
+        time(14, 0), time(14, 45), "optimal", "afternoon session, before closing pressure"
+    ),
 ]
 
 _IMPACT_COEFFICIENTS: dict[str, float] = {
@@ -109,13 +113,13 @@ class ExecutionEngine:
 
         if is_expiry_day:
             warnings.append("F&O expiry day — expect higher volatility and wider spreads")
-            windows = [
-                w for w in windows if w.end <= time(14, 30)
-            ]
+            windows = [w for w in windows if w.end <= time(14, 30)]
             if not windows:
                 windows = [
                     ExecutionWindow(
-                        time(10, 30), time(11, 30), "optimal",
+                        time(10, 30),
+                        time(11, 30),
+                        "optimal",
                         "post-opening stability, good liquidity",
                     )
                 ]
@@ -156,7 +160,8 @@ class ExecutionEngine:
         )
 
     def is_good_time_to_trade(
-        self, current_time: datetime | None = None,
+        self,
+        current_time: datetime | None = None,
     ) -> tuple[bool, str]:
         """Check if current time is in a good trading window."""
         now = (current_time or datetime.now(self._ist)).astimezone(self._ist)
@@ -202,20 +207,32 @@ class ExecutionEngine:
     @staticmethod
     def is_expiry_day(dt: datetime | None = None) -> bool:
         """Check if date is F&O expiry (last Thursday of month)."""
-        d = (dt or datetime.now(IST)).date() if isinstance(dt, datetime) else (dt or datetime.now(IST).date())
+        d = (
+            (dt or datetime.now(IST)).date()
+            if isinstance(dt, datetime)
+            else (dt or datetime.now(IST).date())
+        )
         last_thursday = _last_thursday_of_month(d.year, d.month)
         return d == last_thursday
 
     @staticmethod
     def is_weekly_expiry(dt: datetime | None = None) -> bool:
         """Check if date is weekly expiry (every Thursday)."""
-        d = (dt or datetime.now(IST)).date() if isinstance(dt, datetime) else (dt or datetime.now(IST).date())
+        d = (
+            (dt or datetime.now(IST)).date()
+            if isinstance(dt, datetime)
+            else (dt or datetime.now(IST).date())
+        )
         return d.weekday() == 3  # Thursday
 
     @staticmethod
     def next_expiry(dt: datetime | None = None) -> datetime:
         """Return the next monthly F&O expiry date."""
-        d = (dt or datetime.now(IST)).date() if isinstance(dt, datetime) else (dt or datetime.now(IST).date())
+        d = (
+            (dt or datetime.now(IST)).date()
+            if isinstance(dt, datetime)
+            else (dt or datetime.now(IST).date())
+        )
 
         last_thu = _last_thursday_of_month(d.year, d.month)
         if d <= last_thu:

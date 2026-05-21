@@ -69,9 +69,7 @@ class TestPredictionResponse:
 class TestBatchResponse:
     def test_batch_response_structure(self) -> None:
         resp = BatchResponse(
-            predictions=[
-                PredictionResponse.from_stock_prediction(_make_prediction("TCS"))
-            ],
+            predictions=[PredictionResponse.from_stock_prediction(_make_prediction("TCS"))],
             total=2,
             successful=1,
             failed=[{"symbol": "BAD", "error": "not found"}],

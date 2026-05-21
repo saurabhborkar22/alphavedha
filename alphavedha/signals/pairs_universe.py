@@ -144,15 +144,17 @@ def scan_pair_universe(
             max_half_life=max_half_life,
         )
 
-        results.append(PairCandidate(
-            symbol_a=sym_a,
-            symbol_b=sym_b,
-            sector=sector,
-            coint_pvalue=pval,
-            correlation=corr,
-            half_life=hl,
-            is_valid=is_valid,
-        ))
+        results.append(
+            PairCandidate(
+                symbol_a=sym_a,
+                symbol_b=sym_b,
+                sector=sector,
+                coint_pvalue=pval,
+                correlation=corr,
+                half_life=hl,
+                is_valid=is_valid,
+            )
+        )
 
     results.sort(key=lambda p: p.coint_pvalue)
     valid_count = sum(1 for p in results if p.is_valid)

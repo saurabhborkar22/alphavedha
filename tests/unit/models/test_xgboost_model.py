@@ -39,9 +39,12 @@ class TestXGBoostModel:
         X, labels, returns = synthetic_data
         model = XGBoostModel(config=xgb_config)
         result = model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         assert isinstance(result, TrainResult)
         assert "accuracy" in result.train_metrics
@@ -55,9 +58,12 @@ class TestXGBoostModel:
         X, labels, returns = synthetic_data
         model = XGBoostModel(config=xgb_config)
         model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         pred = model.predict(X[160:])
         assert isinstance(pred, PredictionResult)
@@ -70,9 +76,12 @@ class TestXGBoostModel:
         X, labels, returns = synthetic_data
         model = XGBoostModel(config=xgb_config)
         model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         pred = model.predict(X[160:])
         assert set(np.unique(pred.direction)).issubset({-1, 0, 1})
@@ -85,9 +94,12 @@ class TestXGBoostModel:
         X, labels, returns = synthetic_data
         model = XGBoostModel(config=xgb_config)
         model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         pred = model.predict(X[160:])
         assert len(pred.magnitude) == 40
@@ -100,9 +112,12 @@ class TestXGBoostModel:
         X, labels, returns = synthetic_data
         model = XGBoostModel(config=xgb_config)
         model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         pred = model.predict(X[160:])
         assert pred.probabilities is not None
@@ -118,9 +133,12 @@ class TestXGBoostModel:
         X, labels, returns = synthetic_data
         model = XGBoostModel(config=xgb_config)
         model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         pred = model.predict(X[160:])
         assert (pred.confidence >= 0).all()
@@ -134,9 +152,12 @@ class TestXGBoostModel:
         X, labels, returns = synthetic_data
         model = XGBoostModel(config=xgb_config)
         model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         fi = model.get_feature_importance()
         assert fi is not None
@@ -158,9 +179,12 @@ class TestXGBoostModel:
         X, labels, returns = synthetic_data
         model = XGBoostModel(config=xgb_config)
         model.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         pred_before = model.predict(X[160:])
 
@@ -181,9 +205,12 @@ class TestXGBoostModel:
         X, labels, returns = synthetic_data
         model1 = XGBoostModel(config=xgb_config)
         model1.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
         )
         pred1 = model1.predict(X[160:])
 
@@ -191,9 +218,12 @@ class TestXGBoostModel:
         weights = pd.Series(rng.uniform(0.1, 10.0, size=160))
         model2 = XGBoostModel(config=xgb_config)
         model2.fit(
-            X_train=X[:160], y_train=labels[:160],
-            X_val=X[160:], y_val=labels[160:],
-            return_train=returns[:160], return_val=returns[160:],
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
             sample_weight=weights,
         )
         pred2 = model2.predict(X[160:])

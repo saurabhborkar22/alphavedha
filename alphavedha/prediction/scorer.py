@@ -20,6 +20,7 @@ def _sigmoid_normalize(value: float, scale: float = 2.0, invert: bool = False) -
     x = -value * scale if invert else value * scale
     return 1.0 / (1.0 + np.exp(-x))
 
+
 _REGIME_ALIGNMENT: dict[tuple[str, int], float] = {
     ("bull", 1): 100.0,
     ("bull", 0): 50.0,
@@ -114,9 +115,7 @@ class CompositeScorer:
                     sub_scores[score_name] = None
                 else:
                     invert = score_name == "volatility_risk"
-                    per_feature = [
-                        _sigmoid_normalize(float(v), invert=invert) for v in finite_vals
-                    ]
+                    per_feature = [_sigmoid_normalize(float(v), invert=invert) for v in finite_vals]
                     sub_scores[score_name] = float(np.mean(per_feature)) * 100.0
 
         # Redistribute weight from unavailable sub-scores to available ones

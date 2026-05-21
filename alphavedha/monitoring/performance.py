@@ -52,23 +52,17 @@ class PerformanceMonitor:
             return None
 
         n_predictions = len(window_df)
-        accuracy = float(
-            (window_df["predicted_direction"] == window_df["actual_direction"]).mean()
-        )
+        accuracy = float((window_df["predicted_direction"] == window_df["actual_direction"]).mean())
 
         buy_mask = window_df["predicted_direction"] == 1
         if buy_mask.any():
-            precision_buy = float(
-                (window_df.loc[buy_mask, "actual_direction"] == 1).mean()
-            )
+            precision_buy = float((window_df.loc[buy_mask, "actual_direction"] == 1).mean())
         else:
             precision_buy = 0.0
 
         sell_mask = window_df["predicted_direction"] == -1
         if sell_mask.any():
-            precision_sell = float(
-                (window_df.loc[sell_mask, "actual_direction"] == -1).mean()
-            )
+            precision_sell = float((window_df.loc[sell_mask, "actual_direction"] == -1).mean())
         else:
             precision_sell = 0.0
 
@@ -143,16 +137,22 @@ class PerformanceMonitor:
                 merged["date"] > merged["date"].max() - pd.Timedelta(days=benchmark_window),
                 "actual_return",
             ].mean()
-            strategy_return = merged.loc[
-                merged["date"] > merged["date"].max() - pd.Timedelta(days=benchmark_window),
-            ].apply(
-                lambda row: row["actual_return"]
-                if row["predicted_direction"] == 1
-                else -row["actual_return"]
-                if row["predicted_direction"] == -1
-                else 0.0,
-                axis=1,
-            ).mean()
+            strategy_return = (
+                merged.loc[
+                    merged["date"] > merged["date"].max() - pd.Timedelta(days=benchmark_window),
+                ]
+                .apply(
+                    lambda row: (
+                        row["actual_return"]
+                        if row["predicted_direction"] == 1
+                        else -row["actual_return"]
+                        if row["predicted_direction"] == -1
+                        else 0.0
+                    ),
+                    axis=1,
+                )
+                .mean()
+            )
             alpha_vs_benchmark = float(strategy_return - benchmark_return)
 
         report = PerformanceReport(

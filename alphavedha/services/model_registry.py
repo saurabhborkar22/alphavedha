@@ -74,9 +74,7 @@ class _DemoBaseModel:
     def predict(self, X: pd.DataFrame) -> PredictionResult:
         n = X.shape[0]
         # Use first row's values to derive a deterministic seed
-        row_hash = hashlib.md5(
-            X.iloc[0].values.tobytes() + self._name.encode()
-        ).hexdigest()
+        row_hash = hashlib.md5(X.iloc[0].values.tobytes() + self._name.encode()).hexdigest()
         seed = int(row_hash[:8], 16) + self._seed_offset
         rng = np.random.default_rng(seed)
 
@@ -142,9 +140,7 @@ class _DemoEnsemble:
 
         # Direction from argmax of averaged probabilities, mapped to {-1, 0, 1}
         direction_map = {0: -1, 1: 0, 2: 1}
-        direction = np.array(
-            [direction_map[int(np.argmax(avg_probs[i]))] for i in range(n)]
-        )
+        direction = np.array([direction_map[int(np.argmax(avg_probs[i]))] for i in range(n)])
 
         # Weighted average magnitude
         conf_stack = np.stack(confidences, axis=0)
@@ -159,9 +155,7 @@ class _DemoEnsemble:
         # Disagreement: std of each model's prob for consensus class
         if all_probs:
             consensus = np.argmax(avg_probs, axis=1)
-            probs_for_consensus = np.stack(all_probs, axis=0)[
-                :, np.arange(n), consensus
-            ]
+            probs_for_consensus = np.stack(all_probs, axis=0)[:, np.arange(n), consensus]
             disagreement = np.std(probs_for_consensus, axis=0)
         else:
             disagreement = np.zeros(n)

@@ -140,7 +140,9 @@ def data_refresh(
         f"{result.total_rows_stored} rows stored"
     )
     if result.failed_symbols:
-        console.print(f"[yellow]Failed ({result.symbols_failed}):[/yellow] {', '.join(result.failed_symbols[:10])}")
+        console.print(
+            f"[yellow]Failed ({result.symbols_failed}):[/yellow] {', '.join(result.failed_symbols[:10])}"
+        )
 
 
 @data_app.command("backfill")
@@ -159,7 +161,9 @@ def data_backfill(
         f"{result.total_rows_stored} rows stored"
     )
     if result.failed_symbols:
-        console.print(f"[yellow]Failed ({result.symbols_failed}):[/yellow] {', '.join(result.failed_symbols[:10])}")
+        console.print(
+            f"[yellow]Failed ({result.symbols_failed}):[/yellow] {', '.join(result.failed_symbols[:10])}"
+        )
         for sym, err in list(result.errors.items())[:5]:
             console.print(f"  [dim]{sym}: {err}[/dim]")
 
@@ -181,14 +185,20 @@ def data_status() -> None:
         session_factory = get_session_factory()
         async with session_factory() as session:
             ohlcv_count = (await session.execute(select(func.count(DailyOHLCV.id)))).scalar() or 0
-            symbol_count = (await session.execute(
-                select(func.count(func.distinct(DailyOHLCV.symbol)))
-            )).scalar() or 0
+            symbol_count = (
+                await session.execute(select(func.count(func.distinct(DailyOHLCV.symbol))))
+            ).scalar() or 0
             latest_date = (await session.execute(select(func.max(DailyOHLCV.date)))).scalar()
-            index_count = (await session.execute(select(func.count(IndexConstituent.id)))).scalar() or 0
-            flow_count = (await session.execute(select(func.count(InstitutionalFlow.id)))).scalar() or 0
+            index_count = (
+                await session.execute(select(func.count(IndexConstituent.id)))
+            ).scalar() or 0
+            flow_count = (
+                await session.execute(select(func.count(InstitutionalFlow.id)))
+            ).scalar() or 0
             flow_latest = (await session.execute(select(func.max(InstitutionalFlow.date)))).scalar()
-            deriv_count = (await session.execute(select(func.count(DerivativesData.id)))).scalar() or 0
+            deriv_count = (
+                await session.execute(select(func.count(DerivativesData.id)))
+            ).scalar() or 0
             deriv_latest = (await session.execute(select(func.max(DerivativesData.date)))).scalar()
 
         console.print("[bold]Database Status[/bold]")
@@ -398,14 +408,16 @@ def train_all_cmd(
     trained = [m for m, r in results.items() if r.artifact_path is not None]
     failed = [m for m, r in results.items() if r.artifact_path is None]
 
-    console.print(f"\n[bold]{'='*50}[/bold]")
+    console.print(f"\n[bold]{'=' * 50}[/bold]")
     console.print("[bold]Training Summary[/bold]")
-    console.print(f"[bold]{'='*50}[/bold]")
+    console.print(f"[bold]{'=' * 50}[/bold]")
 
     for _name, r in results.items():
         _print_train_result(r)
 
-    console.print(f"\n[bold green]Trained:[/bold green] {', '.join(trained) if trained else 'none'}")
+    console.print(
+        f"\n[bold green]Trained:[/bold green] {', '.join(trained) if trained else 'none'}"
+    )
     if failed:
         console.print(f"[bold red]Failed:[/bold red] {', '.join(failed)}")
 
@@ -443,11 +455,13 @@ def backtest_walk_forward(
     def _run() -> None:
         from alphavedha.data.store import load_ohlcv
 
-        ohlcv = asyncio.run(load_ohlcv(
-            symbol,
-            date_type.fromisoformat("2020-01-01"),
-            date_type.fromisoformat(end),
-        ))
+        ohlcv = asyncio.run(
+            load_ohlcv(
+                symbol,
+                date_type.fromisoformat("2020-01-01"),
+                date_type.fromisoformat(end),
+            )
+        )
 
         if ohlcv.empty:
             console.print("[red]No OHLCV data found. Run data backfill first.[/red]")
@@ -459,11 +473,14 @@ def backtest_walk_forward(
 
             idx = test_df.index  # type: ignore[union-attr]
             rng = _np.random.default_rng(42)
-            return _pd.DataFrame({
-                "direction": rng.choice([-1, 0, 1], size=len(idx)),
-                "confidence": rng.uniform(0.4, 0.8, size=len(idx)),
-                "magnitude": rng.uniform(0.01, 0.05, size=len(idx)),
-            }, index=idx)
+            return _pd.DataFrame(
+                {
+                    "direction": rng.choice([-1, 0, 1], size=len(idx)),
+                    "confidence": rng.uniform(0.4, 0.8, size=len(idx)),
+                    "magnitude": rng.uniform(0.01, 0.05, size=len(idx)),
+                },
+                index=idx,
+            )
 
         result = run_walk_forward(
             ohlcv_df=ohlcv,
@@ -474,9 +491,9 @@ def backtest_walk_forward(
             market_cap_tier=tier,
         )
 
-        console.print(f"\n[bold]{'='*50}[/bold]")
+        console.print(f"\n[bold]{'=' * 50}[/bold]")
         console.print("[bold]Walk-Forward Results[/bold]")
-        console.print(f"[bold]{'='*50}[/bold]")
+        console.print(f"[bold]{'=' * 50}[/bold]")
         console.print(f"  Folds:              {len(result.folds)}")
         console.print(f"  Total trades:       {result.n_trades}")
         console.print(f"  Total return:       {result.total_return:.2%}")

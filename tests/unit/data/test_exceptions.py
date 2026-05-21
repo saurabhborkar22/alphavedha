@@ -36,7 +36,9 @@ class TestExceptionHierarchy:
             CircuitBreakerTriggeredError,
         ]
         for exc_class in exceptions:
-            assert issubclass(exc_class, AlphaVedhaError), f"{exc_class.__name__} should inherit AlphaVedhaError"
+            assert issubclass(exc_class, AlphaVedhaError), (
+                f"{exc_class.__name__} should inherit AlphaVedhaError"
+            )
 
     def test_base_inherits_from_exception(self) -> None:
         assert issubclass(AlphaVedhaError, Exception)

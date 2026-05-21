@@ -61,15 +61,11 @@ async def scan_tier(
     result = await service.scan_tier(tier, top_n=top_n)
     return ScanResponse(
         tier=tier,
-        buy_candidates=[
-            PredictionResponse.from_stock_prediction(p) for p in result.buy_candidates
-        ],
+        buy_candidates=[PredictionResponse.from_stock_prediction(p) for p in result.buy_candidates],
         sell_candidates=[
             PredictionResponse.from_stock_prediction(p) for p in result.sell_candidates
         ],
-        excluded=[
-            ExcludedStock(symbol=sym, reason=reason) for sym, reason in result.excluded
-        ],
+        excluded=[ExcludedStock(symbol=sym, reason=reason) for sym, reason in result.excluded],
         total_scanned=len(result.buy_candidates)
         + len(result.sell_candidates)
         + len(result.excluded),

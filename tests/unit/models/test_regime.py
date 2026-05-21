@@ -30,15 +30,11 @@ def synthetic_regime_data() -> tuple[pd.Series, pd.Series]:
 
     returns_bull = rng.normal(0.0005, 0.005, size=n_half)
     returns_bear = rng.normal(-0.0005, 0.020, size=n_half)
-    returns = pd.Series(
-        np.concatenate([returns_bull, returns_bear]), name="log_returns"
-    )
+    returns = pd.Series(np.concatenate([returns_bull, returns_bear]), name="log_returns")
 
     vol_bull = rng.normal(0.005, 0.001, size=n_half).clip(0.001)
     vol_bear = rng.normal(0.020, 0.005, size=n_half).clip(0.001)
-    volatility = pd.Series(
-        np.concatenate([vol_bull, vol_bear]), name="volatility"
-    )
+    volatility = pd.Series(np.concatenate([vol_bull, vol_bear]), name="volatility")
 
     return returns, volatility
 
@@ -180,6 +176,4 @@ class TestRegimeDetectorPersistence:
         result_after = loaded.predict(returns, volatility)
 
         assert result_before.current_regime == result_after.current_regime
-        np.testing.assert_array_equal(
-            result_before.regime_history, result_after.regime_history
-        )
+        np.testing.assert_array_equal(result_before.regime_history, result_after.regime_history)

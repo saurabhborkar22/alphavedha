@@ -73,26 +73,20 @@ class TestPredictionService:
         cache.get.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_scan_tier_returns_ranking_result(
-        self, service: PredictionService
-    ) -> None:
+    async def test_scan_tier_returns_ranking_result(self, service: PredictionService) -> None:
         result = await service.scan_tier("large", top_n=3)
         assert isinstance(result, RankingResult)
         assert len(result.buy_candidates) + len(result.sell_candidates) + len(result.excluded) > 0
 
     @pytest.mark.asyncio
-    async def test_predict_batch_returns_list(
-        self, service: PredictionService
-    ) -> None:
+    async def test_predict_batch_returns_list(self, service: PredictionService) -> None:
         results = await service.predict_batch(["TCS", "INFY"])
         assert isinstance(results, list)
         assert len(results) == 2
         assert all(isinstance(r, StockPrediction) for r in results)
 
     @pytest.mark.asyncio
-    async def test_predict_batch_preserves_order(
-        self, service: PredictionService
-    ) -> None:
+    async def test_predict_batch_preserves_order(self, service: PredictionService) -> None:
         results = await service.predict_batch(["INFY", "TCS"])
         assert results[0].symbol == "INFY"
         assert results[1].symbol == "TCS"

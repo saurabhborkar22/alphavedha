@@ -24,9 +24,7 @@ def synthetic_regression_data() -> tuple[pd.DataFrame, pd.Series]:
     """500 samples, 10 features, target = linear combination + noise."""
     rng = np.random.default_rng(42)
     n, f = 500, 10
-    X = pd.DataFrame(
-        rng.standard_normal((n, f)), columns=[f"f{i}" for i in range(f)]
-    )
+    X = pd.DataFrame(rng.standard_normal((n, f)), columns=[f"f{i}" for i in range(f)])
     coeffs = rng.standard_normal(f)
     noise = rng.normal(0, 0.1, size=n)
     y = pd.Series(X.values @ coeffs + noise, name="target")
@@ -69,9 +67,7 @@ class TestConformalPredictorFit:
         conformal_config: ConformalConfig,
     ) -> None:
         X, y = synthetic_regression_data
-        predictor = ConformalPredictor(
-            config=conformal_config, base_regressor=Ridge(alpha=1.0)
-        )
+        predictor = ConformalPredictor(config=conformal_config, base_regressor=Ridge(alpha=1.0))
         predictor.fit(X[:400], y[:400])
         result = predictor.predict(X[400:])
         assert isinstance(result, ConformalResult)
@@ -117,14 +113,10 @@ class TestConformalPredictorPredict:
 
 
 class TestConformalPredictorVolatility:
-    def test_intervals_expand_for_noisy_data(
-        self, conformal_config: ConformalConfig
-    ) -> None:
+    def test_intervals_expand_for_noisy_data(self, conformal_config: ConformalConfig) -> None:
         rng = np.random.default_rng(123)
         n, f = 300, 5
-        X = pd.DataFrame(
-            rng.standard_normal((n, f)), columns=[f"f{i}" for i in range(f)]
-        )
+        X = pd.DataFrame(rng.standard_normal((n, f)), columns=[f"f{i}" for i in range(f)])
         coeffs = rng.standard_normal(f)
 
         y_low_noise = pd.Series(X.values @ coeffs + rng.normal(0, 0.01, size=n))
@@ -155,9 +147,7 @@ class TestConformalPredictorCalibrate:
         predictor.calibrate(X[300:400], y[300:400])
         result_after = predictor.predict(X[400:])
 
-        assert not np.array_equal(
-            result_before.interval_width, result_after.interval_width
-        )
+        assert not np.array_equal(result_before.interval_width, result_after.interval_width)
 
 
 class TestConformalPredictorPersistence:
@@ -178,9 +168,5 @@ class TestConformalPredictorPersistence:
         loaded = ConformalPredictor.load(save_dir)
         result_after = loaded.predict(X[400:])
 
-        np.testing.assert_allclose(
-            result_before.price_mid, result_after.price_mid, atol=1e-5
-        )
-        np.testing.assert_allclose(
-            result_before.price_low, result_after.price_low, atol=1e-5
-        )
+        np.testing.assert_allclose(result_before.price_mid, result_after.price_mid, atol=1e-5)
+        np.testing.assert_allclose(result_before.price_low, result_after.price_low, atol=1e-5)

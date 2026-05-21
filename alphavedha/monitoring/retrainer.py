@@ -80,9 +80,7 @@ class RetrainingManager:
             )
 
         if last_train_date is not None:
-            interval_days = _SCHEDULE_INTERVALS.get(
-                self._config.schedule, 7
-            )
+            interval_days = _SCHEDULE_INTERVALS.get(self._config.schedule, 7)
             days_since = (date.today() - last_train_date).days
             if days_since >= interval_days:
                 logger.info(

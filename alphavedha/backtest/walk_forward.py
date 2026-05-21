@@ -112,8 +112,12 @@ def run_walk_forward(
     if ohlcv_df.empty:
         raise ValueError("ohlcv_df is empty")
 
-    data_start = ohlcv_df.index[0].date() if hasattr(ohlcv_df.index[0], "date") else ohlcv_df.index[0]
-    data_end = ohlcv_df.index[-1].date() if hasattr(ohlcv_df.index[-1], "date") else ohlcv_df.index[-1]
+    data_start = (
+        ohlcv_df.index[0].date() if hasattr(ohlcv_df.index[0], "date") else ohlcv_df.index[0]
+    )
+    data_end = (
+        ohlcv_df.index[-1].date() if hasattr(ohlcv_df.index[-1], "date") else ohlcv_df.index[-1]
+    )
 
     if start is None:
         start = (pd.Timestamp(data_start) + pd.Timedelta(days=min_train_days + 30)).date()
@@ -144,22 +148,28 @@ def run_walk_forward(
             preds = predictions_fn(train_df, test_df)
         except Exception as e:
             logger.warning("walk_forward_fold_failed", fold=str(fold_start), error=str(e))
-            folds.append(WalkForwardFold(
-                fold_start=fold_start,
-                fold_end=fold_end,
-                train_rows=len(train_df),
-                test_rows=len(test_df),
-                n_trades=0,
-                gross_return=0.0,
-                net_return=0.0,
-                win_rate=0.0,
-            ))
+            folds.append(
+                WalkForwardFold(
+                    fold_start=fold_start,
+                    fold_end=fold_end,
+                    train_rows=len(train_df),
+                    test_rows=len(test_df),
+                    n_trades=0,
+                    gross_return=0.0,
+                    net_return=0.0,
+                    win_rate=0.0,
+                )
+            )
             monthly_rets.append(0.0)
             monthly_dates.append(fold_start)
             continue
 
         fold_trades = _execute_trades(
-            test_df, preds, cost_pct, min_confidence, max_holding_days,
+            test_df,
+            preds,
+            cost_pct,
+            min_confidence,
+            max_holding_days,
         )
 
         gross_ret = sum(t["gross_return"] for t in fold_trades) if fold_trades else 0.0
@@ -167,16 +177,18 @@ def run_walk_forward(
         wins = [t for t in fold_trades if t["net_return"] > 0]
         win_rate = len(wins) / len(fold_trades) if fold_trades else 0.0
 
-        folds.append(WalkForwardFold(
-            fold_start=fold_start,
-            fold_end=fold_end,
-            train_rows=len(train_df),
-            test_rows=len(test_df),
-            n_trades=len(fold_trades),
-            gross_return=gross_ret,
-            net_return=net_ret,
-            win_rate=win_rate,
-        ))
+        folds.append(
+            WalkForwardFold(
+                fold_start=fold_start,
+                fold_end=fold_end,
+                train_rows=len(train_df),
+                test_rows=len(test_df),
+                n_trades=len(fold_trades),
+                gross_return=gross_ret,
+                net_return=net_ret,
+                win_rate=win_rate,
+            )
+        )
 
         all_trades.extend(fold_trades)
         monthly_rets.append(net_ret)
@@ -208,16 +220,27 @@ def run_walk_forward(
         overall_win_rate = 0.0
         profit_factor = 0.0
 
-    trade_log = pd.DataFrame(all_trades) if all_trades else pd.DataFrame(
-        columns=["entry_date", "exit_date", "entry_price", "exit_price",
-                 "gross_return", "net_return", "holding_days", "fold"]
+    trade_log = (
+        pd.DataFrame(all_trades)
+        if all_trades
+        else pd.DataFrame(
+            columns=[
+                "entry_date",
+                "exit_date",
+                "entry_price",
+                "exit_price",
+                "gross_return",
+                "net_return",
+                "holding_days",
+                "fold",
+            ]
+        )
     )
 
     closes = ohlcv_df["close"]
     bench_start = closes.loc[closes.index >= pd.Timestamp(start)]
     benchmark_ret = (
-        float(bench_start.iloc[-1] / bench_start.iloc[0] - 1)
-        if len(bench_start) > 1 else 0.0
+        float(bench_start.iloc[-1] / bench_start.iloc[0] - 1) if len(bench_start) > 1 else 0.0
     )
     bench_ann = float((1 + benchmark_ret) ** (12 / max(n_months, 1)) - 1)
     alpha = ann_ret - bench_ann
@@ -271,7 +294,9 @@ def _execute_trades(
 
     for i in range(len(closes)):
         direction = int(preds["direction"].iloc[i]) if pd.notna(preds["direction"].iloc[i]) else 0
-        confidence = float(preds["confidence"].iloc[i]) if pd.notna(preds["confidence"].iloc[i]) else 0.0
+        confidence = (
+            float(preds["confidence"].iloc[i]) if pd.notna(preds["confidence"].iloc[i]) else 0.0
+        )
 
         if not in_position and direction == 1 and confidence >= min_confidence:
             in_position = True
@@ -285,16 +310,18 @@ def _execute_trades(
                 exit_price = closes.iloc[i]
                 gross_ret = exit_price / entry_price - 1
                 net_ret = gross_ret - cost_pct
-                trades.append({
-                    "entry_date": closes.index[entry_idx],
-                    "exit_date": closes.index[i],
-                    "entry_price": float(entry_price),
-                    "exit_price": float(exit_price),
-                    "gross_return": float(gross_ret),
-                    "net_return": float(net_ret),
-                    "holding_days": holding,
-                    "fold": str(closes.index[0].date()),
-                })
+                trades.append(
+                    {
+                        "entry_date": closes.index[entry_idx],
+                        "exit_date": closes.index[i],
+                        "entry_price": float(entry_price),
+                        "exit_price": float(exit_price),
+                        "gross_return": float(gross_ret),
+                        "net_return": float(net_ret),
+                        "holding_days": holding,
+                        "fold": str(closes.index[0].date()),
+                    }
+                )
                 in_position = False
 
     return trades

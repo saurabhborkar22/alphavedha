@@ -158,6 +158,7 @@ async def get_dashboard() -> DashboardSummary:
 
     def _accuracy_window(days: int) -> float | None:
         from datetime import timedelta
+
         cutoff = today - timedelta(days=days)
         window = evaluated[evaluated["prediction_date"] >= cutoff]
         if window.empty:

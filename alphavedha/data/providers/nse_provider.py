@@ -79,9 +79,7 @@ class NSEProvider:
 
         return await asyncio.to_thread(_fetch)
 
-    async def fetch_fii_dii_range(
-        self, start: date, end: date
-    ) -> pd.DataFrame:
+    async def fetch_fii_dii_range(self, start: date, end: date) -> pd.DataFrame:
         """Fetch FII/DII data for a date range by iterating daily.
 
         NSE only provides today's data via API, so for historical data
@@ -104,13 +102,15 @@ class NSEProvider:
                     resp = session.get(url)
                     data = resp.json()
                     for item in data:
-                        rows.append({
-                            "date": pd.to_datetime(item["date"], format="%d-%b-%Y"),
-                            "category": item["category"].upper(),
-                            "buy_value": float(item["buyValue"].replace(",", "")),
-                            "sell_value": float(item["sellValue"].replace(",", "")),
-                            "net_value": float(item["netValue"].replace(",", "")),
-                        })
+                        rows.append(
+                            {
+                                "date": pd.to_datetime(item["date"], format="%d-%b-%Y"),
+                                "category": item["category"].upper(),
+                                "buy_value": float(item["buyValue"].replace(",", "")),
+                                "sell_value": float(item["sellValue"].replace(",", "")),
+                                "net_value": float(item["netValue"].replace(",", "")),
+                            }
+                        )
                 except Exception as e:
                     logger.warning("nse_fii_dii_fetch_error", date=str(current), error=str(e))
                 current += timedelta(days=1)
@@ -127,6 +127,7 @@ class NSEProvider:
 
         def _fetch() -> dict:
             from jugaad_data.nse import NSELive
+
             live = NSELive()
             return live.stock_quote_fno(symbol)
 
@@ -138,6 +139,7 @@ class NSEProvider:
 
         def _fetch() -> dict:
             from jugaad_data.nse import NSELive
+
             live = NSELive()
             return live.equities_option_chain(symbol)
 
@@ -149,6 +151,7 @@ class NSEProvider:
 
         def _fetch() -> dict:
             from jugaad_data.nse import NSELive
+
             live = NSELive()
             return live.trade_info(symbol)
 
@@ -177,13 +180,15 @@ def parse_fii_dii_response(data: list[dict]) -> list[dict]:
     rows = []
     for item in data:
         try:
-            rows.append({
-                "date": pd.to_datetime(item["date"], format="%d-%b-%Y").date(),
-                "category": _normalize_category(item["category"]),
-                "buy_value": float(str(item["buyValue"]).replace(",", "")),
-                "sell_value": float(str(item["sellValue"]).replace(",", "")),
-                "net_value": float(str(item["netValue"]).replace(",", "")),
-            })
+            rows.append(
+                {
+                    "date": pd.to_datetime(item["date"], format="%d-%b-%Y").date(),
+                    "category": _normalize_category(item["category"]),
+                    "buy_value": float(str(item["buyValue"]).replace(",", "")),
+                    "sell_value": float(str(item["sellValue"]).replace(",", "")),
+                    "net_value": float(str(item["netValue"]).replace(",", "")),
+                }
+            )
         except (KeyError, ValueError) as e:
             logger.warning("nse_parse_fii_dii_error", item=item, error=str(e))
     return rows
@@ -217,14 +222,24 @@ def parse_fno_to_derivatives(fno_data: dict, symbol: str, trade_date: date) -> d
     for entry in entries:
         inst_type = entry.get("instrumentType", "")
         if inst_type in ("OPTSTK", "CE", "PE"):
-            chain.append({
-                "strike": entry.get("strikePrice"),
-                "call_oi": entry.get("openInterest") if "CE" in entry.get("identifier", "") else 0,
-                "put_oi": entry.get("openInterest") if "PE" in entry.get("identifier", "") else 0,
-                "call_vol": entry.get("totalTradedVolume") if "CE" in entry.get("identifier", "") else 0,
-                "put_vol": entry.get("totalTradedVolume") if "PE" in entry.get("identifier", "") else 0,
-                "call_iv": entry.get("impliedVolatility"),
-            })
+            chain.append(
+                {
+                    "strike": entry.get("strikePrice"),
+                    "call_oi": entry.get("openInterest")
+                    if "CE" in entry.get("identifier", "")
+                    else 0,
+                    "put_oi": entry.get("openInterest")
+                    if "PE" in entry.get("identifier", "")
+                    else 0,
+                    "call_vol": entry.get("totalTradedVolume")
+                    if "CE" in entry.get("identifier", "")
+                    else 0,
+                    "put_vol": entry.get("totalTradedVolume")
+                    if "PE" in entry.get("identifier", "")
+                    else 0,
+                    "call_iv": entry.get("impliedVolatility"),
+                }
+            )
 
     if chain:
         result["options_data_json"] = {"chain": chain}

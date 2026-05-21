@@ -335,9 +335,7 @@ async def store_derivatives(rows: list[dict]) -> int:
     return stored
 
 
-async def load_derivatives(
-    symbol: str, start: date, end: date
-) -> pd.DataFrame:
+async def load_derivatives(symbol: str, start: date, end: date) -> pd.DataFrame:
     """Load derivatives data for a symbol and date range."""
     session_factory = get_session_factory()
 
@@ -397,8 +395,7 @@ async def store_earnings(rows: list[dict]) -> int:
                 "announced_date": row.get("announced_date"),
             }
             update_values = {
-                k: v for k, v in values.items()
-                if k not in ("symbol", "quarter", "year")
+                k: v for k, v in values.items() if k not in ("symbol", "quarter", "year")
             }
 
             stmt = (
@@ -426,10 +423,7 @@ async def load_earnings(
     session_factory = get_session_factory()
 
     async with session_factory() as session:
-        stmt = (
-            select(EarningsResult)
-            .where(EarningsResult.symbol == symbol)
-        )
+        stmt = select(EarningsResult).where(EarningsResult.symbol == symbol)
         if min_year is not None:
             stmt = stmt.where(EarningsResult.year >= min_year)
         stmt = stmt.order_by(EarningsResult.year, EarningsResult.quarter)
@@ -514,17 +508,19 @@ async def load_promoter_holdings(symbol: str) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
 
-    return pd.DataFrame([
-        {
-            "quarter_end": r.quarter_end,
-            "promoter_pct": r.promoter_pct,
-            "pledge_pct": r.pledge_pct,
-            "public_pct": r.public_pct,
-            "fii_pct": r.fii_pct,
-            "dii_pct": r.dii_pct,
-        }
-        for r in rows
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "quarter_end": r.quarter_end,
+                "promoter_pct": r.promoter_pct,
+                "pledge_pct": r.pledge_pct,
+                "public_pct": r.public_pct,
+                "fii_pct": r.fii_pct,
+                "dii_pct": r.dii_pct,
+            }
+            for r in rows
+        ]
+    )
 
 
 async def store_insider_trades(rows: list[dict]) -> int:
@@ -577,17 +573,19 @@ async def load_insider_trades(symbol: str, days_back: int = 365) -> pd.DataFrame
     if not rows:
         return pd.DataFrame()
 
-    return pd.DataFrame([
-        {
-            "trade_date": r.trade_date,
-            "person_name": r.person_name,
-            "person_category": r.person_category,
-            "trade_type": r.trade_type,
-            "shares": r.shares,
-            "value_lakhs": r.value_lakhs,
-        }
-        for r in rows
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "trade_date": r.trade_date,
+                "person_name": r.person_name,
+                "person_category": r.person_category,
+                "trade_type": r.trade_type,
+                "shares": r.shares,
+                "value_lakhs": r.value_lakhs,
+            }
+            for r in rows
+        ]
+    )
 
 
 async def store_news_articles(rows: list[dict]) -> int:
@@ -650,17 +648,19 @@ async def load_news_articles(
     if not rows:
         return pd.DataFrame()
 
-    return pd.DataFrame([
-        {
-            "symbol": r.symbol,
-            "source": r.source,
-            "title": r.title,
-            "url": r.url,
-            "published_date": r.published_date,
-            "sentiment_score": r.sentiment_score,
-        }
-        for r in rows
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "symbol": r.symbol,
+                "source": r.source,
+                "title": r.title,
+                "url": r.url,
+                "published_date": r.published_date,
+                "sentiment_score": r.sentiment_score,
+            }
+            for r in rows
+        ]
+    )
 
 
 async def store_alternative_data(rows: list[dict]) -> int:
@@ -681,7 +681,9 @@ async def store_alternative_data(rows: list[dict]) -> int:
                 "sector": row.get("sector"),
                 "source": row.get("source"),
             }
-            update_values = {k: v for k, v in values.items() if k not in ("data_type", "period_date")}
+            update_values = {
+                k: v for k, v in values.items() if k not in ("data_type", "period_date")
+            }
 
             stmt = (
                 pg_insert(AlternativeData)
@@ -724,17 +726,19 @@ async def load_alternative_data(
     if not rows:
         return pd.DataFrame()
 
-    return pd.DataFrame([
-        {
-            "data_type": r.data_type,
-            "period_date": r.period_date,
-            "value": r.value,
-            "yoy_change": r.yoy_change,
-            "sector": r.sector,
-            "source": r.source,
-        }
-        for r in rows
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "data_type": r.data_type,
+                "period_date": r.period_date,
+                "value": r.value,
+                "yoy_change": r.yoy_change,
+                "sector": r.sector,
+                "source": r.source,
+            }
+            for r in rows
+        ]
+    )
 
 
 async def store_paper_trade(row: dict) -> int:
@@ -819,22 +823,24 @@ async def load_paper_trades(
     if not rows:
         return pd.DataFrame()
 
-    return pd.DataFrame([
-        {
-            "symbol": r.symbol,
-            "prediction_date": r.prediction_date,
-            "predicted_direction": r.predicted_direction,
-            "predicted_magnitude": r.predicted_magnitude,
-            "confidence": r.confidence,
-            "model_version": r.model_version,
-            "regime": r.regime,
-            "entry_price": r.entry_price,
-            "exit_price": r.exit_price,
-            "actual_return": r.actual_return,
-            "is_correct": r.is_correct,
-        }
-        for r in rows
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "symbol": r.symbol,
+                "prediction_date": r.prediction_date,
+                "predicted_direction": r.predicted_direction,
+                "predicted_magnitude": r.predicted_magnitude,
+                "confidence": r.confidence,
+                "model_version": r.model_version,
+                "regime": r.regime,
+                "entry_price": r.entry_price,
+                "exit_price": r.exit_price,
+                "actual_return": r.actual_return,
+                "is_correct": r.is_correct,
+            }
+            for r in rows
+        ]
+    )
 
 
 async def store_daily_pnl(row: dict) -> int:
@@ -879,16 +885,18 @@ async def load_daily_pnl(
     if not rows:
         return pd.DataFrame()
 
-    return pd.DataFrame([
-        {
-            "date": r.date,
-            "portfolio_value": r.portfolio_value,
-            "daily_return": r.daily_return,
-            "cumulative_return": r.cumulative_return,
-            "n_positions": r.n_positions,
-            "n_correct": r.n_correct,
-            "n_total_predictions": r.n_total_predictions,
-            "benchmark_return": r.benchmark_return,
-        }
-        for r in rows
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "date": r.date,
+                "portfolio_value": r.portfolio_value,
+                "daily_return": r.daily_return,
+                "cumulative_return": r.cumulative_return,
+                "n_positions": r.n_positions,
+                "n_correct": r.n_correct,
+                "n_total_predictions": r.n_total_predictions,
+                "benchmark_return": r.benchmark_return,
+            }
+            for r in rows
+        ]
+    )

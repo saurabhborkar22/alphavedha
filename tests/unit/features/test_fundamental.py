@@ -77,27 +77,31 @@ def _make_earnings_df() -> pd.DataFrame:
 
 class TestFundamentalFeatures:
     def test_returns_correct_count(
-        self, sample_ohlcv_long: pd.DataFrame,
+        self,
+        sample_ohlcv_long: pd.DataFrame,
     ) -> None:
         earnings = _make_earnings_df()
         result = compute_fundamental_features(sample_ohlcv_long, earnings)
         assert len(result.columns) == FUNDAMENTAL_FEATURE_COUNT
 
     def test_graceful_without_earnings(
-        self, sample_ohlcv_long: pd.DataFrame,
+        self,
+        sample_ohlcv_long: pd.DataFrame,
     ) -> None:
         result = compute_fundamental_features(sample_ohlcv_long, None)
         assert len(result.columns) == FUNDAMENTAL_FEATURE_COUNT
         assert result["fund_earnings_surprise_pct"].isna().all()
 
     def test_graceful_empty_earnings(
-        self, sample_ohlcv_long: pd.DataFrame,
+        self,
+        sample_ohlcv_long: pd.DataFrame,
     ) -> None:
         result = compute_fundamental_features(sample_ohlcv_long, pd.DataFrame())
         assert len(result.columns) == FUNDAMENTAL_FEATURE_COUNT
 
     def test_days_since_earnings_nonneg(
-        self, sample_ohlcv_long: pd.DataFrame,
+        self,
+        sample_ohlcv_long: pd.DataFrame,
     ) -> None:
         earnings = _make_earnings_df()
         result = compute_fundamental_features(sample_ohlcv_long, earnings)
@@ -105,7 +109,8 @@ class TestFundamentalFeatures:
         assert (days >= 0).all(), "Days since earnings should be non-negative"
 
     def test_surprise_streak_integer(
-        self, sample_ohlcv_long: pd.DataFrame,
+        self,
+        sample_ohlcv_long: pd.DataFrame,
     ) -> None:
         earnings = _make_earnings_df()
         result = compute_fundamental_features(sample_ohlcv_long, earnings)
@@ -114,7 +119,8 @@ class TestFundamentalFeatures:
             assert (streak == streak.astype(int)).all()
 
     def test_no_lookahead(
-        self, sample_ohlcv_long: pd.DataFrame,
+        self,
+        sample_ohlcv_long: pd.DataFrame,
     ) -> None:
         earnings = _make_earnings_df()
         result = compute_fundamental_features(sample_ohlcv_long, earnings)
@@ -123,7 +129,8 @@ class TestFundamentalFeatures:
         assert before_any.isna().all(), "No earnings data should leak before first announcement"
 
     def test_with_estimates_uses_surprise(
-        self, sample_ohlcv_long: pd.DataFrame,
+        self,
+        sample_ohlcv_long: pd.DataFrame,
     ) -> None:
         earnings = _make_earnings_df()
         result = compute_fundamental_features(sample_ohlcv_long, earnings)

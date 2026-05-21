@@ -96,7 +96,9 @@ class TestBacktestEngine:
         default_config: BacktestConfig,
     ) -> None:
         result = run_backtest(
-            low_confidence_predictions, sample_ohlcv_500, default_config,
+            low_confidence_predictions,
+            sample_ohlcv_500,
+            default_config,
             min_confidence=0.55,
         )
         assert result.n_trades == 0

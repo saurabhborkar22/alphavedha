@@ -116,12 +116,15 @@ class PairsTrader:
 
         zscore = (spread - spread_mean) / spread_std.replace(0, np.nan)
 
-        return pd.DataFrame({
-            "spread": spread,
-            "spread_mean": spread_mean,
-            "spread_std": spread_std,
-            "zscore": zscore,
-        }, index=common_idx)
+        return pd.DataFrame(
+            {
+                "spread": spread,
+                "spread_mean": spread_mean,
+                "spread_std": spread_std,
+                "zscore": zscore,
+            },
+            index=common_idx,
+        )
 
     def generate_signals(
         self,
@@ -136,7 +139,8 @@ class PairsTrader:
         if hedge_ratio is None:
             common = prices_a.dropna().index.intersection(prices_b.dropna().index)
             hedge_ratio = compute_hedge_ratio(
-                prices_a.loc[common], prices_b.loc[common],
+                prices_a.loc[common],
+                prices_b.loc[common],
             )
 
         signals: list[PairSignal] = []
@@ -152,49 +156,57 @@ class PairsTrader:
 
             if not in_position:
                 if z > self._entry_z:
-                    signals.append(PairSignal(
-                        date=dt_date,
-                        symbol_long=symbol_b,
-                        symbol_short=symbol_a,
-                        spread_zscore=float(z),
-                        signal_type="entry_long_b",
-                        hedge_ratio=hedge_ratio,
-                        confidence=min(abs(z) / self._stop_z, 1.0),
-                    ))
+                    signals.append(
+                        PairSignal(
+                            date=dt_date,
+                            symbol_long=symbol_b,
+                            symbol_short=symbol_a,
+                            spread_zscore=float(z),
+                            signal_type="entry_long_b",
+                            hedge_ratio=hedge_ratio,
+                            confidence=min(abs(z) / self._stop_z, 1.0),
+                        )
+                    )
                     in_position = True
                 elif z < -self._entry_z:
-                    signals.append(PairSignal(
-                        date=dt_date,
-                        symbol_long=symbol_a,
-                        symbol_short=symbol_b,
-                        spread_zscore=float(z),
-                        signal_type="entry_long_a",
-                        hedge_ratio=hedge_ratio,
-                        confidence=min(abs(z) / self._stop_z, 1.0),
-                    ))
+                    signals.append(
+                        PairSignal(
+                            date=dt_date,
+                            symbol_long=symbol_a,
+                            symbol_short=symbol_b,
+                            spread_zscore=float(z),
+                            signal_type="entry_long_a",
+                            hedge_ratio=hedge_ratio,
+                            confidence=min(abs(z) / self._stop_z, 1.0),
+                        )
+                    )
                     in_position = True
             else:
                 if abs(z) < self._exit_z:
-                    signals.append(PairSignal(
-                        date=dt_date,
-                        symbol_long="",
-                        symbol_short="",
-                        spread_zscore=float(z),
-                        signal_type="exit",
-                        hedge_ratio=hedge_ratio,
-                        confidence=1.0,
-                    ))
+                    signals.append(
+                        PairSignal(
+                            date=dt_date,
+                            symbol_long="",
+                            symbol_short="",
+                            spread_zscore=float(z),
+                            signal_type="exit",
+                            hedge_ratio=hedge_ratio,
+                            confidence=1.0,
+                        )
+                    )
                     in_position = False
                 elif abs(z) > self._stop_z:
-                    signals.append(PairSignal(
-                        date=dt_date,
-                        symbol_long="",
-                        symbol_short="",
-                        spread_zscore=float(z),
-                        signal_type="stop_loss",
-                        hedge_ratio=hedge_ratio,
-                        confidence=1.0,
-                    ))
+                    signals.append(
+                        PairSignal(
+                            date=dt_date,
+                            symbol_long="",
+                            symbol_short="",
+                            spread_zscore=float(z),
+                            signal_type="stop_loss",
+                            hedge_ratio=hedge_ratio,
+                            confidence=1.0,
+                        )
+                    )
                     in_position = False
 
         return signals
@@ -265,23 +277,33 @@ class PairsTrader:
                     spread_change = current_spread - position.entry_spread
 
                     if position.symbol_long == symbol_a:
-                        spread_return = spread_change / abs(position.entry_spread) if position.entry_spread != 0 else 0.0
+                        spread_return = (
+                            spread_change / abs(position.entry_spread)
+                            if position.entry_spread != 0
+                            else 0.0
+                        )
                     else:
-                        spread_return = -spread_change / abs(position.entry_spread) if position.entry_spread != 0 else 0.0
+                        spread_return = (
+                            -spread_change / abs(position.entry_spread)
+                            if position.entry_spread != 0
+                            else 0.0
+                        )
 
                     net_return = spread_return - cost_pct
 
-                    trades.append(PairTradeResult(
-                        symbol_long=position.symbol_long,
-                        symbol_short=position.symbol_short,
-                        entry_date=position.entry_date,
-                        exit_date=dt_date,
-                        entry_zscore=position.entry_zscore,
-                        exit_zscore=float(z),
-                        spread_return=net_return,
-                        holding_days=(dt_date - position.entry_date).days,
-                        exit_reason=exit_reason,
-                    ))
+                    trades.append(
+                        PairTradeResult(
+                            symbol_long=position.symbol_long,
+                            symbol_short=position.symbol_short,
+                            entry_date=position.entry_date,
+                            exit_date=dt_date,
+                            entry_zscore=position.entry_zscore,
+                            exit_zscore=float(z),
+                            spread_return=net_return,
+                            holding_days=(dt_date - position.entry_date).days,
+                            exit_reason=exit_reason,
+                        )
+                    )
                     position = None
 
         total_ret = sum(t.spread_return for t in trades) if trades else 0.0
@@ -305,14 +327,16 @@ class PairsTrader:
 
         signal_records = []
         for t in trades:
-            signal_records.append({
-                "entry_date": t.entry_date,
-                "exit_date": t.exit_date,
-                "symbol_long": t.symbol_long,
-                "symbol_short": t.symbol_short,
-                "spread_return": t.spread_return,
-                "exit_reason": t.exit_reason,
-            })
+            signal_records.append(
+                {
+                    "entry_date": t.entry_date,
+                    "exit_date": t.exit_date,
+                    "symbol_long": t.symbol_long,
+                    "symbol_short": t.symbol_short,
+                    "spread_return": t.spread_return,
+                    "exit_reason": t.exit_reason,
+                }
+            )
 
         logger.info(
             "pairs_backtest_complete",

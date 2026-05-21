@@ -29,8 +29,13 @@ class TestTripleBarrierLabels:
     ) -> None:
         result = compute_triple_barrier_labels(sample_ohlcv_500, default_config)
         expected_cols = {
-            "label", "return_pct", "barrier_hit", "days_to_hit",
-            "entry_price", "exit_price", "atr_at_entry",
+            "label",
+            "return_pct",
+            "barrier_hit",
+            "days_to_hit",
+            "entry_price",
+            "exit_price",
+            "atr_at_entry",
         }
         assert expected_cols.issubset(set(result.df.columns))
 
@@ -45,7 +50,7 @@ class TestTripleBarrierLabels:
         self, sample_ohlcv_500: pd.DataFrame, default_config: TripleBarrierConfig
     ) -> None:
         result = compute_triple_barrier_labels(sample_ohlcv_500, default_config)
-        last_labels = result.df["label"].iloc[-default_config.max_holding_period:]
+        last_labels = result.df["label"].iloc[-default_config.max_holding_period :]
         assert last_labels.isna().all()
 
     def test_label_counts_match_data(
@@ -133,9 +138,7 @@ class TestTripleBarrierLabels:
     def test_with_symbol(
         self, sample_ohlcv_500: pd.DataFrame, default_config: TripleBarrierConfig
     ) -> None:
-        result = compute_triple_barrier_labels(
-            sample_ohlcv_500, default_config, symbol="TCS.NS"
-        )
+        result = compute_triple_barrier_labels(sample_ohlcv_500, default_config, symbol="TCS.NS")
         assert result.symbol == "TCS.NS"
 
     def test_same_bar_touch_favors_lower(self) -> None:
