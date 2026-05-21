@@ -111,8 +111,12 @@ class TestRolloutBuffer:
         buffer = RolloutBuffer.empty()
         for i in range(10):
             buffer.add(
-                np.zeros(5), np.zeros(2), 0.0,
-                float(i), float(i * 0.1), i == 9,
+                np.zeros(5),
+                np.zeros(2),
+                0.0,
+                float(i),
+                float(i * 0.1),
+                i == 9,
             )
         advantages, returns = buffer.compute_returns(gamma=0.99, gae_lambda=0.95)
         assert len(advantages) == 10
@@ -122,8 +126,12 @@ class TestRolloutBuffer:
         buffer = RolloutBuffer.empty()
         for i in range(50):
             buffer.add(
-                np.zeros(5), np.zeros(2), 0.0,
-                float(np.random.randn()), float(np.random.randn() * 0.1), i == 49,
+                np.zeros(5),
+                np.zeros(2),
+                0.0,
+                float(np.random.randn()),
+                float(np.random.randn() * 0.1),
+                i == 49,
             )
         advantages, _ = buffer.compute_returns(gamma=0.99, gae_lambda=0.95)
         normalized = (advantages - advantages.mean()) / (advantages.std() + 1e-8)

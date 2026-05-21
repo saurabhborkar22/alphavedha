@@ -86,8 +86,13 @@ class TestTradeCost:
             100_000.0, "buy", "large", default_config.costs, default_config.slippage
         )
         component_sum = (
-            cost.stt + cost.brokerage + cost.exchange_txn
-            + cost.gst + cost.sebi_turnover + cost.stamp_duty + cost.slippage
+            cost.stt
+            + cost.brokerage
+            + cost.exchange_txn
+            + cost.gst
+            + cost.sebi_turnover
+            + cost.stamp_duty
+            + cost.slippage
         )
         assert abs(cost.total - component_sum) < 0.01
 

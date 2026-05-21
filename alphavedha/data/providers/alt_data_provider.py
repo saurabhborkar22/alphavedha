@@ -36,32 +36,55 @@ ALT_DATA_TYPES = [
 
 SECTOR_MAPPING: dict[str, list[str]] = {
     "auto_sales": [
-        "MARUTI.NS", "TATAMOTORS.NS", "M&M.NS", "BAJAJ-AUTO.NS",
-        "EICHERMOT.NS", "HEROMOTOCO.NS",
+        "MARUTI.NS",
+        "TATAMOTORS.NS",
+        "M&M.NS",
+        "BAJAJ-AUTO.NS",
+        "EICHERMOT.NS",
+        "HEROMOTOCO.NS",
     ],
     "cement_dispatch": [
-        "ULTRACEMCO.NS", "SHREECEM.NS", "AMBUJACEM.NS", "ACC.NS",
+        "ULTRACEMCO.NS",
+        "SHREECEM.NS",
+        "AMBUJACEM.NS",
+        "ACC.NS",
     ],
     "pmi_manufacturing": [],  # market-wide
     "pmi_services": [],
     "credit_growth": [
-        "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "KOTAKBANK.NS",
-        "AXISBANK.NS", "BANKBARODA.NS",
+        "HDFCBANK.NS",
+        "ICICIBANK.NS",
+        "SBIN.NS",
+        "KOTAKBANK.NS",
+        "AXISBANK.NS",
+        "BANKBARODA.NS",
     ],
     "power_consumption": [
-        "NTPC.NS", "POWERGRID.NS", "TATAPOWER.NS",
+        "NTPC.NS",
+        "POWERGRID.NS",
+        "TATAPOWER.NS",
     ],
     "upi_volume": [],
     "gst_collections": [],
     "port_cargo": ["ADANIPORTS.NS"],
     "forex_reserves": [
-        "TCS.NS", "INFY.NS", "WIPRO.NS", "HCLTECH.NS", "TECHM.NS", "LTIM.NS",
+        "TCS.NS",
+        "INFY.NS",
+        "WIPRO.NS",
+        "HCLTECH.NS",
+        "TECHM.NS",
+        "LTIM.NS",
     ],
     "crude_oil": ["RELIANCE.NS", "ONGC.NS", "BPCL.NS", "COALINDIA.NS"],
     "us_overnight": [],  # applies to all
     "job_postings": [
-        "TCS.NS", "INFY.NS", "WIPRO.NS", "HCLTECH.NS",
-        "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS",
+        "TCS.NS",
+        "INFY.NS",
+        "WIPRO.NS",
+        "HCLTECH.NS",
+        "HDFCBANK.NS",
+        "ICICIBANK.NS",
+        "SBIN.NS",
     ],
 }
 
@@ -126,13 +149,15 @@ class AltDataProvider:
             records: list[AltDataRecord] = []
             for idx, row in data.iterrows():
                 dt = idx.date() if hasattr(idx, "date") else idx
-                records.append(AltDataRecord(
-                    data_type="crude_oil",
-                    period_date=dt,
-                    value=float(row["Close"]),
-                    sector="Energy",
-                    source="yfinance",
-                ))
+                records.append(
+                    AltDataRecord(
+                        data_type="crude_oil",
+                        period_date=dt,
+                        value=float(row["Close"]),
+                        sector="Energy",
+                        source="yfinance",
+                    )
+                )
             return records
         except Exception as e:
             logger.warning("alt_data_crude_failed", error=str(e))
@@ -168,16 +193,20 @@ class AltDataProvider:
                 current_close = float(row["Close"])
                 if i > 0:
                     prev_close = float(closes.iloc[i - 1])
-                    overnight_return = (current_close - prev_close) / prev_close if prev_close != 0 else 0.0
+                    overnight_return = (
+                        (current_close - prev_close) / prev_close if prev_close != 0 else 0.0
+                    )
                 else:
                     overnight_return = 0.0
-                records.append(AltDataRecord(
-                    data_type="us_overnight",
-                    period_date=dt,
-                    value=overnight_return,
-                    sector="Global",
-                    source="yfinance",
-                ))
+                records.append(
+                    AltDataRecord(
+                        data_type="us_overnight",
+                        period_date=dt,
+                        value=overnight_return,
+                        sector="Global",
+                        source="yfinance",
+                    )
+                )
             return records
         except Exception as e:
             logger.warning("alt_data_us_overnight_failed", error=str(e))
@@ -254,7 +283,8 @@ class AltDataProvider:
 
         results: dict[str, list[AltDataRecord]] = {}
         gathered = await asyncio.gather(
-            *tasks.values(), return_exceptions=True,
+            *tasks.values(),
+            return_exceptions=True,
         )
         for key, result in zip(tasks.keys(), gathered, strict=False):
             if isinstance(result, Exception):
@@ -285,13 +315,17 @@ def load_from_csv(path: str | Path, data_type: str) -> list[AltDataRecord]:
                 period_date = date.fromisoformat(row["period_date"].strip())
                 value = float(row["value"])
                 source = row.get("source", "csv").strip() or "csv"
-                records.append(AltDataRecord(
-                    data_type=data_type,
-                    period_date=period_date,
-                    value=value,
-                    sector=SECTOR_MAPPING.get(data_type, [None])[0] if SECTOR_MAPPING.get(data_type) else None,
-                    source=source,
-                ))
+                records.append(
+                    AltDataRecord(
+                        data_type=data_type,
+                        period_date=period_date,
+                        value=value,
+                        sector=SECTOR_MAPPING.get(data_type, [None])[0]
+                        if SECTOR_MAPPING.get(data_type)
+                        else None,
+                        source=source,
+                    )
+                )
             except (KeyError, ValueError) as e:
                 logger.warning(
                     "alt_data_csv_row_parse_failed",
@@ -321,14 +355,16 @@ def build_from_manual(records: list[dict]) -> list[AltDataRecord]:
             if yoy is not None:
                 yoy = float(yoy)
 
-            results.append(AltDataRecord(
-                data_type=row["data_type"],
-                period_date=pd,
-                value=float(row["value"]),
-                yoy_change=yoy,
-                sector=row.get("sector"),
-                source=row.get("source", "manual"),
-            ))
+            results.append(
+                AltDataRecord(
+                    data_type=row["data_type"],
+                    period_date=pd,
+                    value=float(row["value"]),
+                    yoy_change=yoy,
+                    sector=row.get("sector"),
+                    source=row.get("source", "manual"),
+                )
+            )
         except (KeyError, ValueError) as e:
             logger.warning("alt_data_manual_parse_failed", error=str(e))
 

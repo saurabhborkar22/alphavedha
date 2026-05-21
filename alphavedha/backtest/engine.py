@@ -78,10 +78,7 @@ def run_backtest(
     closes = ohlcv_df["close"]
     daily_returns = closes.pct_change().fillna(0.0)
 
-    entries = (
-        (predictions_df["direction"] == 1)
-        & (predictions_df["confidence"] >= min_confidence)
-    )
+    entries = (predictions_df["direction"] == 1) & (predictions_df["confidence"] >= min_confidence)
     exits = predictions_df["direction"] == -1
 
     position = pd.Series(0, index=closes.index, dtype=int)
@@ -105,15 +102,17 @@ def run_backtest(
                 exit_price = closes.iloc[i]
                 gross_ret = exit_price / entry_price - 1
                 net_ret = gross_ret - cost_pct
-                trades.append({
-                    "entry_date": closes.index[entry_idx],
-                    "exit_date": closes.index[i],
-                    "entry_price": entry_price,
-                    "exit_price": exit_price,
-                    "gross_return": gross_ret,
-                    "net_return": net_ret,
-                    "holding_days": holding_period,
-                })
+                trades.append(
+                    {
+                        "entry_date": closes.index[entry_idx],
+                        "exit_date": closes.index[i],
+                        "entry_price": entry_price,
+                        "exit_price": exit_price,
+                        "gross_return": gross_ret,
+                        "net_return": net_ret,
+                        "holding_days": holding_period,
+                    }
+                )
                 in_position = False
             else:
                 position.iloc[i] = 1
@@ -136,9 +135,20 @@ def run_backtest(
     benchmark_ret = float(closes.iloc[-1] / closes.iloc[0] - 1) if len(closes) > 1 else 0.0
     alpha = ann_ret - float((1 + benchmark_ret) ** (252 / max(n_days, 1)) - 1)
 
-    trade_log = pd.DataFrame(trades) if trades else pd.DataFrame(
-        columns=["entry_date", "exit_date", "entry_price", "exit_price",
-                 "gross_return", "net_return", "holding_days"]
+    trade_log = (
+        pd.DataFrame(trades)
+        if trades
+        else pd.DataFrame(
+            columns=[
+                "entry_date",
+                "exit_date",
+                "entry_price",
+                "exit_price",
+                "gross_return",
+                "net_return",
+                "holding_days",
+            ]
+        )
     )
 
     n_trades = len(trades)

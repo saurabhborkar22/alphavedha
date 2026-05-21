@@ -64,7 +64,9 @@ class PortfolioConstraints:
                     return ConstraintResult(
                         adjusted_weight_pct=0.0, violations=violations, trade_allowed=False
                     )
-            return ConstraintResult(adjusted_weight_pct=weight, violations=violations, trade_allowed=True)
+            return ConstraintResult(
+                adjusted_weight_pct=weight, violations=violations, trade_allowed=True
+            )
 
         # Buy / add: check liquidity
         turnover = avg_daily_turnover_cr
@@ -77,7 +79,9 @@ class PortfolioConstraints:
                 f"Liquidity violation: {symbol} turnover {turnover:.1f} cr < "
                 f"{self._config.min_daily_turnover_cr:.1f} cr min"
             )
-            return ConstraintResult(adjusted_weight_pct=0.0, violations=violations, trade_allowed=False)
+            return ConstraintResult(
+                adjusted_weight_pct=0.0, violations=violations, trade_allowed=False
+            )
 
         # Check correlation with existing holdings
         for held_sym, held_info in portfolio.holdings.items():

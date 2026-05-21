@@ -22,26 +22,57 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/public", tags=["public-track-record"])
 
 _DEMO_SYMBOLS = [
-    "TCS", "INFY", "HDFCBANK", "RELIANCE", "ICICIBANK",
-    "KOTAKBANK", "SBIN", "BHARTIARTL", "ITC", "HINDUNILVR",
-    "LT", "AXISBANK", "MARUTI", "WIPRO", "SUNPHARMA",
+    "TCS",
+    "INFY",
+    "HDFCBANK",
+    "RELIANCE",
+    "ICICIBANK",
+    "KOTAKBANK",
+    "SBIN",
+    "BHARTIARTL",
+    "ITC",
+    "HINDUNILVR",
+    "LT",
+    "AXISBANK",
+    "MARUTI",
+    "WIPRO",
+    "SUNPHARMA",
 ]
 
 _SECTORS = {
-    "TCS": "IT", "INFY": "IT", "WIPRO": "IT",
-    "HDFCBANK": "Banking", "ICICIBANK": "Banking", "KOTAKBANK": "Banking",
-    "SBIN": "Banking", "AXISBANK": "Banking",
-    "RELIANCE": "Energy", "BHARTIARTL": "Telecom",
-    "ITC": "FMCG", "HINDUNILVR": "FMCG",
-    "LT": "Infra", "MARUTI": "Auto", "SUNPHARMA": "Pharma",
+    "TCS": "IT",
+    "INFY": "IT",
+    "WIPRO": "IT",
+    "HDFCBANK": "Banking",
+    "ICICIBANK": "Banking",
+    "KOTAKBANK": "Banking",
+    "SBIN": "Banking",
+    "AXISBANK": "Banking",
+    "RELIANCE": "Energy",
+    "BHARTIARTL": "Telecom",
+    "ITC": "FMCG",
+    "HINDUNILVR": "FMCG",
+    "LT": "Infra",
+    "MARUTI": "Auto",
+    "SUNPHARMA": "Pharma",
 }
 
 _CAP_TIERS = {
-    "TCS": "large", "INFY": "large", "HDFCBANK": "large",
-    "RELIANCE": "large", "ICICIBANK": "large", "KOTAKBANK": "large",
-    "SBIN": "large", "BHARTIARTL": "large", "ITC": "large",
-    "HINDUNILVR": "large", "LT": "large", "AXISBANK": "large",
-    "MARUTI": "large", "WIPRO": "large", "SUNPHARMA": "large",
+    "TCS": "large",
+    "INFY": "large",
+    "HDFCBANK": "large",
+    "RELIANCE": "large",
+    "ICICIBANK": "large",
+    "KOTAKBANK": "large",
+    "SBIN": "large",
+    "BHARTIARTL": "large",
+    "ITC": "large",
+    "HINDUNILVR": "large",
+    "LT": "large",
+    "AXISBANK": "large",
+    "MARUTI": "large",
+    "WIPRO": "large",
+    "SUNPHARMA": "large",
 }
 
 
@@ -120,9 +151,7 @@ def _seed_for(symbol: str, day: date) -> int:
     return int(hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()[:8], 16)
 
 
-def _generate_demo_predictions(
-    n_days: int = 90, n_symbols: int = 15
-) -> list[PredictionRecord]:
+def _generate_demo_predictions(n_days: int = 90, n_symbols: int = 15) -> list[PredictionRecord]:
     symbols = _DEMO_SYMBOLS[:n_symbols]
     regimes = ["bull", "bear", "sideways", "high_volatility"]
     direction_labels = {1: "BUY", -1: "SELL", 0: "HOLD"}
@@ -151,20 +180,22 @@ def _generate_demo_predictions(
                 actual_direction = -direction
             actual_return = magnitude * actual_direction * (0.5 + (actual_seed % 100) / 100.0)
 
-            records.append(PredictionRecord(
-                date=current_date.isoformat(),
-                symbol=sym,
-                predicted_direction=direction,
-                predicted_direction_label=direction_labels.get(direction, "HOLD"),
-                predicted_magnitude=round(magnitude, 5),
-                confidence=round(confidence, 3),
-                regime=regime,
-                actual_direction=actual_direction,
-                actual_return=round(actual_return, 5),
-                is_correct=is_correct,
-                model_version="v0.1.0",
-                generated_at=f"{current_date.isoformat()}T08:30:00+05:30",
-            ))
+            records.append(
+                PredictionRecord(
+                    date=current_date.isoformat(),
+                    symbol=sym,
+                    predicted_direction=direction,
+                    predicted_direction_label=direction_labels.get(direction, "HOLD"),
+                    predicted_magnitude=round(magnitude, 5),
+                    confidence=round(confidence, 3),
+                    regime=regime,
+                    actual_direction=actual_direction,
+                    actual_return=round(actual_return, 5),
+                    is_correct=is_correct,
+                    model_version="v0.1.0",
+                    generated_at=f"{current_date.isoformat()}T08:30:00+05:30",
+                )
+            )
 
     return records
 
@@ -182,16 +213,18 @@ def _compute_breakdowns(
     breakdowns: list[AccuracyBreakdown] = []
     for label, group in sorted(groups.items()):
         correct = sum(1 for r in group if r.is_correct)
-        breakdowns.append(AccuracyBreakdown(
-            category=category,
-            label=label,
-            accuracy=round(correct / len(group), 4) if group else 0.0,
-            total_predictions=len(group),
-            correct_predictions=correct,
-            avg_confidence=round(
-                sum(r.confidence for r in group) / len(group), 4
-            ) if group else 0.0,
-        ))
+        breakdowns.append(
+            AccuracyBreakdown(
+                category=category,
+                label=label,
+                accuracy=round(correct / len(group), 4) if group else 0.0,
+                total_predictions=len(group),
+                correct_predictions=correct,
+                avg_confidence=round(sum(r.confidence for r in group) / len(group), 4)
+                if group
+                else 0.0,
+            )
+        )
     return breakdowns
 
 
@@ -208,11 +241,13 @@ async def get_track_record() -> TrackRecordResponse:
 
     by_regime = _compute_breakdowns(settled, "regime", lambda r: r.regime)
     by_sector = _compute_breakdowns(
-        settled, "sector",
+        settled,
+        "sector",
         lambda r: _SECTORS.get(r.symbol, "Other"),
     )
     by_cap = _compute_breakdowns(
-        settled, "cap_size",
+        settled,
+        "cap_size",
         lambda r: _CAP_TIERS.get(r.symbol, "large"),
     )
 
@@ -264,17 +299,11 @@ async def get_track_record() -> TrackRecordResponse:
     monthly_returns = [
         MonthlyReturn(
             month=m,
-            portfolio_return=round(
-                sum(r.actual_return or 0 for r in recs) / len(recs), 4
-            ),
+            portfolio_return=round(sum(r.actual_return or 0 for r in recs) / len(recs), 4),
             benchmark_return=round(0.01 + (hash(m) % 20) / 1000.0, 4),
-            alpha=round(
-                sum(r.actual_return or 0 for r in recs) / len(recs) - 0.01, 4
-            ),
+            alpha=round(sum(r.actual_return or 0 for r in recs) / len(recs) - 0.01, 4),
             n_trades=len(recs),
-            win_rate=round(
-                sum(1 for r in recs if r.is_correct) / len(recs), 4
-            ),
+            win_rate=round(sum(1 for r in recs if r.is_correct) / len(recs), 4),
         )
         for m, recs in sorted(months.items())
     ]
@@ -341,13 +370,15 @@ async def get_equity_curve(
     for dt in sorted(dates_set):
         day_records = dates_set[dt]
         day_return = sum(r.actual_return or 0 for r in day_records) / len(day_records)
-        portfolio_value *= (1 + day_return * 0.1)
-        benchmark_value *= (1 + 0.0004)
-        points.append({
-            "date": dt,
-            "portfolio_value": round(portfolio_value, 2),
-            "benchmark_value": round(benchmark_value, 2),
-        })
+        portfolio_value *= 1 + day_return * 0.1
+        benchmark_value *= 1 + 0.0004
+        points.append(
+            {
+                "date": dt,
+                "portfolio_value": round(portfolio_value, 2),
+                "benchmark_value": round(benchmark_value, 2),
+            }
+        )
 
     return {
         "points": points,
@@ -375,22 +406,38 @@ async def export_predictions(
 
     output = io.StringIO()
     headers = [
-        "date", "symbol", "predicted_direction", "predicted_direction_label",
-        "predicted_magnitude", "confidence", "regime", "actual_direction",
-        "actual_return", "is_correct", "model_version", "generated_at",
+        "date",
+        "symbol",
+        "predicted_direction",
+        "predicted_direction_label",
+        "predicted_magnitude",
+        "confidence",
+        "regime",
+        "actual_direction",
+        "actual_return",
+        "is_correct",
+        "model_version",
+        "generated_at",
     ]
     writer = csv.writer(output)
     writer.writerow(headers)
     for r in records:
-        writer.writerow([
-            r.date, r.symbol, r.predicted_direction,
-            r.predicted_direction_label, r.predicted_magnitude,
-            r.confidence, r.regime,
-            r.actual_direction if r.actual_direction is not None else "",
-            r.actual_return if r.actual_return is not None else "",
-            r.is_correct if r.is_correct is not None else "",
-            r.model_version, r.generated_at,
-        ])
+        writer.writerow(
+            [
+                r.date,
+                r.symbol,
+                r.predicted_direction,
+                r.predicted_direction_label,
+                r.predicted_magnitude,
+                r.confidence,
+                r.regime,
+                r.actual_direction if r.actual_direction is not None else "",
+                r.actual_return if r.actual_return is not None else "",
+                r.is_correct if r.is_correct is not None else "",
+                r.model_version,
+                r.generated_at,
+            ]
+        )
 
     output.seek(0)
     return StreamingResponse(

@@ -65,7 +65,11 @@ def train_rl_agent(
 
     env_config = EnvConfig()
     train_env = TradingEnvironment(
-        train_features, train_prices, symbols, train_regimes, env_config,
+        train_features,
+        train_prices,
+        symbols,
+        train_regimes,
+        env_config,
     )
 
     ppo_config = PPOConfig()
@@ -100,7 +104,11 @@ def train_rl_agent(
             )
 
     val_env = TradingEnvironment(
-        val_features, val_prices, symbols, val_regimes, env_config,
+        val_features,
+        val_prices,
+        symbols,
+        val_regimes,
+        env_config,
     )
     obs = val_env.reset()
     done = False

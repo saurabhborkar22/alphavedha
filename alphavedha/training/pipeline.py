@@ -71,12 +71,16 @@ def _prepare_symbol_data(
         return None
 
     feature_result = compute_all_features(
-        symbol=symbol, ohlcv_df=ohlcv_df, fii_dii_df=fii_dii_df,
+        symbol=symbol,
+        ohlcv_df=ohlcv_df,
+        fii_dii_df=fii_dii_df,
     )
     features_df = feature_result.df
 
     label_result = compute_triple_barrier_labels(
-        ohlcv_df, config.labels.triple_barrier, symbol=symbol,
+        ohlcv_df,
+        config.labels.triple_barrier,
+        symbol=symbol,
     )
     labels_df = label_result.df
 
@@ -125,9 +129,15 @@ def _temporal_split_3way(
     val_ratio: float = 0.15,
     embargo_days: int = 20,
 ) -> tuple[
-    pd.DataFrame, pd.Series, pd.Series,
-    pd.DataFrame, pd.Series, pd.Series,
-    pd.DataFrame, pd.Series, pd.Series,
+    pd.DataFrame,
+    pd.Series,
+    pd.Series,
+    pd.DataFrame,
+    pd.Series,
+    pd.Series,
+    pd.DataFrame,
+    pd.Series,
+    pd.Series,
 ]:
     """Split into train/oof/val with temporal ordering and embargo gaps.
 
@@ -145,9 +155,15 @@ def _temporal_split_3way(
     val_start = min(val_start, n)
 
     return (
-        X.iloc[:train_end], y.iloc[:train_end], returns.iloc[:train_end],
-        X.iloc[oof_start:oof_end_raw], y.iloc[oof_start:oof_end_raw], returns.iloc[oof_start:oof_end_raw],
-        X.iloc[val_start:], y.iloc[val_start:], returns.iloc[val_start:],
+        X.iloc[:train_end],
+        y.iloc[:train_end],
+        returns.iloc[:train_end],
+        X.iloc[oof_start:oof_end_raw],
+        y.iloc[oof_start:oof_end_raw],
+        returns.iloc[oof_start:oof_end_raw],
+        X.iloc[val_start:],
+        y.iloc[val_start:],
+        returns.iloc[val_start:],
     )
 
 
@@ -162,13 +178,18 @@ async def _load_tier_data(
     if not symbols:
         logger.error("train_no_symbols", tier=tier)
         return TierData(
-            X_train=pd.DataFrame(), y_train=pd.Series(dtype=float),
+            X_train=pd.DataFrame(),
+            y_train=pd.Series(dtype=float),
             ret_train=pd.Series(dtype=float),
-            X_oof=pd.DataFrame(), y_oof=pd.Series(dtype=float),
+            X_oof=pd.DataFrame(),
+            y_oof=pd.Series(dtype=float),
             ret_oof=pd.Series(dtype=float),
-            X_val=pd.DataFrame(), y_val=pd.Series(dtype=float),
+            X_val=pd.DataFrame(),
+            y_val=pd.Series(dtype=float),
             ret_val=pd.Series(dtype=float),
-            ohlcv_by_symbol={}, n_symbols=0, errors={},
+            ohlcv_by_symbol={},
+            n_symbols=0,
+            errors={},
         )
 
     logger.info("train_loading_data", tier=tier, n_symbols=len(symbols))
@@ -186,6 +207,7 @@ async def _load_tier_data(
     fii_dii_df: pd.DataFrame | None = None
     try:
         from alphavedha.features.macro import load_fii_dii_for_features
+
         fii_dii_df = await load_fii_dii_for_features(str(start_date), str(end_date))
         if fii_dii_df is not None and not fii_dii_df.empty:
             logger.info("train_fii_dii_loaded", rows=len(fii_dii_df))
@@ -207,7 +229,12 @@ async def _load_tier_data(
             features_df, y_dir, y_ret = prepared
 
             X_tr, y_tr, ret_tr, X_o, y_o, ret_o, X_v, y_v, ret_v = _temporal_split_3way(
-                features_df, y_dir, y_ret, oof_ratio, val_ratio, embargo_days,
+                features_df,
+                y_dir,
+                y_ret,
+                oof_ratio,
+                val_ratio,
+                embargo_days,
             )
 
             if len(X_tr) > 0:
@@ -221,13 +248,17 @@ async def _load_tier_data(
             logger.info(
                 "train_symbol_prepared",
                 symbol=symbol,
-                train=len(X_tr), oof=len(X_o), val=len(X_v),
+                train=len(X_tr),
+                oof=len(X_o),
+                val=len(X_v),
             )
         except Exception as e:
             errors[symbol] = str(e)
             logger.error("train_symbol_error", symbol=symbol, error=str(e))
 
-    def _concat(parts: list[tuple[pd.DataFrame, pd.Series, pd.Series]]) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+    def _concat(
+        parts: list[tuple[pd.DataFrame, pd.Series, pd.Series]],
+    ) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
         if not parts:
             return pd.DataFrame(), pd.Series(dtype=float), pd.Series(dtype=float)
         Xs, ys, rs = zip(*parts, strict=True)
@@ -244,15 +275,25 @@ async def _load_tier_data(
     logger.info(
         "train_data_ready",
         n_symbols=n_symbols,
-        train_rows=len(X_train), oof_rows=len(X_oof), val_rows=len(X_val),
+        train_rows=len(X_train),
+        oof_rows=len(X_oof),
+        val_rows=len(X_val),
         features=len(X_train.columns) if not X_train.empty else 0,
     )
 
     return TierData(
-        X_train=X_train, y_train=y_train, ret_train=ret_train,
-        X_oof=X_oof, y_oof=y_oof, ret_oof=ret_oof,
-        X_val=X_val, y_val=y_val, ret_val=ret_val,
-        ohlcv_by_symbol=ohlcv_by_symbol, n_symbols=n_symbols, errors=errors,
+        X_train=X_train,
+        y_train=y_train,
+        ret_train=ret_train,
+        X_oof=X_oof,
+        y_oof=y_oof,
+        ret_oof=ret_oof,
+        X_val=X_val,
+        y_val=y_val,
+        ret_val=ret_val,
+        ohlcv_by_symbol=ohlcv_by_symbol,
+        n_symbols=n_symbols,
+        errors=errors,
     )
 
 
@@ -302,6 +343,7 @@ async def train_xgboost(
     fii_dii_df: pd.DataFrame | None = None
     try:
         from alphavedha.features.macro import load_fii_dii_for_features
+
         fii_dii_df = await load_fii_dii_for_features(str(start_date), str(end_date))
     except Exception:
         pass
@@ -320,7 +362,11 @@ async def train_xgboost(
             features_df, y_dir, y_ret = prepared
 
             X_tr, y_tr, ret_tr, X_v, y_v, ret_v = _temporal_split(
-                features_df, y_dir, y_ret, val_ratio, embargo_days,
+                features_df,
+                y_dir,
+                y_ret,
+                val_ratio,
+                embargo_days,
             )
 
             all_X_train.append(X_tr)
@@ -365,9 +411,12 @@ async def train_xgboost(
 
     model = XGBoostModel(config=config.models.xgboost)
     train_result = model.fit(
-        X_train, y_train,
-        X_val=X_val, y_val=y_val,
-        return_train=ret_train, return_val=ret_val,
+        X_train,
+        y_train,
+        X_val=X_val,
+        y_val=y_val,
+        return_train=ret_train,
+        return_val=ret_val,
     )
     result.train_result = train_result
 
@@ -398,9 +447,12 @@ def _train_xgb_on_data(
     config = get_config()
     model = XGBoostModel(config=config.models.xgboost)
     train_result = model.fit(
-        data.X_train, data.y_train,
-        X_val=data.X_val, y_val=data.y_val,
-        return_train=data.ret_train, return_val=data.ret_val,
+        data.X_train,
+        data.y_train,
+        X_val=data.X_val,
+        y_val=data.y_val,
+        return_train=data.ret_train,
+        return_val=data.ret_val,
     )
     artifact_dir = ARTIFACTS_DIR / "xgboost" / "latest"
     model.save(artifact_dir)
@@ -421,9 +473,12 @@ def _train_lstm_on_data(
 
     model = LSTMModel(config=config.models.lstm)
     train_result = model.fit(
-        X_train, data.y_train,
-        X_val=X_val, y_val=data.y_val,
-        return_train=data.ret_train, return_val=data.ret_val,
+        X_train,
+        data.y_train,
+        X_val=X_val,
+        y_val=data.y_val,
+        return_train=data.ret_train,
+        return_val=data.ret_val,
     )
 
     artifact_dir = ARTIFACTS_DIR / "lstm" / "latest"
@@ -447,9 +502,12 @@ def _train_tft_on_data(
 
     model = TemporalAttentionModel(config=config.models.tft)
     train_result = model.fit(
-        X_train, data.y_train,
-        X_val=X_val, y_val=data.y_val,
-        return_train=data.ret_train, return_val=data.ret_val,
+        X_train,
+        data.y_train,
+        X_val=X_val,
+        y_val=data.y_val,
+        return_train=data.ret_train,
+        return_val=data.ret_val,
     )
 
     artifact_dir = ARTIFACTS_DIR / "tft" / "latest"
@@ -542,7 +600,7 @@ def _get_regime_probs(
         if len(probs) >= n_rows:
             return probs[-n_rows:]
         tiled = np.tile(probs[-1:], (n_rows, 1))
-        tiled[:len(probs)] = probs[-min(len(probs), n_rows):]
+        tiled[: len(probs)] = probs[-min(len(probs), n_rows) :]
         return tiled
 
     except Exception as e:
@@ -567,7 +625,11 @@ def _train_ensemble_on_data(
         return {}, Path()
 
     base_preds = _get_base_predictions(
-        xgb_model, lstm_model, tft_model, data.X_oof, top_features,
+        xgb_model,
+        lstm_model,
+        tft_model,
+        data.X_oof,
+        top_features,
     )
     regime_probs = _get_regime_probs(data, len(data.X_oof))
 
@@ -603,7 +665,11 @@ def _train_meta_labeling_on_data(
     ensemble = StackingEnsemble.load(ensemble_dir)
 
     base_preds = _get_base_predictions(
-        xgb_model, lstm_model, tft_model, data.X_oof, top_features,
+        xgb_model,
+        lstm_model,
+        tft_model,
+        data.X_oof,
+        top_features,
     )
     regime_probs = _get_regime_probs(data, len(data.X_oof))
     ensemble_result = ensemble.predict(base_preds, regime_probs)
@@ -781,9 +847,15 @@ async def train_all(
     # Step 3: Select top features for LSTM/TFT
     fi = xgb_model.get_feature_importance()
     top_n = config.models.lstm.top_n_features
-    top_features = _select_top_features(
-        fi, top_n, list(data.X_train.columns),
-    ) if fi is not None else list(data.X_train.columns)[:top_n]
+    top_features = (
+        _select_top_features(
+            fi,
+            top_n,
+            list(data.X_train.columns),
+        )
+        if fi is not None
+        else list(data.X_train.columns)[:top_n]
+    )
 
     logger.info("train_all_features_selected", top_n=len(top_features))
 
@@ -857,7 +929,11 @@ async def train_all(
             tft_model = TemporalAttentionModel.load(ARTIFACTS_DIR / "tft" / "latest")
 
             ens_metrics, ens_dir = _train_ensemble_on_data(
-                xgb_model, lstm_model, tft_model, data, top_features,
+                xgb_model,
+                lstm_model,
+                tft_model,
+                data,
+                top_features,
             )
             ensemble_result.extra_metrics = ens_metrics
             if ens_dir != Path():
@@ -874,7 +950,11 @@ async def train_all(
             meta_result = TrainingPipelineResult(model_name="meta_labeling")
             try:
                 meta_metrics, meta_dir = _train_meta_labeling_on_data(
-                    xgb_model, lstm_model, tft_model, data, top_features,
+                    xgb_model,
+                    lstm_model,
+                    tft_model,
+                    data,
+                    top_features,
                 )
                 meta_result.extra_metrics = meta_metrics
                 if meta_dir != Path():

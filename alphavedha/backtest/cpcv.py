@@ -77,11 +77,13 @@ def generate_cpcv_splits(
                 excluded.add(i)
 
         train_indices = [i for i in range(n_samples) if i not in excluded]
-        splits.append((
-            np.array(train_indices),
-            np.array(test_indices),
-            test_combo,
-        ))
+        splits.append(
+            (
+                np.array(train_indices),
+                np.array(test_indices),
+                test_combo,
+            )
+        )
 
     return splits
 
@@ -126,10 +128,13 @@ def run_cpcv(
         sw_tr = sw_train.iloc[:-val_size] if sw_train is not None else None
 
         model.fit(
-            X_train=X_tr, y_train=y_tr,
-            X_val=X_vl, y_val=y_vl,
+            X_train=X_tr,
+            y_train=y_tr,
+            X_val=X_vl,
+            y_val=y_vl,
             sample_weight=sw_tr,
-            return_train=ret_tr, return_val=ret_vl,
+            return_train=ret_tr,
+            return_val=ret_vl,
         )
 
         pred = model.predict(X_test)
@@ -140,31 +145,48 @@ def run_cpcv(
         pred_labels = pred_dir.astype(int)
 
         acc = float(accuracy_score(y_test_labels, pred_labels))
-        prec = float(precision_score(
-            y_test_labels, pred_labels, average="weighted", zero_division=0,
-        ))
-        rec = float(recall_score(
-            y_test_labels, pred_labels, average="weighted", zero_division=0,
-        ))
-        f1 = float(f1_score(
-            y_test_labels, pred_labels, average="weighted", zero_division=0,
-        ))
+        prec = float(
+            precision_score(
+                y_test_labels,
+                pred_labels,
+                average="weighted",
+                zero_division=0,
+            )
+        )
+        rec = float(
+            recall_score(
+                y_test_labels,
+                pred_labels,
+                average="weighted",
+                zero_division=0,
+            )
+        )
+        f1 = float(
+            f1_score(
+                y_test_labels,
+                pred_labels,
+                average="weighted",
+                zero_division=0,
+            )
+        )
 
         strategy_returns = pred_dir * ret_test.values
         sharpe = _compute_sharpe(strategy_returns)
         total_ret = float(np.sum(strategy_returns))
 
-        path_results.append(PathResult(
-            path_id=path_id,
-            test_segments=test_segs,
-            accuracy=acc,
-            precision_weighted=prec,
-            recall_weighted=rec,
-            f1_weighted=f1,
-            sharpe_ratio=sharpe,
-            total_return=total_ret,
-            n_test_samples=len(test_idx),
-        ))
+        path_results.append(
+            PathResult(
+                path_id=path_id,
+                test_segments=test_segs,
+                accuracy=acc,
+                precision_weighted=prec,
+                recall_weighted=rec,
+                f1_weighted=f1,
+                sharpe_ratio=sharpe,
+                total_return=total_ret,
+                n_test_samples=len(test_idx),
+            )
+        )
 
         logger.debug(
             "cpcv_path_completed",

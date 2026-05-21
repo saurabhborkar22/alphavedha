@@ -104,9 +104,7 @@ class TestEmailAlerter:
 
     def test_scheduler_job_failed(self) -> None:
         alerter = EmailAlerter(AlertConfig())
-        result = alerter.scheduler_job_failed(
-            "daily_predictions", "timeout", datetime.now(UTC)
-        )
+        result = alerter.scheduler_job_failed("daily_predictions", "timeout", datetime.now(UTC))
         assert result is False
 
     def test_drift_detected(self) -> None:

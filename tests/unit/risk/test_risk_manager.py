@@ -21,7 +21,10 @@ def risk_manager() -> RiskManager:
             max_sector_pct=25.0, max_correlation=0.7, min_holding_days=3, min_daily_turnover_cr=5.0
         ),
         circuit_breaker_config=CircuitBreakerConfig(
-            level_1_drawdown=10.0, level_2_drawdown=15.0, level_3_drawdown=20.0, recovery_threshold=0.95
+            level_1_drawdown=10.0,
+            level_2_drawdown=15.0,
+            level_3_drawdown=20.0,
+            recovery_threshold=0.95,
         ),
     )
 
@@ -83,9 +86,7 @@ class TestRiskManager:
         )
         assert result.position_size_pct == 0.0
 
-    def test_circuit_breaker_level_2_blocks_new_entry(
-        self, risk_manager: RiskManager
-    ) -> None:
+    def test_circuit_breaker_level_2_blocks_new_entry(self, risk_manager: RiskManager) -> None:
         drawdown_portfolio = PortfolioState(
             holdings={},
             total_value=840_000.0,

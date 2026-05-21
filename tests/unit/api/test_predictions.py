@@ -38,15 +38,11 @@ class TestAuth:
         assert resp.status_code == 401
 
     def test_invalid_key_returns_403(self, authed_client: TestClient) -> None:
-        resp = authed_client.get(
-            "/predict/TCS", headers={"X-API-Key": "wrong-key"}
-        )
+        resp = authed_client.get("/predict/TCS", headers={"X-API-Key": "wrong-key"})
         assert resp.status_code == 403
 
     def test_valid_key_returns_200(self, authed_client: TestClient) -> None:
-        resp = authed_client.get(
-            "/predict/TCS", headers={"X-API-Key": "test-key-123"}
-        )
+        resp = authed_client.get("/predict/TCS", headers={"X-API-Key": "test-key-123"})
         assert resp.status_code == 200
 
 
@@ -78,9 +74,7 @@ class TestBatchEndpoint:
         assert resp.status_code == 422
 
     def test_batch_rejects_over_20(self, client: TestClient) -> None:
-        resp = client.post(
-            "/predict/batch", json={"symbols": [f"S{i}" for i in range(21)]}
-        )
+        resp = client.post("/predict/batch", json={"symbols": [f"S{i}" for i in range(21)]})
         assert resp.status_code == 422
 
 

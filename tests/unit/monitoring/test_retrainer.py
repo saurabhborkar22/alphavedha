@@ -142,9 +142,7 @@ class TestShouldRetrain:
 
 
 class TestVersionLifecycle:
-    def test_register_version_as_shadow(
-        self, manager: RetrainingManager, tmp_path: Path
-    ) -> None:
+    def test_register_version_as_shadow(self, manager: RetrainingManager, tmp_path: Path) -> None:
         artifact_path = tmp_path / "v1"
         artifact_path.mkdir()
         version = manager.register_version(
@@ -157,9 +155,7 @@ class TestVersionLifecycle:
         assert version.version == "v1.0.0"
         assert version.metrics["accuracy"] == 0.65
 
-    def test_promote_version(
-        self, manager: RetrainingManager, tmp_path: Path
-    ) -> None:
+    def test_promote_version(self, manager: RetrainingManager, tmp_path: Path) -> None:
         artifact_path = tmp_path / "v1"
         artifact_path.mkdir()
         manager.register_version(
@@ -193,9 +189,7 @@ class TestVersionLifecycle:
         v1 = next(v for v in history if v.version == "v1.0.0")
         assert v1.status == "retired"
 
-    def test_get_active_version(
-        self, manager: RetrainingManager, tmp_path: Path
-    ) -> None:
+    def test_get_active_version(self, manager: RetrainingManager, tmp_path: Path) -> None:
         assert manager.get_active_version() is None
 
         p1 = tmp_path / "v1"
@@ -212,9 +206,7 @@ class TestVersionLifecycle:
         with pytest.raises(ValueError, match="not found"):
             manager.promote_version("v99.0.0")
 
-    def test_promote_non_shadow_raises(
-        self, manager: RetrainingManager, tmp_path: Path
-    ) -> None:
+    def test_promote_non_shadow_raises(self, manager: RetrainingManager, tmp_path: Path) -> None:
         p1 = tmp_path / "v1"
         p1.mkdir()
         manager.register_version("v1.0.0", {}, p1, ("2023-01-01", "2024-01-01"))
@@ -246,15 +238,11 @@ class TestCleanup:
         remaining = manager.get_version_history()
         assert any(v.version == "v2.0.0" and v.status == "active" for v in remaining)
 
-    def test_version_history_sorted(
-        self, manager: RetrainingManager, tmp_path: Path
-    ) -> None:
+    def test_version_history_sorted(self, manager: RetrainingManager, tmp_path: Path) -> None:
         for i in range(3):
             p = tmp_path / f"v{i}"
             p.mkdir()
-            manager.register_version(
-                f"v{i}.0.0", {}, p, ("2023-01-01", "2024-01-01")
-            )
+            manager.register_version(f"v{i}.0.0", {}, p, ("2023-01-01", "2024-01-01"))
 
         history = manager.get_version_history()
         timestamps = [v.created_at for v in history]

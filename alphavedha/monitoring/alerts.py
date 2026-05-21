@@ -77,11 +77,7 @@ class EmailAlerter:
     def scheduler_job_failed(self, job_name: str, error: str, timestamp: datetime) -> bool:
         return self.send(
             subject=f"Scheduler job failed: {job_name}",
-            body=(
-                f"Job: {job_name}\n"
-                f"Time: {timestamp.isoformat()}\n"
-                f"Error: {error}\n"
-            ),
+            body=(f"Job: {job_name}\nTime: {timestamp.isoformat()}\nError: {error}\n"),
             level=AlertLevel.CRITICAL,
         )
 

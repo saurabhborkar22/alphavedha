@@ -39,9 +39,7 @@ def compute_triple_barrier_labels(
     symbol: str = "",
 ) -> LabelResult:
     if len(ohlcv_df) < _MIN_ROWS:
-        raise InsufficientDataError(
-            f"Need >= {_MIN_ROWS} rows for labeling, got {len(ohlcv_df)}"
-        )
+        raise InsufficientDataError(f"Need >= {_MIN_ROWS} rows for labeling, got {len(ohlcv_df)}")
 
     df = ohlcv_df.copy()
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -121,9 +119,7 @@ def compute_triple_barrier_labels(
         days_to_hits[t] = hit_day
         exit_prices[t] = hit_price
         return_pcts[t] = hit_price / entry - 1
-        barrier_hits[t] = (
-            "upper" if hit_label == 1 else "lower" if hit_label == -1 else "time"
-        )
+        barrier_hits[t] = "upper" if hit_label == 1 else "lower" if hit_label == -1 else "time"
 
     result_df = pd.DataFrame(
         {

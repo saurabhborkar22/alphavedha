@@ -92,9 +92,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
     @app.exception_handler(SymbolNotFoundError)
-    async def symbol_not_found_handler(
-        request: Request, exc: SymbolNotFoundError
-    ) -> JSONResponse:
+    async def symbol_not_found_handler(request: Request, exc: SymbolNotFoundError) -> JSONResponse:
         return JSONResponse(
             status_code=404,
             content={
@@ -107,9 +105,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
         )
 
     @app.exception_handler(PredictionError)
-    async def prediction_error_handler(
-        request: Request, exc: PredictionError
-    ) -> JSONResponse:
+    async def prediction_error_handler(request: Request, exc: PredictionError) -> JSONResponse:
         logger.error("prediction_failed", error=str(exc))
         return JSONResponse(
             status_code=500,
@@ -123,9 +119,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
         )
 
     @app.exception_handler(ModelNotFoundError)
-    async def model_not_found_handler(
-        request: Request, exc: ModelNotFoundError
-    ) -> JSONResponse:
+    async def model_not_found_handler(request: Request, exc: ModelNotFoundError) -> JSONResponse:
         return JSONResponse(
             status_code=503,
             content={

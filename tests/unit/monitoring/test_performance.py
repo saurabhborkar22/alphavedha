@@ -30,19 +30,23 @@ def _make_predictions_and_actuals(
     actual_returns = actual_directions * rng.uniform(0.005, 0.03, n)
     predicted_magnitudes = actual_returns + rng.normal(0, 0.005, n)
 
-    predictions = pd.DataFrame({
-        "date": dates,
-        "symbol": "TCS",
-        "predicted_direction": directions,
-        "predicted_magnitude": predicted_magnitudes,
-        "confidence": rng.uniform(0.5, 0.9, n),
-    })
-    actuals = pd.DataFrame({
-        "date": dates,
-        "symbol": "TCS",
-        "actual_direction": actual_directions,
-        "actual_return": actual_returns,
-    })
+    predictions = pd.DataFrame(
+        {
+            "date": dates,
+            "symbol": "TCS",
+            "predicted_direction": directions,
+            "predicted_magnitude": predicted_magnitudes,
+            "confidence": rng.uniform(0.5, 0.9, n),
+        }
+    )
+    actuals = pd.DataFrame(
+        {
+            "date": dates,
+            "symbol": "TCS",
+            "actual_direction": actual_directions,
+            "actual_return": actual_returns,
+        }
+    )
     return predictions, actuals
 
 
@@ -54,19 +58,23 @@ class TestEvaluate:
         directions = rng.choice([-1, 1], size=n)
         returns = directions * rng.uniform(0.01, 0.03, n)
 
-        predictions = pd.DataFrame({
-            "date": dates,
-            "symbol": "TCS",
-            "predicted_direction": directions,
-            "predicted_magnitude": returns,
-            "confidence": np.full(n, 0.9),
-        })
-        actuals = pd.DataFrame({
-            "date": dates,
-            "symbol": "TCS",
-            "actual_direction": directions,
-            "actual_return": returns,
-        })
+        predictions = pd.DataFrame(
+            {
+                "date": dates,
+                "symbol": "TCS",
+                "predicted_direction": directions,
+                "predicted_magnitude": returns,
+                "confidence": np.full(n, 0.9),
+            }
+        )
+        actuals = pd.DataFrame(
+            {
+                "date": dates,
+                "symbol": "TCS",
+                "actual_direction": directions,
+                "actual_return": returns,
+            }
+        )
 
         report = monitor.evaluate(predictions, actuals, model_version="v1.0.0")
         assert isinstance(report, PerformanceReport)
@@ -123,9 +131,7 @@ class TestEvaluate:
         predictions = pd.DataFrame(
             columns=["date", "symbol", "predicted_direction", "predicted_magnitude", "confidence"]
         )
-        actuals = pd.DataFrame(
-            columns=["date", "symbol", "actual_direction", "actual_return"]
-        )
+        actuals = pd.DataFrame(columns=["date", "symbol", "actual_direction", "actual_return"])
         report = monitor.evaluate(predictions, actuals)
         assert len(report.snapshots) == 0
         assert report.requires_retrain is False
