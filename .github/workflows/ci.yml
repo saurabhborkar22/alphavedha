@@ -29,7 +29,7 @@ jobs:
           restore-keys: lint-${{ runner.os }}-pip-
 
       - name: Install lint dependencies
-        run: pip install "ruff>=0.15,<0.16" mypy pydantic
+        run: pip install "ruff==0.15.12" mypy pydantic
 
       - name: Ruff check
         run: ruff check alphavedha/ tests/
