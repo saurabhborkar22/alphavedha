@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from alphavedha.signals.pairs_universe import (
-    PairCandidate,
     SECTOR_PAIRS,
+    PairCandidate,
     compute_hedge_ratio,
     estimate_half_life,
     scan_pair_universe,
@@ -82,7 +81,7 @@ class TestComputeHedgeRatio:
 class TestValidatePair:
     def test_correlated_pair_passes(self) -> None:
         a, b = _make_correlated_prices(300)
-        is_valid, pval, corr, hl, hedge = validate_pair(a, b, max_pvalue=0.10)
+        is_valid, pval, corr, hl, _hedge = validate_pair(a, b, max_pvalue=0.10)
         assert isinstance(is_valid, bool)
         assert 0.0 <= pval <= 1.0
         assert -1.0 <= corr <= 1.0
@@ -90,19 +89,19 @@ class TestValidatePair:
 
     def test_random_pair_fails(self) -> None:
         a, b = _make_random_prices(300)
-        is_valid, pval, corr, hl, _ = validate_pair(a, b)
+        is_valid, pval, _corr, _hl, _ = validate_pair(a, b)
         assert not is_valid or pval >= 0.05
 
     def test_short_series_fails(self) -> None:
         a = pd.Series([100.0, 101.0, 102.0], index=pd.date_range("2020-01-01", periods=3))
         b = pd.Series([50.0, 51.0, 52.0], index=a.index)
-        is_valid, pval, corr, hl, hedge = validate_pair(a, b)
+        is_valid, pval, _corr, _hl, _hedge = validate_pair(a, b)
         assert not is_valid
         assert pval == 1.0
 
     def test_low_correlation_rejected(self) -> None:
         a, b = _make_random_prices(300)
-        is_valid, _, corr, _, _ = validate_pair(a, b, min_correlation=0.99)
+        is_valid, _, _corr, _, _ = validate_pair(a, b, min_correlation=0.99)
         assert not is_valid
 
 

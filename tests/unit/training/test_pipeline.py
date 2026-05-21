@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from alphavedha.training.pipeline import (
-    TrainingPipelineResult,
     TierData,
+    TrainingPipelineResult,
     _fill_nan_for_torch,
     _select_top_features,
     _temporal_split,
@@ -27,7 +26,7 @@ def _make_dataset(n: int = 500) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
 class TestTemporalSplit:
     def test_basic_split_sizes(self) -> None:
         X, y, ret = _make_dataset(500)
-        X_tr, y_tr, ret_tr, X_v, y_v, ret_v = _temporal_split(X, y, ret, val_ratio=0.2)
+        X_tr, _y_tr, _ret_tr, X_v, _y_v, _ret_v = _temporal_split(X, y, ret, val_ratio=0.2)
         assert len(X_tr) + len(X_v) <= len(X)
         assert len(X_tr) > len(X_v)
 
@@ -44,7 +43,7 @@ class TestTemporalSplit:
 
     def test_small_dataset_still_works(self) -> None:
         X, y, ret = _make_dataset(50)
-        X_tr, y_tr, ret_tr, X_v, y_v, ret_v = _temporal_split(X, y, ret, val_ratio=0.2)
+        X_tr, _y_tr, _ret_tr, X_v, _y_v, _ret_v = _temporal_split(X, y, ret, val_ratio=0.2)
         assert len(X_tr) > 0
         assert len(X_v) > 0
 
@@ -59,7 +58,7 @@ class TestTemporalSplit3Way:
     def test_three_partitions(self) -> None:
         X, y, ret = _make_dataset(1000)
         result = _temporal_split_3way(X, y, ret, oof_ratio=0.15, val_ratio=0.15)
-        X_tr, y_tr, ret_tr, X_oof, y_oof, ret_oof, X_val, y_val, ret_val = result
+        X_tr, _y_tr, _ret_tr, X_oof, _y_oof, _ret_oof, X_val, _y_val, _ret_val = result
         assert len(X_tr) > 0
         assert len(X_oof) > 0
         assert len(X_val) > 0
