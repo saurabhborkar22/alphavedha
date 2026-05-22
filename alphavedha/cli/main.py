@@ -538,7 +538,7 @@ def scheduler_start(
 
 @scheduler_app.command("run-now")
 def scheduler_run_now(
-    job: str = typer.Argument(..., help="Job to run: predictions, evaluation, drift, retrain"),
+    job: str = typer.Argument(..., help="Job to run: predictions, evaluation, drift, retrain, rebalance"),
     tier: str = typer.Option("large", help="Market cap tier"),
     demo: bool = typer.Option(False, "--demo", help="Use demo mode"),
 ) -> None:
@@ -552,6 +552,7 @@ def scheduler_run_now(
         "evaluation": sched.run_daily_evaluation,
         "drift": sched.run_drift_check,
         "retrain": sched.run_monthly_retrain,
+        "rebalance": sched.run_rebalance_check,
     }
 
     if job not in job_map:
@@ -575,10 +576,11 @@ def scheduler_run_now(
 def scheduler_status() -> None:
     """Show scheduler job schedule and last run times."""
     console.print("[bold]Scheduler Configuration[/bold]")
-    console.print("  Daily predictions:  08:30 IST (pre-market)")
-    console.print("  Daily evaluation:   15:45 IST (post-market)")
-    console.print("  Weekly drift check: Saturday 20:00 IST")
-    console.print("  Monthly retrain:    1st Saturday 22:00 IST")
+    console.print("  Daily predictions:     08:30 IST (pre-market)")
+    console.print("  Daily evaluation:      15:45 IST (post-market)")
+    console.print("  Weekly drift check:    Saturday 20:00 IST")
+    console.print("  Monthly retrain:       1st Saturday 22:00 IST")
+    console.print("  Quarterly rebalance:   Monday 07:00 IST (Mar/Sep only)")
 
 
 app.add_typer(scheduler_app, name="scheduler")
