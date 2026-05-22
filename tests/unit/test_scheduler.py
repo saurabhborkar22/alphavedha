@@ -167,7 +167,10 @@ class TestAlphaVedhaScheduler:
         mock_df = pd.DataFrame({"symbol": ["TCS", "INFY"]})
         with (
             patch("alphavedha.scheduler.Path.exists", return_value=True),
-            patch("alphavedha.scheduler.Path.open", mock_open(read_data="sectors:\n  it:\n    - TCS\n    - INFY\n")),
+            patch(
+                "alphavedha.scheduler.Path.open",
+                mock_open(read_data="sectors:\n  it:\n    - TCS\n    - INFY\n"),
+            ),
             patch("alphavedha.scheduler._run_async", return_value=mock_df),
         ):
             result = sched.run_rebalance_check()
@@ -181,7 +184,10 @@ class TestAlphaVedhaScheduler:
         mock_df = pd.DataFrame({"symbol": ["TCS", "INFY", "NEWSTOCK"]})
         with (
             patch("alphavedha.scheduler.Path.exists", return_value=True),
-            patch("alphavedha.scheduler.Path.open", mock_open(read_data="sectors:\n  it:\n    - TCS\n    - INFY\n    - OLDSTOCK\n")),
+            patch(
+                "alphavedha.scheduler.Path.open",
+                mock_open(read_data="sectors:\n  it:\n    - TCS\n    - INFY\n    - OLDSTOCK\n"),
+            ),
             patch("alphavedha.scheduler._run_async", return_value=mock_df),
         ):
             result = sched.run_rebalance_check()

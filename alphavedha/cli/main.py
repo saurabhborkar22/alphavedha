@@ -538,7 +538,9 @@ def scheduler_start(
 
 @scheduler_app.command("run-now")
 def scheduler_run_now(
-    job: str = typer.Argument(..., help="Job to run: predictions, evaluation, drift, retrain, rebalance"),
+    job: str = typer.Argument(
+        ..., help="Job to run: predictions, evaluation, drift, retrain, rebalance"
+    ),
     tier: str = typer.Option("large", help="Market cap tier"),
     demo: bool = typer.Option(False, "--demo", help="Use demo mode"),
 ) -> None:
