@@ -11,6 +11,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import schedule
@@ -26,6 +27,9 @@ DRIFT_CHECK_DAY = "saturday"
 DRIFT_CHECK_TIME = "20:00"
 RETRAIN_DAY = "saturday"
 RETRAIN_TIME = "22:00"
+REBALANCE_CHECK_DAY = "monday"
+REBALANCE_CHECK_TIME = "07:00"
+REBALANCE_MONTHS = {3, 9}
 
 
 @dataclass
@@ -46,6 +50,7 @@ class SchedulerState:
     last_evaluation_run: datetime | None = None
     last_drift_check: datetime | None = None
     last_retrain: datetime | None = None
+    last_rebalance_check: datetime | None = None
 
 
 def _run_async(coro: object) -> object:
@@ -197,6 +202,64 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_rebalance_check(self) -> JobResult:
+        """Check if index compositions changed and log additions/removals."""
+        result = JobResult(job_name="quarterly_rebalance_check", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="quarterly_rebalance_check")
+
+        try:
+            import yaml
+
+            from alphavedha.data.universe import fetch_index_constituents
+
+            stocks_path = Path("configs/stocks.yaml")
+            if not stocks_path.exists():
+                result.error = "configs/stocks.yaml not found"
+                result.finished_at = _now_ist()
+                self._record_job(result)
+                return result
+
+            with stocks_path.open() as f:
+                stocks_cfg = yaml.safe_load(f)
+
+            current_symbols: set[str] = set()
+            for sector_symbols in stocks_cfg.get("sectors", {}).values():
+                current_symbols.update(sector_symbols)
+
+            live_df = _run_async(fetch_index_constituents("NIFTY 50"))
+            live_symbols = set(live_df["symbol"].tolist()) if "symbol" in live_df.columns else set()
+
+            additions = live_symbols - current_symbols
+            removals = current_symbols - live_symbols
+
+            if additions or removals:
+                logger.warning(
+                    "rebalance_changes_detected",
+                    additions=sorted(additions),
+                    removals=sorted(removals),
+                )
+            else:
+                logger.info("rebalance_no_changes")
+
+            result.symbols_processed = len(live_symbols)
+            result.success = True
+            self._state.last_rebalance_check = _now_ist()
+
+            logger.info(
+                "scheduler_job_complete",
+                job="quarterly_rebalance_check",
+                live_count=len(live_symbols),
+                additions=len(additions),
+                removals=len(removals),
+            )
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="quarterly_rebalance_check", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def setup_schedule(self) -> None:
         """Register all jobs with the schedule library."""
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
@@ -210,12 +273,17 @@ class AlphaVedhaScheduler:
             self._maybe_monthly_retrain,
         )
 
+        getattr(schedule.every(), REBALANCE_CHECK_DAY).at(REBALANCE_CHECK_TIME).do(
+            self._maybe_quarterly_rebalance,
+        )
+
         logger.info(
             "scheduler_configured",
             prediction_time=PREDICTION_TIME,
             evaluation_time=EVALUATION_TIME,
             drift_day=DRIFT_CHECK_DAY,
             retrain_day=RETRAIN_DAY,
+            rebalance_day=REBALANCE_CHECK_DAY,
         )
 
     def _maybe_monthly_retrain(self) -> JobResult | None:
@@ -224,6 +292,14 @@ class AlphaVedhaScheduler:
         if now.day <= 7:
             return self.run_monthly_retrain()
         logger.debug("retrain_skipped_not_first_week", day=now.day)
+        return None
+
+    def _maybe_quarterly_rebalance(self) -> JobResult | None:
+        """Only run rebalance check during March and September."""
+        now = _now_ist()
+        if now.month in REBALANCE_MONTHS:
+            return self.run_rebalance_check()
+        logger.debug("rebalance_skipped_wrong_month", month=now.month)
         return None
 
     def run_forever(self, poll_interval: float = 60.0) -> None:

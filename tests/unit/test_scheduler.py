@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import schedule
 
 from alphavedha.scheduler import (
@@ -13,6 +14,8 @@ from alphavedha.scheduler import (
     EVALUATION_TIME,
     IST,
     PREDICTION_TIME,
+    REBALANCE_CHECK_DAY,
+    REBALANCE_MONTHS,
     RETRAIN_DAY,
     AlphaVedhaScheduler,
     JobResult,
@@ -34,6 +37,7 @@ class TestSchedulerState:
         assert s.is_running is False
         assert s.job_history == []
         assert s.last_prediction_run is None
+        assert s.last_rebalance_check is None
 
 
 class TestSchedulerConfig:
@@ -124,7 +128,7 @@ class TestAlphaVedhaScheduler:
         schedule.clear()
         sched = AlphaVedhaScheduler(demo=True)
         sched.setup_schedule()
-        assert len(schedule.get_jobs()) == 4
+        assert len(schedule.get_jobs()) == 5
 
     def test_maybe_monthly_retrain_first_week(self) -> None:
         sched = AlphaVedhaScheduler(demo=True)
@@ -157,3 +161,84 @@ class TestAlphaVedhaScheduler:
             assert result.success is False
             assert result.error is not None
             assert "model not found" in result.error
+
+    def test_run_rebalance_check_no_changes(self) -> None:
+        sched = AlphaVedhaScheduler(demo=True)
+        mock_df = pd.DataFrame({"symbol": ["TCS", "INFY"]})
+        with (
+            patch("alphavedha.scheduler.Path.exists", return_value=True),
+            patch(
+                "alphavedha.scheduler.Path.open",
+                mock_open(read_data="sectors:\n  it:\n    - TCS\n    - INFY\n"),
+            ),
+            patch("alphavedha.scheduler._run_async", return_value=mock_df),
+        ):
+            result = sched.run_rebalance_check()
+            assert result.success is True
+            assert result.job_name == "quarterly_rebalance_check"
+            assert result.symbols_processed == 2
+            assert sched.state.last_rebalance_check is not None
+
+    def test_run_rebalance_check_detects_changes(self) -> None:
+        sched = AlphaVedhaScheduler(demo=True)
+        mock_df = pd.DataFrame({"symbol": ["TCS", "INFY", "NEWSTOCK"]})
+        with (
+            patch("alphavedha.scheduler.Path.exists", return_value=True),
+            patch(
+                "alphavedha.scheduler.Path.open",
+                mock_open(read_data="sectors:\n  it:\n    - TCS\n    - INFY\n    - OLDSTOCK\n"),
+            ),
+            patch("alphavedha.scheduler._run_async", return_value=mock_df),
+        ):
+            result = sched.run_rebalance_check()
+            assert result.success is True
+            assert result.symbols_processed == 3
+
+    def test_run_rebalance_check_missing_config(self) -> None:
+        sched = AlphaVedhaScheduler(demo=True)
+        with patch("alphavedha.scheduler.Path.exists", return_value=False):
+            result = sched.run_rebalance_check()
+            assert result.success is False
+            assert "not found" in result.error
+
+    def test_maybe_quarterly_rebalance_march(self) -> None:
+        sched = AlphaVedhaScheduler(demo=True)
+        with (
+            patch("alphavedha.scheduler._now_ist") as mock_now,
+            patch.object(sched, "run_rebalance_check") as mock_run,
+        ):
+            mock_now.return_value = datetime(2026, 3, 2, 7, 0, tzinfo=IST)
+            mock_run.return_value = JobResult(
+                job_name="quarterly_rebalance_check",
+                started_at=mock_now.return_value,
+                success=True,
+            )
+            result = sched._maybe_quarterly_rebalance()
+            assert result is not None
+            mock_run.assert_called_once()
+
+    def test_maybe_quarterly_rebalance_september(self) -> None:
+        sched = AlphaVedhaScheduler(demo=True)
+        with (
+            patch("alphavedha.scheduler._now_ist") as mock_now,
+            patch.object(sched, "run_rebalance_check") as mock_run,
+        ):
+            mock_now.return_value = datetime(2026, 9, 7, 7, 0, tzinfo=IST)
+            mock_run.return_value = JobResult(
+                job_name="quarterly_rebalance_check",
+                started_at=mock_now.return_value,
+                success=True,
+            )
+            result = sched._maybe_quarterly_rebalance()
+            assert result is not None
+
+    def test_maybe_quarterly_rebalance_wrong_month_skips(self) -> None:
+        sched = AlphaVedhaScheduler(demo=True)
+        with patch("alphavedha.scheduler._now_ist") as mock_now:
+            mock_now.return_value = datetime(2026, 5, 5, 7, 0, tzinfo=IST)
+            result = sched._maybe_quarterly_rebalance()
+            assert result is None
+
+    def test_rebalance_config_values(self) -> None:
+        assert REBALANCE_CHECK_DAY == "monday"
+        assert {3, 9} == REBALANCE_MONTHS
