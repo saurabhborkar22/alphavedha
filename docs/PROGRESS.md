@@ -1,7 +1,7 @@
 # AlphaVedha — Master Progress Checklist
 
 > Last updated: 2026-05-21
-> Total tests: 685 | Source LOC: ~17,800 | Test LOC: ~8,800
+> Total tests: 742 | Source LOC: ~17,800 | Test LOC: ~9,400
 
 ---
 
@@ -290,18 +290,18 @@
 - [x] Export Conformal model in `models/__init__.py`
 - [x] Verify all models are importable via public API
 
-### D6. Testing Gaps
+### D6. Testing Gaps — IN PROGRESS (PR #22)
 
-#### D6.1 Missing Unit Tests
+#### D6.1 Missing Unit Tests — COMPLETE
 - [x] `data/stock_graph.py` — stock relationship graph (17 tests)
 - [x] `data/ingestion.py` — data ingestion orchestration (8 tests)
-- [ ] `data/store.py` — feature store read/write
+- [x] `data/store.py` — feature store read/write (27 tests)
 - [x] `data/database.py` — DB connection logic (3 tests)
-- [ ] `training/pipeline.py` — training orchestration
+- [x] `training/pipeline.py` — temporal splits, feature selection, data prep (18 tests)
 - [x] `training/gnn_pipeline.py` — GNN training (6 tests)
 - [x] `training/rl_pipeline.py` — RL training (4 tests)
 - [x] `models/trading_env.py` — RL trading environment (14 tests)
-- [ ] `signals/pairs_universe.py` — pairs discovery
+- [x] `signals/pairs_universe.py` — cointegration, hedge ratio, half-life, scanning (16 tests)
 - [x] `api/deps.py` — API auth and dependency injection (8 tests)
 - [x] `exceptions.py` — all 11 exception classes (6 tests)
 
@@ -345,12 +345,12 @@
 - [x] 21 unit tests for scheduler
 - [ ] Quarterly: index rebalancing check (Nifty composition changes)
 
-### D9. Documentation
+### D9. Documentation — IN PROGRESS
 
-- [ ] DEPLOYMENT.md (production setup guide, HA, scaling, environment config)
-- [ ] CONTRIBUTING.md (branch naming, commit conventions, PR process, testing)
+- [x] DEPLOYMENT.md (production setup guide: Docker, VPS/systemd, env config, backups, key rotation, troubleshooting)
+- [x] CONTRIBUTING.md (branch naming, commit conventions, code style, PR process, testing rules, financial data rules)
+- [x] API_GUIDE.md (authentication, all endpoints with curl examples, error codes, rate limits, demo mode)
 - [ ] Architecture decision records (ADRs) for key design choices
-- [ ] API usage guide with curl examples
 - [ ] Model training guide (end-to-end from data to deployment)
 - [ ] Runbook for incidents (model drift, data outage, API errors)
 
@@ -434,8 +434,8 @@
 | Paper trading track record | 90+ days verified | Not started |
 | Drift detection latency | < 7 days | Code ready |
 | Alternative data sources | 5+ | 13 sources implemented |
-| Test count | 500+ | 685 |
-| Source LOC | — | ~17,200 |
+| Test count | 500+ | 742 |
+| Source LOC | — | ~17,800 |
 
 ---
 
@@ -452,12 +452,12 @@
 | D3: Database & Migrations | COMPLETE | 100% |
 | D4: Security Hardening | COMPLETE | 100% |
 | D5: ML Ops Improvements | IN PROGRESS | ~35% (real model loading, exports fixed) |
-| D6: Testing Gaps | IN PROGRESS | ~50% (8/10 unit test modules done, +90 tests) |
+| D6: Testing Gaps | IN PROGRESS | ~70% (11/11 unit test modules done, +147 tests; integration tests remaining) |
 | D7: Data Pipeline Enhancements | NOT STARTED | 0% |
 | D8: Background Scheduling | COMPLETE | ~90% (scheduler + CLI + tests, quarterly rebalance remaining) |
-| D9: Documentation | PARTIAL | ~20% (README, CLAUDE.md exist) |
+| D9: Documentation | IN PROGRESS | ~50% (DEPLOYMENT.md, CONTRIBUTING.md, API_GUIDE.md done; ADRs, training guide, runbook remaining) |
 | D10: UI/UX | NOT STARTED | 0% (design prompts exist) |
 | D11: Compliance & Legal | NOT STARTED | 0% |
 | D12: Model Training | NOT STARTED | 0% |
 
-**Overall: Core ML engine complete. Production infrastructure (Docker, systemd, nginx, CI/CD) and observability (Prometheus, alerts, logging) deployed. Database hardening, security, training, and UI remain.**
+**Overall: Core ML engine complete. Production infrastructure (Docker, systemd, nginx, CI/CD), observability (Prometheus, alerts, logging), database hardening, and security deployed. Unit test coverage complete (742 tests). Core documentation (deployment, contributing, API guide) written. Remaining: integration tests, ML ops improvements, data pipeline enhancements, UI, compliance, and real model training.**
