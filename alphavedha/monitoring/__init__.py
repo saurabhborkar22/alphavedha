@@ -2,6 +2,7 @@
 
 from alphavedha.monitoring.alerts import AlertConfig, AlertLevel, EmailAlerter
 from alphavedha.monitoring.drift import DriftDetector, DriftReport, DriftResult
+from alphavedha.monitoring.experiment_tracker import ExperimentTracker, RunRecord
 from alphavedha.monitoring.performance import (
     PerformanceMonitor,
     PerformanceReport,
@@ -20,10 +21,12 @@ __all__ = [
     "DriftReport",
     "DriftResult",
     "EmailAlerter",
+    "ExperimentTracker",
     "ModelVersion",
     "PerformanceMonitor",
     "PerformanceReport",
     "PerformanceSnapshot",
     "RetrainDecision",
     "RetrainingManager",
+    "RunRecord",
 ]
