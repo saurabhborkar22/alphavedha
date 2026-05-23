@@ -23,13 +23,12 @@ class Base(DeclarativeBase):
 
 
 class DailyOHLCV(Base):
-    """Daily price and volume data — primary market data table."""
+    """Daily price and volume data — primary market data table (TimescaleDB hypertable)."""
 
     __tablename__ = "daily_ohlcv"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    date: Mapped[date] = mapped_column(Date, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
     open: Mapped[float] = mapped_column(Float, nullable=False)
     high: Mapped[float] = mapped_column(Float, nullable=False)
     low: Mapped[float] = mapped_column(Float, nullable=False)
@@ -43,8 +42,6 @@ class DailyOHLCV(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
     __table_args__ = (
-        UniqueConstraint("symbol", "date", name="uq_daily_ohlcv_symbol_date"),
-        Index("ix_daily_ohlcv_symbol_date", "symbol", "date"),
         Index("ix_daily_ohlcv_date", "date"),
     )
 
@@ -89,41 +86,35 @@ class IndexConstituent(Base):
 
 
 class InstitutionalFlow(Base):
-    """FII/DII daily buy/sell data."""
+    """FII/DII daily buy/sell data (TimescaleDB hypertable)."""
 
     __tablename__ = "institutional_flows"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False)
-    category: Mapped[str] = mapped_column(String(10), nullable=False)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
+    category: Mapped[str] = mapped_column(String(10), primary_key=True)
     buy_value: Mapped[float] = mapped_column(Float, nullable=False)
     sell_value: Mapped[float] = mapped_column(Float, nullable=False)
     net_value: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
     __table_args__ = (
-        UniqueConstraint("date", "category", name="uq_institutional_flow"),
         Index("ix_institutional_flows_date", "date"),
     )
 
 
 class DerivativesData(Base):
-    """F&O data: futures OI, options chain snapshots."""
+    """F&O data: futures OI, options chain snapshots (TimescaleDB hypertable)."""
 
     __tablename__ = "derivatives_data"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    date: Mapped[date] = mapped_column(Date, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
     futures_oi: Mapped[int | None] = mapped_column(Integer, nullable=True)
     futures_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     options_data_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
-    __table_args__ = (
-        UniqueConstraint("symbol", "date", name="uq_derivatives_data"),
-        Index("ix_derivatives_data_symbol_date", "symbol", "date"),
-    )
+    __table_args__: tuple = ()
 
 
 class EarningsResult(Base):
@@ -175,14 +166,13 @@ class PromoterHolding(Base):
 
 
 class InsiderTrade(Base):
-    """Insider (SAST) trading disclosures."""
+    """Insider (SAST) trading disclosures (TimescaleDB hypertable)."""
 
     __tablename__ = "insider_trades"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
-    person_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    person_name: Mapped[str] = mapped_column(String(200), primary_key=True)
     person_category: Mapped[str] = mapped_column(String(100), nullable=True)
     trade_type: Mapped[str] = mapped_column(String(10), nullable=False)
     shares: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -191,27 +181,24 @@ class InsiderTrade(Base):
 
     __table_args__ = (
         Index("ix_insider_trades_symbol", "symbol"),
-        Index("ix_insider_trades_date", "trade_date"),
     )
 
 
 class NewsArticle(Base):
-    """Stored news articles for sentiment analysis."""
+    """Stored news articles for sentiment analysis (TimescaleDB hypertable)."""
 
     __tablename__ = "news_articles"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    published_date: Mapped[date] = mapped_column(Date, primary_key=True)
     symbol: Mapped[str | None] = mapped_column(String(20), nullable=True)
     source: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     url: Mapped[str] = mapped_column(String(1000), nullable=True)
-    published_date: Mapped[date] = mapped_column(Date, nullable=False)
     sentiment_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
     __table_args__ = (
-        UniqueConstraint("content_hash", name="uq_news_article_hash"),
         Index("ix_news_articles_symbol_date", "symbol", "published_date"),
         Index("ix_news_articles_date", "published_date"),
     )
@@ -238,13 +225,12 @@ class AlternativeData(Base):
 
 
 class PaperTrade(Base):
-    """Paper trading prediction records — timestamped before market open."""
+    """Paper trading prediction records — timestamped before market open (TimescaleDB hypertable)."""
 
     __tablename__ = "paper_trades"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    prediction_date: Mapped[date] = mapped_column(Date, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    prediction_date: Mapped[date] = mapped_column(Date, primary_key=True)
     predicted_direction: Mapped[int] = mapped_column(Integer, nullable=False)
     predicted_magnitude: Mapped[float] = mapped_column(Float, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
@@ -257,19 +243,17 @@ class PaperTrade(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
     __table_args__ = (
-        UniqueConstraint("symbol", "prediction_date", name="uq_paper_trade"),
         Index("ix_paper_trades_date", "prediction_date"),
         Index("ix_paper_trades_symbol", "symbol"),
     )
 
 
 class DailyPnL(Base):
-    """Daily paper portfolio P&L summary."""
+    """Daily paper portfolio P&L summary (TimescaleDB hypertable)."""
 
     __tablename__ = "daily_pnl"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
     portfolio_value: Mapped[float] = mapped_column(Float, nullable=False)
     daily_return: Mapped[float] = mapped_column(Float, nullable=False)
     cumulative_return: Mapped[float] = mapped_column(Float, nullable=False)
@@ -279,22 +263,14 @@ class DailyPnL(Base):
     benchmark_return: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
-    __table_args__ = (Index("ix_daily_pnl_date", "date"),)
-
 
 class Feature(Base):
-    """Computed features stored for training-serving consistency."""
+    """Computed features stored for training-serving consistency (TimescaleDB hypertable)."""
 
     __tablename__ = "features"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    date: Mapped[date] = mapped_column(Date, nullable=False)
-    feature_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
+    feature_version: Mapped[str] = mapped_column(String(20), primary_key=True)
     feature_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
-
-    __table_args__ = (
-        UniqueConstraint("symbol", "date", "feature_version", name="uq_feature"),
-        Index("ix_features_symbol_date", "symbol", "date"),
-    )
