@@ -77,6 +77,8 @@ def create_app(demo: bool | None = None) -> FastAPI:
         cache = PredictionCache(redis_client=redis_client)
         service = PredictionService(registry=registry, cache=cache, config=config)
         set_service(service)
+        if not demo:
+            await service.warm_up()
         logger.info("app_started", demo=demo, model_version=registry.model_version)
         yield
         if redis_client is not None:

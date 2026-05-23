@@ -21,6 +21,7 @@ from alphavedha.features.pipeline import compute_all_features
 from alphavedha.labels.triple_barrier import compute_triple_barrier_labels
 from alphavedha.models.base import PredictionResult, TrainResult
 from alphavedha.models.xgboost_model import XGBoostModel
+from alphavedha.monitoring.experiment_tracker import ExperimentTracker
 
 logger = structlog.get_logger(__name__)
 
@@ -810,6 +811,79 @@ async def train_regime(
     return result
 
 
+def _log_experiment(
+    tracker: ExperimentTracker,
+    result: TrainingPipelineResult,
+    data: TierData,
+) -> None:
+    """Log a training run to the experiment tracker (skip if errors)."""
+    if result.errors:
+        return
+
+    metrics = {}
+    if result.train_result is not None:
+        metrics.update(result.train_result.val_metrics)
+    elif result.extra_metrics:
+        metrics.update(result.extra_metrics)
+
+    try:
+        tracker.log_run(
+            model_name=result.model_name,
+            hyperparams={},
+            train_metrics=result.train_result.train_metrics if result.train_result else {},
+            val_metrics=metrics,
+            data_range=("", ""),
+            n_train_rows=result.n_train_rows or len(data.X_train),
+            n_val_rows=result.n_val_rows or len(data.X_val),
+            n_symbols=result.n_symbols or data.n_symbols,
+            feature_count=data.X_train.shape[1] if not data.X_train.empty else 0,
+            artifact_path=str(result.artifact_path) if result.artifact_path else "",
+            duration_seconds=result.total_time_seconds,
+            extra=result.extra_metrics or {},
+        )
+    except Exception as e:
+        logger.warning("experiment_log_failed", model=result.model_name, error=str(e))
+
+
+def _train_rl_on_data(data: TierData) -> TrainingPipelineResult:
+    """Bridge TierData to the RL training pipeline."""
+    from alphavedha.training.rl_pipeline import train_rl_agent
+
+    result = TrainingPipelineResult(model_name="rl_agent")
+    try:
+        price_dfs = []
+        for symbol, ohlcv in data.ohlcv_by_symbol.items():
+            price_dfs.append(ohlcv[["close"]].rename(columns={"close": symbol}))
+
+        if not price_dfs:
+            result.errors["rl_agent"] = "No price data available"
+            return result
+
+        price_df = pd.concat(price_dfs, axis=1).dropna()
+        symbols = list(data.ohlcv_by_symbol.keys())
+
+        train_len = len(data.X_train)
+        rl_result = train_rl_agent(
+            feature_df=data.X_train,
+            price_df=price_df.iloc[:train_len] if len(price_df) >= train_len else price_df,
+            symbols=symbols,
+            n_episodes=50,
+        )
+
+        result.extra_metrics = {
+            "val_return": rl_result.total_return,
+            "val_sharpe": rl_result.sharpe_ratio,
+            "val_max_dd": rl_result.max_drawdown,
+        }
+        if rl_result.artifact_path:
+            result.artifact_path = Path(rl_result.artifact_path)
+    except Exception as e:
+        result.errors["rl_agent"] = str(e)
+        logger.error("train_rl_failed", error=str(e))
+
+    return result
+
+
 async def train_all(
     tier: str = "large",
 ) -> dict[str, TrainingPipelineResult]:
@@ -818,6 +892,7 @@ async def train_all(
     config = get_config()
     results: dict[str, TrainingPipelineResult] = {}
 
+    tracker = ExperimentTracker(base_dir=ARTIFACTS_DIR)
     logger.info("train_all_start", tier=tier)
 
     # Step 1: Load all data with 3-way split
@@ -836,6 +911,7 @@ async def train_all(
     xgb_model, xgb_train = _train_xgb_on_data(data)
     xgb_result.train_result = xgb_train
     xgb_result.artifact_path = ARTIFACTS_DIR / "xgboost" / "latest"
+    _log_experiment(tracker, xgb_result, data)
     results["xgboost"] = xgb_result
 
     logger.info(
@@ -877,6 +953,7 @@ async def train_all(
     except Exception as e:
         lstm_result.errors["lstm"] = str(e)
         logger.error("train_all_lstm_failed", error=str(e))
+    _log_experiment(tracker, lstm_result, data)
     results["lstm"] = lstm_result
 
     # Step 5: Train TFT
@@ -897,6 +974,7 @@ async def train_all(
     except Exception as e:
         tft_result.errors["tft"] = str(e)
         logger.error("train_all_tft_failed", error=str(e))
+    _log_experiment(tracker, tft_result, data)
     results["tft"] = tft_result
 
     # Step 6: Train Regime Detector
@@ -912,6 +990,7 @@ async def train_all(
     except Exception as e:
         regime_result.errors["regime"] = str(e)
         logger.error("train_all_regime_failed", error=str(e))
+    _log_experiment(tracker, regime_result, data)
     results["regime"] = regime_result
 
     # Step 7: Train Ensemble (needs all base models + regime)
@@ -942,6 +1021,7 @@ async def train_all(
         except Exception as e:
             ensemble_result.errors["ensemble"] = str(e)
             logger.error("train_all_ensemble_failed", error=str(e))
+        _log_experiment(tracker, ensemble_result, data)
         results["ensemble"] = ensemble_result
 
         # Step 8: Train Meta-Labeling (needs ensemble)
@@ -963,6 +1043,7 @@ async def train_all(
             except Exception as e:
                 meta_result.errors["meta_labeling"] = str(e)
                 logger.error("train_all_meta_failed", error=str(e))
+            _log_experiment(tracker, meta_result, data)
             results["meta_labeling"] = meta_result
     else:
         logger.warning("train_all_skip_ensemble", msg="Not all base models trained successfully")
@@ -979,7 +1060,14 @@ async def train_all(
     except Exception as e:
         conformal_result.errors["conformal"] = str(e)
         logger.error("train_all_conformal_failed", error=str(e))
+    _log_experiment(tracker, conformal_result, data)
     results["conformal"] = conformal_result
+
+    # Step 10: RL Agent
+    logger.info("train_all_step", step="rl_agent")
+    rl_result = _train_rl_on_data(data)
+    _log_experiment(tracker, rl_result, data)
+    results["rl_agent"] = rl_result
 
     total_time = time.perf_counter() - start_time
     for r in results.values():

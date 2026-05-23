@@ -6,8 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from alphavedha.training.rl_pipeline import RLTrainingResult, train_rl_agent
+from alphavedha.training.rl_pipeline import (
+    RLTrainingResult,
+    WalkForwardResult,
+    train_rl_agent,
+    walk_forward_rl,
+)
 
 
 def _make_training_data(
@@ -119,3 +125,58 @@ class TestTrainRLAgent:
                 artifact_dir=str(tmp_path / "rl_reward"),
             )
         assert isinstance(result.avg_episode_reward, float)
+
+
+class TestWalkForwardRL:
+    def test_walk_forward_basic(self, tmp_path) -> None:
+        features, prices, symbols = _make_training_data(n_steps=120, n_stocks=2)
+
+        mock_agent = MagicMock()
+        mock_agent.select_action.return_value = (
+            np.zeros(2),
+            np.array([0.0]),
+            np.array([0.0]),
+        )
+        mock_agent.update.return_value = {"policy_loss": 0.1, "value_loss": 0.05}
+
+        with patch("alphavedha.training.rl_pipeline.PPOAgent", return_value=mock_agent):
+            result = walk_forward_rl(
+                feature_df=features,
+                price_df=prices,
+                symbols=symbols,
+                n_windows=2,
+                train_frac=0.7,
+                n_episodes=2,
+                artifact_dir=str(tmp_path / "wf"),
+            )
+
+        assert isinstance(result, WalkForwardResult)
+        assert result.n_windows == 2
+        assert len(result.window_results) == 2
+
+    def test_walk_forward_metrics(self, tmp_path) -> None:
+        features, prices, symbols = _make_training_data(n_steps=120, n_stocks=2)
+
+        mock_agent = MagicMock()
+        mock_agent.select_action.return_value = (
+            np.zeros(2),
+            np.array([0.0]),
+            np.array([0.0]),
+        )
+        mock_agent.update.return_value = {"policy_loss": 0.1, "value_loss": 0.05}
+
+        with patch("alphavedha.training.rl_pipeline.PPOAgent", return_value=mock_agent):
+            result = walk_forward_rl(
+                feature_df=features,
+                price_df=prices,
+                symbols=symbols,
+                n_windows=2,
+                train_frac=0.7,
+                n_episodes=2,
+                artifact_dir=str(tmp_path / "wf_metrics"),
+            )
+
+        expected_avg = sum(w.sharpe_ratio for w in result.window_results) / len(
+            result.window_results
+        )
+        assert result.avg_sharpe == pytest.approx(expected_avg)

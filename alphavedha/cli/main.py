@@ -587,5 +587,139 @@ def scheduler_status() -> None:
 
 app.add_typer(scheduler_app, name="scheduler")
 
+
+# Experiment tracking subcommands
+experiment_app = typer.Typer(help="Experiment tracking commands")
+
+
+@experiment_app.command("list")
+def experiment_list(
+    model: str | None = typer.Option(None, "--model", help="Filter by model name"),
+    limit: int = typer.Option(20, "--limit", help="Max runs to show"),
+) -> None:
+    """List recent experiment runs."""
+    from rich.table import Table
+
+    from alphavedha.monitoring.experiment_tracker import ExperimentTracker
+    from alphavedha.training.pipeline import ARTIFACTS_DIR
+
+    tracker = ExperimentTracker(base_dir=ARTIFACTS_DIR)
+    runs = tracker.list_runs(model_name=model, limit=limit)
+
+    if not runs:
+        console.print("[yellow]No experiment runs found.[/yellow]")
+        return
+
+    table = Table(title="Experiment Runs")
+    table.add_column("Run ID", style="cyan")
+    table.add_column("Model", style="green")
+    table.add_column("Val Accuracy", justify="right")
+    table.add_column("Val F1", justify="right")
+    table.add_column("Duration (s)", justify="right")
+    table.add_column("Date")
+
+    for run in runs:
+        table.add_row(
+            run.run_id,
+            run.model_name,
+            f"{run.val_metrics.get('accuracy', 0):.4f}",
+            f"{run.val_metrics.get('f1', 0):.4f}",
+            f"{run.duration_seconds:.1f}",
+            run.started_at[:10],
+        )
+
+    console.print(table)
+
+
+@experiment_app.command("compare")
+def experiment_compare(
+    run_a: str = typer.Argument(help="First run ID"),
+    run_b: str = typer.Argument(help="Second run ID"),
+) -> None:
+    """Compare two experiment runs side by side."""
+    from rich.table import Table
+
+    from alphavedha.monitoring.experiment_tracker import ExperimentTracker
+    from alphavedha.training.pipeline import ARTIFACTS_DIR
+
+    tracker = ExperimentTracker(base_dir=ARTIFACTS_DIR)
+    try:
+        comparison = tracker.compare_runs(run_a, run_b)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from e
+
+    table = Table(title=f"Comparison: {run_a} vs {run_b}")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Run A", justify="right")
+    table.add_column("Run B", justify="right")
+    table.add_column("Delta", justify="right")
+
+    for metric, values in comparison.items():
+        delta = values["delta"]
+        delta_style = "green" if delta > 0 else "red" if delta < 0 else "white"
+        table.add_row(
+            metric,
+            f"{values['a']:.4f}",
+            f"{values['b']:.4f}",
+            f"[{delta_style}]{delta:+.4f}[/{delta_style}]",
+        )
+
+    console.print(table)
+
+
+app.add_typer(experiment_app, name="experiment")
+
+
+# Model management subcommands
+model_app = typer.Typer(help="Model management commands")
+
+
+@model_app.command("compare")
+def model_compare(
+    model_name: str = typer.Option("xgboost", "--model-name", help="Model to compare"),
+) -> None:
+    """Compare active vs shadow model versions."""
+    from rich.table import Table
+
+    from alphavedha.monitoring.retrainer import RetrainingManager
+    from alphavedha.training.pipeline import ARTIFACTS_DIR
+
+    manager = RetrainingManager(artifact_dir=ARTIFACTS_DIR)
+    try:
+        result = manager.compare_models(model_name)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from e
+
+    table = Table(title=f"Model Comparison: {model_name}")
+    table.add_column("", style="bold")
+    table.add_column("Active", justify="right")
+    table.add_column("Shadow", justify="right")
+    table.add_column("Delta", justify="right")
+
+    table.add_row("Version", result.active_version, result.shadow_version, "")
+
+    for metric in sorted(result.metric_deltas.keys()):
+        delta = result.metric_deltas[metric]
+        delta_style = "green" if delta > 0 else "red" if delta < 0 else "white"
+        table.add_row(
+            metric,
+            f"{result.active_metrics.get(metric, 0):.4f}",
+            f"{result.shadow_metrics.get(metric, 0):.4f}",
+            f"[{delta_style}]{delta:+.4f}[/{delta_style}]",
+        )
+
+    console.print(table)
+
+    rec_style = {"promote": "green", "discard": "red", "extend_shadow": "yellow"}
+    style = rec_style.get(result.recommendation, "white")
+    console.print(f"\n[{style}]Recommendation: {result.recommendation}[/{style}]")
+    console.print(f"Reason: {result.reason}")
+
+
+app.add_typer(model_app, name="model")
+
+
 if __name__ == "__main__":
     app()

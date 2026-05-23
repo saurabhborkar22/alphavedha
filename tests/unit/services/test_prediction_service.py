@@ -90,3 +90,37 @@ class TestPredictionService:
         results = await service.predict_batch(["INFY", "TCS"])
         assert results[0].symbol == "INFY"
         assert results[1].symbol == "TCS"
+
+
+class TestWarmUp:
+    @pytest.mark.asyncio
+    async def test_warmup_runs_prediction(self, service: PredictionService) -> None:
+        service.predict_single = AsyncMock(return_value=_make_mock_prediction())
+        await service.warm_up()
+        service.predict_single.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_warmup_failure_does_not_raise(self, service: PredictionService) -> None:
+        service.predict_single = AsyncMock(side_effect=RuntimeError("model not loaded"))
+        await service.warm_up()
+
+
+class TestBatchConcurrent:
+    @pytest.mark.asyncio
+    async def test_predict_batch_concurrent_all_symbols(self, service: PredictionService) -> None:
+        service.predict_single = AsyncMock(return_value=_make_mock_prediction())
+        results = await service.predict_batch(["TCS", "INFY", "RELIANCE"])
+        assert len(results) == 3
+        assert service.predict_single.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_predict_batch_concurrent_preserves_order(
+        self, service: PredictionService
+    ) -> None:
+        async def _mock_predict(symbol: str, sector: str = "") -> StockPrediction:
+            pred = _make_mock_prediction(symbol)
+            return pred
+
+        service.predict_single = AsyncMock(side_effect=_mock_predict)
+        results = await service.predict_batch(["A", "B", "C"])
+        assert [r.symbol for r in results] == ["A", "B", "C"]

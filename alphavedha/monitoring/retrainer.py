@@ -41,6 +41,17 @@ class RetrainDecision:
     performance_report: PerformanceReport | None = None
 
 
+@dataclass
+class ComparisonResult:
+    active_version: str
+    shadow_version: str
+    active_metrics: dict[str, float]
+    shadow_metrics: dict[str, float]
+    metric_deltas: dict[str, float]
+    recommendation: str  # "promote" | "discard" | "extend_shadow"
+    reason: str
+
+
 class RetrainingManager:
     def __init__(
         self,
@@ -183,6 +194,50 @@ class RetrainingManager:
 
         self._versions = active + to_keep
         return removed_versions
+
+    def compare_models(self, model_name: str | None = None) -> ComparisonResult:
+        """Compare active vs shadow model and recommend promote/discard/extend."""
+        active: ModelVersion | None = None
+        shadow: ModelVersion | None = None
+
+        for v in reversed(self._versions):
+            if v.status == "active" and active is None:
+                active = v
+            if v.status == "shadow" and shadow is None:
+                shadow = v
+
+        if active is None:
+            raise ValueError(f"No active version found{f' for {model_name}' if model_name else ''}")
+        if shadow is None:
+            raise ValueError(f"No shadow version found{f' for {model_name}' if model_name else ''}")
+
+        deltas = {
+            k: shadow.metrics.get(k, 0.0) - active.metrics.get(k, 0.0)
+            for k in set(active.metrics) | set(shadow.metrics)
+        }
+
+        acc_delta = deltas.get("accuracy", 0.0)
+        f1_delta = deltas.get("f1", 0.0)
+
+        if acc_delta >= 0.01 and f1_delta >= 0.01:
+            recommendation = "promote"
+            reason = f"Shadow beats active: accuracy +{acc_delta:.3f}, f1 +{f1_delta:.3f}"
+        elif acc_delta <= -0.02 or f1_delta <= -0.02:
+            recommendation = "discard"
+            reason = f"Shadow worse: accuracy {acc_delta:+.3f}, f1 {f1_delta:+.3f}"
+        else:
+            recommendation = "extend_shadow"
+            reason = f"Marginal: accuracy {acc_delta:+.3f}, f1 {f1_delta:+.3f}"
+
+        return ComparisonResult(
+            active_version=active.version,
+            shadow_version=shadow.version,
+            active_metrics=active.metrics,
+            shadow_metrics=shadow.metrics,
+            metric_deltas=deltas,
+            recommendation=recommendation,
+            reason=reason,
+        )
 
     def get_version_history(self) -> list[ModelVersion]:
         """Return all versions sorted by creation date."""

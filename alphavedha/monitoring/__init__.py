@@ -9,6 +9,7 @@ from alphavedha.monitoring.performance import (
     PerformanceSnapshot,
 )
 from alphavedha.monitoring.retrainer import (
+    ComparisonResult,
     ModelVersion,
     RetrainDecision,
     RetrainingManager,
@@ -17,6 +18,7 @@ from alphavedha.monitoring.retrainer import (
 __all__ = [
     "AlertConfig",
     "AlertLevel",
+    "ComparisonResult",
     "DriftDetector",
     "DriftReport",
     "DriftResult",
