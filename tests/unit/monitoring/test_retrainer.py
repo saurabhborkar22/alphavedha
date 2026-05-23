@@ -10,7 +10,7 @@ import pytest
 from alphavedha.config import RetrainingConfig
 from alphavedha.monitoring.drift import DriftReport, DriftResult
 from alphavedha.monitoring.performance import PerformanceReport, PerformanceSnapshot
-from alphavedha.monitoring.retrainer import RetrainingManager
+from alphavedha.monitoring.retrainer import ComparisonResult, RetrainingManager
 
 
 @pytest.fixture
@@ -247,3 +247,69 @@ class TestCleanup:
         history = manager.get_version_history()
         timestamps = [v.created_at for v in history]
         assert timestamps == sorted(timestamps)
+
+
+class TestCompareModels:
+    def test_compare_models_promote(self, manager: RetrainingManager, tmp_path: Path) -> None:
+        p1, p2 = tmp_path / "v1", tmp_path / "v2"
+        p1.mkdir()
+        p2.mkdir()
+        manager.register_version(
+            "v1.0.0", {"accuracy": 0.70, "f1": 0.68}, p1, ("2024-01-01", "2024-06-01")
+        )
+        manager.promote_version("v1.0.0")
+        manager.register_version(
+            "v1.1.0", {"accuracy": 0.75, "f1": 0.73}, p2, ("2024-01-01", "2024-07-01")
+        )
+
+        result = manager.compare_models("xgboost")
+        assert isinstance(result, ComparisonResult)
+        assert result.recommendation == "promote"
+        assert result.metric_deltas["accuracy"] == pytest.approx(0.05)
+
+    def test_compare_models_discard(self, manager: RetrainingManager, tmp_path: Path) -> None:
+        p1, p2 = tmp_path / "v1", tmp_path / "v2"
+        p1.mkdir()
+        p2.mkdir()
+        manager.register_version(
+            "v1.0.0", {"accuracy": 0.75, "f1": 0.73}, p1, ("2024-01-01", "2024-06-01")
+        )
+        manager.promote_version("v1.0.0")
+        manager.register_version(
+            "v1.1.0", {"accuracy": 0.70, "f1": 0.68}, p2, ("2024-01-01", "2024-07-01")
+        )
+
+        result = manager.compare_models("xgboost")
+        assert result.recommendation == "discard"
+
+    def test_compare_models_extend(self, manager: RetrainingManager, tmp_path: Path) -> None:
+        p1, p2 = tmp_path / "v1", tmp_path / "v2"
+        p1.mkdir()
+        p2.mkdir()
+        manager.register_version(
+            "v1.0.0", {"accuracy": 0.75, "f1": 0.73}, p1, ("2024-01-01", "2024-06-01")
+        )
+        manager.promote_version("v1.0.0")
+        manager.register_version(
+            "v1.1.0", {"accuracy": 0.755, "f1": 0.735}, p2, ("2024-01-01", "2024-07-01")
+        )
+
+        result = manager.compare_models()
+        assert result.recommendation == "extend_shadow"
+
+    def test_compare_models_no_shadow(self, manager: RetrainingManager, tmp_path: Path) -> None:
+        p1 = tmp_path / "v1"
+        p1.mkdir()
+        manager.register_version("v1.0.0", {"accuracy": 0.75}, p1, ("2024-01-01", "2024-06-01"))
+        manager.promote_version("v1.0.0")
+
+        with pytest.raises(ValueError, match="No shadow"):
+            manager.compare_models("xgboost")
+
+    def test_compare_models_no_active(self, manager: RetrainingManager, tmp_path: Path) -> None:
+        p1 = tmp_path / "v1"
+        p1.mkdir()
+        manager.register_version("v1.1.0", {"accuracy": 0.75}, p1, ("2024-01-01", "2024-07-01"))
+
+        with pytest.raises(ValueError, match="No active"):
+            manager.compare_models("xgboost")

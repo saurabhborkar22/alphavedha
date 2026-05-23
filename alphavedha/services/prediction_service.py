@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, timedelta
 
 import pandas as pd
@@ -121,6 +122,22 @@ class PredictionService:
 
         return get_symbols_for_tier(tier)
 
+    async def warm_up(self) -> None:
+        """Run a single prediction to warm up the full inference path."""
+        try:
+            tiers = self._config.universe.default_tiers
+            if not tiers:
+                logger.warning("warmup_no_tiers")
+                return
+            symbols = self._get_symbols(tiers[0])
+            if not symbols:
+                logger.warning("warmup_no_symbols")
+                return
+            await self.predict_single(symbols[0])
+            logger.info("model_warmup_complete", symbol=symbols[0])
+        except Exception as e:
+            logger.warning("model_warmup_failed", error=str(e))
+
     async def predict_single(self, symbol: str, sector: str = "") -> StockPrediction:
         """Predict a single stock, checking cache first.
 
@@ -157,15 +174,11 @@ class PredictionService:
         symbols = self._get_symbols(tier)
         logger.info("scan_started", tier=tier, symbols=len(symbols))
 
-        predictions: list[StockPrediction] = []
-        for symbol in symbols:
-            pred = await self.predict_single(symbol)
-            predictions.append(pred)
-
+        predictions = await self.predict_batch(symbols)
         return self._ranker.rank(predictions, top_n=top_n)
 
     async def predict_batch(self, symbols: list[str]) -> list[StockPrediction]:
-        """Predict multiple symbols, preserving input order.
+        """Predict multiple symbols concurrently, preserving input order.
 
         Args:
             symbols: List of stock symbols.
@@ -173,8 +186,10 @@ class PredictionService:
         Returns:
             List of StockPrediction in the same order as input.
         """
-        results: list[StockPrediction] = []
-        for symbol in symbols:
-            pred = await self.predict_single(symbol)
-            results.append(pred)
-        return results
+        semaphore = asyncio.Semaphore(10)
+
+        async def _predict_one(symbol: str) -> StockPrediction:
+            async with semaphore:
+                return await self.predict_single(symbol)
+
+        return list(await asyncio.gather(*[_predict_one(s) for s in symbols]))

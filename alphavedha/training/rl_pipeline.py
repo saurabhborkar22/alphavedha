@@ -31,6 +31,15 @@ class RLTrainingResult:
     artifact_path: str | None
 
 
+@dataclass
+class WalkForwardResult:
+    n_windows: int
+    window_results: list[RLTrainingResult]
+    avg_sharpe: float
+    avg_return: float
+    avg_max_dd: float
+
+
 def train_rl_agent(
     feature_df: pd.DataFrame,
     price_df: pd.DataFrame,
@@ -154,4 +163,52 @@ def train_rl_agent(
         max_drawdown=max_dd,
         avg_episode_reward=avg_reward,
         artifact_path=str(save_path),
+    )
+
+
+def walk_forward_rl(
+    feature_df: pd.DataFrame,
+    price_df: pd.DataFrame,
+    symbols: list[str],
+    n_windows: int = 3,
+    train_frac: float = 0.7,
+    n_episodes: int = 50,
+    artifact_dir: str = "models/artifacts/rl_ppo",
+) -> WalkForwardResult:
+    """Walk-forward validation: expanding windows, train on all prior data, validate on next chunk."""
+    n_rows = len(feature_df)
+    chunk_size = n_rows // (n_windows + 1)
+    window_results: list[RLTrainingResult] = []
+
+    for i in range(n_windows):
+        train_end = chunk_size * (i + 1)
+        val_start = train_end
+        val_end = min(train_end + chunk_size, n_rows)
+
+        if val_end <= val_start:
+            continue
+
+        result = train_rl_agent(
+            feature_df=feature_df.iloc[:train_end],
+            price_df=price_df.iloc[:val_end],
+            symbols=symbols,
+            n_episodes=n_episodes,
+            train_frac=train_end / val_end,
+            artifact_dir=f"{artifact_dir}/window_{i}",
+        )
+        window_results.append(result)
+
+    if window_results:
+        avg_sharpe = sum(r.sharpe_ratio for r in window_results) / len(window_results)
+        avg_return = sum(r.total_return for r in window_results) / len(window_results)
+        avg_max_dd = sum(r.max_drawdown for r in window_results) / len(window_results)
+    else:
+        avg_sharpe = avg_return = avg_max_dd = 0.0
+
+    return WalkForwardResult(
+        n_windows=len(window_results),
+        window_results=window_results,
+        avg_sharpe=avg_sharpe,
+        avg_return=avg_return,
+        avg_max_dd=avg_max_dd,
     )
