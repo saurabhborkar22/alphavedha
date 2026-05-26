@@ -41,9 +41,7 @@ class DailyOHLCV(Base):
     is_filled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
-    __table_args__ = (
-        Index("ix_daily_ohlcv_date", "date"),
-    )
+    __table_args__ = (Index("ix_daily_ohlcv_date", "date"),)
 
 
 class CorporateAction(Base):
@@ -97,9 +95,7 @@ class InstitutionalFlow(Base):
     net_value: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
-    __table_args__ = (
-        Index("ix_institutional_flows_date", "date"),
-    )
+    __table_args__ = (Index("ix_institutional_flows_date", "date"),)
 
 
 class DerivativesData(Base):
@@ -179,9 +175,7 @@ class InsiderTrade(Base):
     value_lakhs: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
-    __table_args__ = (
-        Index("ix_insider_trades_symbol", "symbol"),
-    )
+    __table_args__ = (Index("ix_insider_trades_symbol", "symbol"),)
 
 
 class NewsArticle(Base):
