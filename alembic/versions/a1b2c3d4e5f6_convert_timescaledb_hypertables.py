@@ -9,17 +9,17 @@ Create Date: 2026-05-23 10:00:00.000000
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision: str = "a1b2c3d4e5f6"
-down_revision: Union[str, Sequence[str], None] = "05c23a1b9653"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "05c23a1b9653"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
-HYPERTABLE_CONFIGS = [
+HYPERTABLE_CONFIGS: list[dict[str, str | list[str] | None]] = [
     {
         "table": "daily_ohlcv",
         "time_col": "date",
@@ -126,7 +126,7 @@ def upgrade() -> None:
                 )
             )
 
-        for idx in cfg["old_indexes"]:
+        for idx in cfg.get("old_indexes") or []:
             conn.execute(sa.text(f"DROP INDEX IF EXISTS {idx}"))
 
         conn.execute(

@@ -111,10 +111,10 @@ class DerivativesData(Base):
     date: Mapped[date] = mapped_column(Date, primary_key=True)
     futures_oi: Mapped[int | None] = mapped_column(Integer, nullable=True)
     futures_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    options_data_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    options_data_json: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
 
-    __table_args__: tuple = ()
+    __table_args__: tuple[()] = ()
 
 
 class EarningsResult(Base):
@@ -272,5 +272,5 @@ class Feature(Base):
     symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
     date: Mapped[date] = mapped_column(Date, primary_key=True)
     feature_version: Mapped[str] = mapped_column(String(20), primary_key=True)
-    feature_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    feature_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
