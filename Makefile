@@ -1,4 +1,4 @@
-.PHONY: setup docker-up docker-down lint test test-unit test-integration serve train predict scan backtest validate data-refresh data-backfill
+.PHONY: setup docker-up docker-down lint test test-unit test-integration test-integration-up test-integration-down test-backtest serve train predict scan backtest validate data-refresh data-backfill coverage
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -38,6 +38,17 @@ test-integration:
 
 test-backtest:
 	$(VENV)/bin/pytest tests/backtest/ -v -m backtest
+
+test-integration-up:
+	docker compose -f docker-compose.test.yml up -d
+	@echo "Waiting for test database..." && sleep 3
+
+test-integration-down:
+	docker compose -f docker-compose.test.yml down
+
+coverage:
+	$(VENV)/bin/pytest tests/unit/ --cov=alphavedha --cov-report=term-missing --cov-report=html
+	@echo "HTML report: htmlcov/index.html"
 
 # ─── Data ────────────────────────────────────────────────────
 data-refresh:

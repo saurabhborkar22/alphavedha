@@ -1,0 +1,12 @@
+services:
+  test-postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: alphavedha-test-db
+    environment:
+      POSTGRES_USER: alphavedha
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: alphavedha_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
