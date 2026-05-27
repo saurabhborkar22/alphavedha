@@ -353,14 +353,14 @@
 - [x] 21 unit tests for scheduler
 - [x] Quarterly: index rebalancing check (Nifty composition changes, March/September)
 
-### D9. Documentation — IN PROGRESS
+### D9. Documentation — COMPLETE
 
 - [x] DEPLOYMENT.md (production setup guide: Docker, VPS/systemd, env config, backups, key rotation, troubleshooting)
 - [x] CONTRIBUTING.md (branch naming, commit conventions, code style, PR process, testing rules, financial data rules)
 - [x] API_GUIDE.md (authentication, all endpoints with curl examples, error codes, rate limits, demo mode)
-- [ ] Architecture decision records (ADRs) for key design choices
-- [ ] Model training guide (end-to-end from data to deployment)
-- [ ] Runbook for incidents (model drift, data outage, API errors)
+- [x] Architecture decision records (ADR.md — 9 ADRs: ensemble architecture, triple barrier labeling, meta-labeling, TimescaleDB, HMM regime, conformal prediction, demo mode, experiment tracking, async-first)
+- [x] Model training guide (TRAINING_GUIDE.md — data ingestion → feature engineering → training all 10 models → validation → deployment, with CLI commands and troubleshooting)
+- [x] Runbook for incidents (RUNBOOK.md — 6 incident types: drift, accuracy drop, scheduler failure, API errors, data outage, service startup)
 
 ### D10. UI/UX (Separate Repo: alphavedha-ui)
 
@@ -463,9 +463,9 @@
 | D6: Testing Gaps | IN PROGRESS | ~70% (11/11 unit test modules done, +147 tests; integration tests remaining) |
 | D7: Data Pipeline Enhancements | NOT STARTED | 0% |
 | D8: Background Scheduling | COMPLETE | 100% |
-| D9: Documentation | IN PROGRESS | ~50% (DEPLOYMENT.md, CONTRIBUTING.md, API_GUIDE.md done; ADRs, training guide, runbook remaining) |
+| D9: Documentation | COMPLETE | 100% (DEPLOYMENT.md, CONTRIBUTING.md, API_GUIDE.md, ADR.md, TRAINING_GUIDE.md, RUNBOOK.md) |
 | D10: UI/UX | NOT STARTED | 0% (design prompts exist) |
 | D11: Compliance & Legal | NOT STARTED | 0% |
 | D12: Model Training | NOT STARTED | 0% |
 
-**Overall: Core ML engine complete. Production infrastructure (Docker, systemd, nginx, CI/CD), observability (Prometheus, alerts, logging), database hardening, security, background scheduling, and ML ops all deployed. TimescaleDB hypertables with compression. Unit test coverage at 774 tests. Core documentation (deployment, contributing, API guide) written. Remaining: integration tests, data pipeline enhancements, UI, compliance, and real model training.**
+**Overall: Core ML engine complete. Production infrastructure (Docker, systemd, nginx, CI/CD), observability (Prometheus, alerts, logging), database hardening, security, background scheduling, and ML ops all deployed. TimescaleDB hypertables with compression. Testing gaps closed: 797 tests (782 unit + 15 integration), model round-trips for all 8 model types, pre-commit hooks, coverage reporting. Full documentation suite: deployment guide, API guide, contributing guide, 9 ADRs, model training guide, and incident runbook. Remaining: data pipeline enhancements, UI, compliance, and real model training.**
