@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -25,7 +25,8 @@ def test_email_alerter_has_data_quality_failed() -> None:
 async def test_write_lineage_adds_row() -> None:
     from alphavedha.data.ingestion import _write_lineage
 
-    mock_session = AsyncMock()
+    mock_session = MagicMock()
+    mock_session.commit = AsyncMock()
     await _write_lineage(
         mock_session,
         symbol="TCS.NS",
@@ -69,4 +70,6 @@ def test_data_quality_failed_sends_when_critical() -> None:
     assert result is True
     mock_send.assert_called_once()
     call_kwargs = mock_send.call_args[1]
-    assert "critical" in call_kwargs["subject"].lower() or "critical" in call_kwargs["body"].lower()
+    from alphavedha.monitoring.alerts import AlertLevel
+
+    assert call_kwargs["level"] == AlertLevel.CRITICAL

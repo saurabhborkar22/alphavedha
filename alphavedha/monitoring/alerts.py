@@ -125,7 +125,7 @@ class EmailAlerter:
         critical = [r for r in report.results if not r.passed and r.severity == "critical"]
         if not critical:
             return False
-        subject = f"[AlphaVedha] Data quality critical failures on {report.report_date}"
+        subject = f"Data quality critical failures on {report.report_date}"
         lines = [
             f"Date: {report.report_date}",
             f"Critical failures: {report.n_critical}",
