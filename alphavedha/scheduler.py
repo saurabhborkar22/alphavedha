@@ -29,6 +29,7 @@ RETRAIN_DAY = "saturday"
 RETRAIN_TIME = "22:00"
 REBALANCE_CHECK_DAY = "monday"
 REBALANCE_CHECK_TIME = "07:00"
+QUALITY_CHECK_TIME = "15:50"
 REBALANCE_MONTHS = {3, 9}
 
 
@@ -51,6 +52,7 @@ class SchedulerState:
     last_drift_check: datetime | None = None
     last_retrain: datetime | None = None
     last_rebalance_check: datetime | None = None
+    last_quality_check: datetime | None = None
 
 
 def _run_async(coro: object) -> object:
@@ -264,7 +266,7 @@ class AlphaVedhaScheduler:
         """Register all jobs with the schedule library."""
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
-        schedule.every().day.at("15:50").do(self.run_quality_check)
+        schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
 
         getattr(schedule.every(), DRIFT_CHECK_DAY).at(DRIFT_CHECK_TIME).do(
             self.run_drift_check,
@@ -306,11 +308,13 @@ class AlphaVedhaScheduler:
                     checker = QualityChecker(session=session)
                     report = await checker.run_full_check(today)
                     await checker.persist_report(report)
-                if report.n_critical > 0:
-                    EmailAlerter().data_quality_failed(report)
+                    if report.n_critical > 0:
+                        EmailAlerter().data_quality_failed(report)
 
             _run_async(_task())
             result.success = True
+            self._state.last_quality_check = _now_ist()
+            logger.info("scheduler_job_complete", job="quality_check")
         except Exception as exc:
             result.success = False
             result.error = str(exc)

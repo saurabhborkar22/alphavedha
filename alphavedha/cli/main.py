@@ -299,6 +299,7 @@ async def _run_quality_check(run_date: object, demo: bool) -> None:
     from alphavedha.data.database import get_session_factory
     from alphavedha.data.quality import QualityChecker
 
+    # demo flag has no effect on quality checks — always connects to real DB
     factory = get_session_factory()
     async with factory() as session:
         checker = QualityChecker(session=session)
