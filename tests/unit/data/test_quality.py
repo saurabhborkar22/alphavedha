@@ -135,7 +135,9 @@ async def test_run_full_check_aggregates_all() -> None:
     session.execute.return_value.fetchall.return_value = []
     checker = QualityChecker(session=session, universe_size=50)
     with patch.object(
-        checker, "check_freshness", return_value=[QualityResult("freshness", True, "ok", "fresh")]
+        checker,
+        "check_freshness",
+        new=AsyncMock(return_value=[QualityResult("freshness", True, "ok", "fresh")]),
     ):
         report = await checker.run_full_check(date(2026, 5, 30))
     assert isinstance(report, QualityReport)
