@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphavedha.data.preprocessing.pipeline import run_pipeline
 from alphavedha.data.providers.yfinance_provider import YFinanceProvider
@@ -20,6 +21,31 @@ from alphavedha.data.universe import (
 )
 
 logger = structlog.get_logger(__name__)
+
+
+async def _write_lineage(
+    session: AsyncSession,
+    *,
+    symbol: str | None,
+    record_date: date,
+    table_name: str,
+    provider: str,
+    fetched_at: datetime,
+    row_count: int,
+) -> None:
+    """Record data provenance for auditing."""
+    from alphavedha.data.models import DataLineage
+
+    row = DataLineage(
+        symbol=symbol,
+        date=record_date,
+        table_name=table_name,
+        provider=provider,
+        fetched_at=fetched_at,
+        row_count=row_count,
+    )
+    session.add(row)
+    await session.commit()
 
 
 @dataclass

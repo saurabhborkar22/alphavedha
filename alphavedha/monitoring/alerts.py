@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from email.message import EmailMessage
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from alphavedha.data.quality import QualityReport
 
 import structlog
 
@@ -115,3 +119,21 @@ class EmailAlerter:
             ),
             level=AlertLevel.CRITICAL,
         )
+
+    def data_quality_failed(self, report: QualityReport) -> bool:
+        """Send alert when critical data quality checks fail."""
+        critical = [r for r in report.results if not r.passed and r.severity == "critical"]
+        if not critical:
+            return False
+        subject = f"[AlphaVedha] Data quality critical failures on {report.report_date}"
+        lines = [
+            f"Date: {report.report_date}",
+            f"Critical failures: {report.n_critical}",
+            f"Total checks: {len(report.results)}",
+            "",
+        ]
+        for r in critical:
+            sym_info = f" ({r.symbol})" if r.symbol else ""
+            lines.append(f"  [{r.check_type}]{sym_info} {r.detail}")
+        body = "\n".join(lines)
+        return self.send(subject=subject, body=body, level=AlertLevel.CRITICAL)
