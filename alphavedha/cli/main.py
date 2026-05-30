@@ -278,6 +278,44 @@ def data_earnings_refresh(
             console.print(f"  [dim]{sym}: {err}[/dim]")
 
 
+@data_app.command("quality-check")
+def data_quality_check(
+    check_date: str = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Date to check (YYYY-MM-DD). Defaults to today.",
+    ),
+    demo: bool = typer.Option(False, "--demo", help="Use demo DB connection"),
+) -> None:
+    """Run data quality checks and print report."""
+    from datetime import date as date_type
+
+    run_date = date_type.fromisoformat(check_date) if check_date else date_type.today()
+    asyncio.run(_run_quality_check(run_date, demo=demo))
+
+
+async def _run_quality_check(run_date: object, demo: bool) -> None:
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.quality import QualityChecker
+
+    factory = get_session_factory()
+    async with factory() as session:
+        checker = QualityChecker(session=session)
+        report = await checker.run_full_check(run_date)
+        await checker.persist_report(report)
+
+    typer.echo(f"Quality check for {run_date}")
+    typer.echo(f"  Passed:   {report.n_passed}")
+    typer.echo(f"  Warnings: {report.n_warnings}")
+    typer.echo(f"  Critical: {report.n_critical}")
+    if report.n_critical > 0:
+        typer.secho("CRITICAL failures detected!", fg=typer.colors.RED)
+        for r in report.results:
+            if not r.passed and r.severity == "critical":
+                typer.echo(f"    [{r.check_type}] {r.detail}")
+
+
 app.add_typer(data_app, name="data")
 
 

@@ -264,6 +264,7 @@ class AlphaVedhaScheduler:
         """Register all jobs with the schedule library."""
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
+        schedule.every().day.at("15:50").do(self.run_quality_check)
 
         getattr(schedule.every(), DRIFT_CHECK_DAY).at(DRIFT_CHECK_TIME).do(
             self.run_drift_check,
@@ -285,6 +286,39 @@ class AlphaVedhaScheduler:
             retrain_day=RETRAIN_DAY,
             rebalance_day=REBALANCE_CHECK_DAY,
         )
+
+    def run_quality_check(self) -> JobResult:
+        """Nightly data quality check — runs after market close data is available."""
+        result = JobResult(job_name="quality_check", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="quality_check")
+        try:
+            from datetime import date
+
+            from alphavedha.data.database import get_session_factory
+            from alphavedha.data.quality import QualityChecker
+            from alphavedha.monitoring.alerts import EmailAlerter
+
+            today = date.today()
+
+            async def _task() -> None:
+                factory = get_session_factory()
+                async with factory() as session:
+                    checker = QualityChecker(session=session)
+                    report = await checker.run_full_check(today)
+                    await checker.persist_report(report)
+                if report.n_critical > 0:
+                    EmailAlerter().data_quality_failed(report)
+
+            _run_async(_task())
+            result.success = True
+        except Exception as exc:
+            result.success = False
+            result.error = str(exc)
+            logger.error("scheduler_job_failed", job="quality_check", error=str(exc))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
 
     def _maybe_monthly_retrain(self) -> JobResult | None:
         """Only run retrain on the first Saturday of the month."""
