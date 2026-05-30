@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphavedha.data.models import DailyOHLCV
+from alphavedha.data.models import DataQualityReport as DQRModel
 
 logger = structlog.get_logger(__name__)
 
@@ -107,3 +108,104 @@ class QualityChecker:
                 detail=detail,
             )
         ]
+
+    async def check_consistency(self, report_date: date) -> list[QualityResult]:
+        """Flag OHLCV rows where high < low."""
+        rows = (
+            await self._session.execute(
+                select(DailyOHLCV.symbol, DailyOHLCV.date).where(
+                    DailyOHLCV.date == report_date,
+                    DailyOHLCV.high < DailyOHLCV.low,
+                )
+            )
+        ).fetchall()
+        if not rows:
+            return [
+                QualityResult(
+                    check_type="consistency",
+                    passed=True,
+                    severity="ok",
+                    detail=f"No OHLCV violations on {report_date}",
+                )
+            ]
+        results = [
+            QualityResult(
+                check_type="consistency",
+                passed=False,
+                severity="critical",
+                detail=f"OHLCV violation (high < low): {row.symbol} on {row.date}",
+                symbol=row.symbol,
+            )
+            for row in rows
+        ]
+        logger.info("quality.consistency_checked", date=str(report_date), violations=len(rows))
+        return results
+
+    async def check_anomalies(self, report_date: date) -> list[QualityResult]:
+        """Flag symbols with zero volume on a trading day."""
+        rows = (
+            await self._session.execute(
+                select(DailyOHLCV.symbol, DailyOHLCV.date).where(
+                    DailyOHLCV.date == report_date,
+                    DailyOHLCV.volume == 0,
+                )
+            )
+        ).fetchall()
+        if not rows:
+            return [
+                QualityResult(
+                    check_type="anomaly",
+                    passed=True,
+                    severity="ok",
+                    detail=f"No zero-volume anomalies on {report_date}",
+                )
+            ]
+        results = [
+            QualityResult(
+                check_type="anomaly",
+                passed=False,
+                severity="warning",
+                detail=f"Zero volume: {row.symbol} on {row.date}",
+                symbol=row.symbol,
+            )
+            for row in rows
+        ]
+        logger.info("quality.anomaly_checked", date=str(report_date), anomalies=len(rows))
+        return results
+
+    async def run_full_check(self, report_date: date) -> QualityReport:
+        completeness = await self.check_completeness(report_date)
+        freshness = await self.check_freshness()
+        consistency = await self.check_consistency(report_date)
+        anomalies = await self.check_anomalies(report_date)
+        report = QualityReport(
+            report_date=report_date,
+            results=completeness + freshness + consistency + anomalies,
+        )
+        logger.info(
+            "quality.full_check_complete",
+            date=str(report_date),
+            passed=report.n_passed,
+            warnings=report.n_warnings,
+            critical=report.n_critical,
+        )
+        return report
+
+    async def persist_report(self, report: QualityReport) -> None:
+        """Write each QualityResult to the data_quality_reports table."""
+        for r in report.results:
+            row = DQRModel(
+                symbol=r.symbol,
+                report_date=report.report_date,
+                check_type=r.check_type,
+                passed=r.passed,
+                severity=r.severity,
+                detail=r.detail,
+            )
+            self._session.add(row)
+        await self._session.commit()
+        logger.info(
+            "quality.report_persisted",
+            date=str(report.report_date),
+            rows=len(report.results),
+        )

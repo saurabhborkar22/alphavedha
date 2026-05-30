@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -91,3 +91,66 @@ async def test_check_completeness_passes_at_90pct() -> None:
     results = await checker.check_completeness(date(2026, 5, 30))
     assert results[0].passed is True
     assert results[0].severity == "ok"
+
+
+@pytest.mark.asyncio
+async def test_check_consistency_detects_ohlcv_violation() -> None:
+    mock_row = MagicMock()
+    mock_row.symbol = "BAD.NS"
+    mock_row.date = date(2026, 5, 30)
+    session = _make_session(None)
+    session.execute.return_value.fetchall.return_value = [mock_row]
+    checker = QualityChecker(session=session, universe_size=50)
+    results = await checker.check_consistency(date(2026, 5, 30))
+    failed = [r for r in results if not r.passed]
+    assert len(failed) >= 1
+    assert "BAD.NS" in failed[0].detail
+
+
+@pytest.mark.asyncio
+async def test_check_consistency_passes_when_no_violations() -> None:
+    session = _make_session(None)
+    session.execute.return_value.fetchall.return_value = []
+    checker = QualityChecker(session=session, universe_size=50)
+    results = await checker.check_consistency(date(2026, 5, 30))
+    assert results[0].passed is True
+    assert results[0].severity == "ok"
+
+
+@pytest.mark.asyncio
+async def test_check_anomalies_flags_zero_volume() -> None:
+    mock_row = MagicMock()
+    mock_row.symbol = "ZERO.NS"
+    mock_row.date = date(2026, 5, 30)
+    session = _make_session(None)
+    session.execute.return_value.fetchall.return_value = [mock_row]
+    checker = QualityChecker(session=session, universe_size=50)
+    results = await checker.check_anomalies(date(2026, 5, 30))
+    assert any("ZERO.NS" in r.detail for r in results if not r.passed)
+
+
+@pytest.mark.asyncio
+async def test_run_full_check_aggregates_all() -> None:
+    session = _make_session(48)
+    session.execute.return_value.fetchall.return_value = []
+    checker = QualityChecker(session=session, universe_size=50)
+    with patch.object(
+        checker, "check_freshness", return_value=[QualityResult("freshness", True, "ok", "fresh")]
+    ):
+        report = await checker.run_full_check(date(2026, 5, 30))
+    assert isinstance(report, QualityReport)
+    assert len(report.results) >= 3  # completeness + freshness + consistency + anomalies
+
+
+@pytest.mark.asyncio
+async def test_persist_report_writes_rows() -> None:
+    session = AsyncMock()
+    results = [
+        QualityResult("completeness", True, "ok", "ok"),
+        QualityResult("freshness", False, "critical", "stale"),
+    ]
+    report = QualityReport(report_date=date(2026, 5, 30), results=results)
+    checker = QualityChecker(session=session, universe_size=50)
+    await checker.persist_report(report)
+    assert session.add.call_count == 2
+    assert session.commit.called
