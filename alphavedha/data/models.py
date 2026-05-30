@@ -328,7 +328,7 @@ class CorporateAnnouncement(Base):
 
 
 class IntradayOHLCV(Base):
-    """Live intraday OHLCV snapshot updated by the polling loop (TimescaleDB hypertable)."""
+    """Live intraday OHLCV snapshot — one row per symbol per trading day, updated in-place by the polling loop."""
 
     __tablename__ = "intraday_ohlcv"
 
@@ -341,3 +341,4 @@ class IntradayOHLCV(Base):
     volume: Mapped[int] = mapped_column(Integer, nullable=False)
     tick_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
