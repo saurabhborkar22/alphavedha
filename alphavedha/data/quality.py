@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import structlog
 from sqlalchemy import func, select
@@ -63,11 +63,18 @@ class QualityChecker:
         passed = pct >= COMPLETENESS_WARNING_PCT
         severity = "critical" if pct < COMPLETENESS_CRITICAL_PCT else "warning"
         detail = f"{count}/{self._universe_size} symbols have data on {report_date} ({pct:.1%})"
+        logger.info(
+            "quality.completeness_checked",
+            date=str(report_date),
+            count=count,
+            pct=f"{pct:.1%}",
+            passed=passed,
+        )
         return [
             QualityResult(
                 check_type="completeness",
                 passed=passed,
-                severity=severity if not passed else "warning",
+                severity=severity if not passed else "ok",
                 detail=detail,
             )
         ]
@@ -76,8 +83,9 @@ class QualityChecker:
         """Check when the most recent DailyOHLCV record was created."""
         result = await self._session.execute(select(func.max(DailyOHLCV.created_at)))
         last_update: datetime | None = result.scalar()
-        now_ist = datetime.now(IST).replace(tzinfo=None)
+        now_utc = datetime.now(UTC).replace(tzinfo=None)
         if last_update is None:
+            logger.warning("quality.freshness_no_data")
             return [
                 QualityResult(
                     check_type="freshness",
@@ -86,15 +94,16 @@ class QualityChecker:
                     detail="No OHLCV data found at all",
                 )
             ]
-        age_hours = (now_ist - last_update).total_seconds() / 3600
+        age_hours = (now_utc - last_update).total_seconds() / 3600
         passed = age_hours <= FRESHNESS_CRITICAL_HOURS
         severity = "critical" if age_hours > FRESHNESS_CRITICAL_HOURS else "warning"
         detail = f"Last OHLCV update {age_hours:.1f}h ago ({last_update.isoformat()})"
+        logger.info("quality.freshness_checked", age_hours=f"{age_hours:.1f}", passed=passed)
         return [
             QualityResult(
                 check_type="freshness",
                 passed=passed,
-                severity=severity if not passed else "warning",
+                severity=severity if not passed else "ok",
                 detail=detail,
             )
         ]

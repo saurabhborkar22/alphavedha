@@ -83,3 +83,11 @@ async def test_check_freshness_no_data_is_critical() -> None:
     assert results[0].passed is False
     assert results[0].severity == "critical"
     assert "No OHLCV data" in results[0].detail
+
+
+@pytest.mark.asyncio
+async def test_check_completeness_passes_at_90pct() -> None:
+    checker = QualityChecker(session=_make_session(45), universe_size=50)  # 90%
+    results = await checker.check_completeness(date(2026, 5, 30))
+    assert results[0].passed is True
+    assert results[0].severity == "ok"
