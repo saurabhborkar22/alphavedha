@@ -279,6 +279,46 @@ def data_earnings_refresh(
             console.print(f"  [dim]{sym}: {err}[/dim]")
 
 
+@data_app.command("live-status")
+def data_live_status(
+    symbols: list[str] = typer.Argument(None, help="Symbols to show (default: all today)"),
+) -> None:
+    """Show current intraday OHLCV prices from DB."""
+    asyncio.run(_run_live_status(symbols or []))
+
+
+async def _run_live_status(symbols: list[str]) -> None:
+    import datetime as dt_module
+
+    from sqlalchemy import select
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import IntradayOHLCV
+
+    today = dt_module.date.today()
+    factory = get_session_factory()
+    async with factory() as session:
+        stmt = select(IntradayOHLCV).where(IntradayOHLCV.date == today)
+        if symbols:
+            stmt = stmt.where(IntradayOHLCV.symbol.in_(symbols))
+        rows = (await session.execute(stmt)).scalars().all()
+
+    if not rows:
+        typer.echo(f"No intraday data for {today}. Is the market open?")
+        return
+
+    header = f"{'Symbol':<12} {'Open':>8} {'High':>8} {'Low':>8} {'Last':>8} {'Volume':>12} {'Ticks':>6}  Updated"
+    typer.echo(f"Intraday OHLCV -- {today}")
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    for row in sorted(rows, key=lambda r: r.symbol):
+        typer.echo(
+            f"{row.symbol:<12} {row.open:>8.2f} {row.high:>8.2f} {row.low:>8.2f} "
+            f"{row.last_price:>8.2f} {row.volume:>12,} {row.tick_count:>6}  "
+            f"{row.last_updated.strftime('%H:%M:%S')}"
+        )
+
+
 @data_app.command("fetch-bse")
 def data_fetch_bse(
     symbols: list[str] = typer.Argument(..., help="NSE symbols e.g. TCS.NS INFY.NS"),

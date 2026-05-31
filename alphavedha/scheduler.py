@@ -33,6 +33,7 @@ QUALITY_CHECK_TIME = "15:50"
 BSE_INGESTION_DAY = "sunday"
 BSE_INGESTION_TIME = "21:00"
 TRENDS_INGESTION_TIME = "21:30"
+INTRADAY_POLL_INTERVAL_MINUTES = 2
 REBALANCE_MONTHS = {3, 9}
 
 
@@ -58,6 +59,7 @@ class SchedulerState:
     last_quality_check: datetime | None = None
     last_bse_ingestion: datetime | None = None
     last_trends_ingestion: datetime | None = None
+    last_intraday_poll: datetime | None = None
 
 
 def _run_async(coro: object) -> object:
@@ -345,11 +347,66 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_intraday_poll(self) -> JobResult:
+        """Poll live prices every 2 minutes during market hours."""
+        result = JobResult(job_name="intraday_poll", started_at=_now_ist())
+
+        from alphavedha.data.live_feed import is_market_open
+
+        if not is_market_open():
+            result.success = True
+            result.finished_at = _now_ist()
+            return result
+
+        logger.info("scheduler_job_start", job="intraday_poll")
+
+        try:
+            import yaml
+
+            from alphavedha.data.database import get_session_factory
+            from alphavedha.data.live_feed import LiveDataPoller
+
+            stocks_path = Path("configs/stocks.yaml")
+            if not stocks_path.exists():
+                result.error = "configs/stocks.yaml not found"
+                result.finished_at = _now_ist()
+                self._record_job(result)
+                return result
+
+            with stocks_path.open() as f:
+                stocks_cfg = yaml.safe_load(f)
+
+            symbols: list[str] = []
+            for sector_symbols in stocks_cfg.get("sectors", {}).values():
+                symbols.extend(sector_symbols)
+
+            poller = LiveDataPoller(symbols=symbols, session_factory=get_session_factory())
+            poll_results = _run_async(poller.poll_once())
+
+            successes = sum(1 for r in poll_results if r.success)
+            result.symbols_processed = successes
+            result.success = True
+            self._state.last_intraday_poll = _now_ist()
+            logger.info(
+                "scheduler_job_complete",
+                job="intraday_poll",
+                symbols=len(symbols),
+                successes=successes,
+            )
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="intraday_poll", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def setup_schedule(self) -> None:
         """Register all jobs with the schedule library."""
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
+        schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
 
         getattr(schedule.every(), BSE_INGESTION_DAY).at(BSE_INGESTION_TIME).do(
             self.run_bse_ingestion,
