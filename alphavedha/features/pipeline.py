@@ -14,6 +14,7 @@ import pandas as pd
 import structlog
 
 from alphavedha.features.calendar_features import compute_calendar_features
+from alphavedha.features.corporate_events import compute_corporate_event_features
 from alphavedha.features.derivatives import compute_derivatives_features
 from alphavedha.features.fundamental_features import compute_fundamental_features
 from alphavedha.features.macro import compute_macro_features
@@ -21,10 +22,11 @@ from alphavedha.features.microstructure import compute_microstructure_features
 from alphavedha.features.returns import compute_return_features
 from alphavedha.features.sentiment import compute_sentiment_features
 from alphavedha.features.technical import compute_technical_features
+from alphavedha.features.trends_features import compute_trends_features
 
 logger = structlog.get_logger(__name__)
 
-EXPECTED_FEATURE_COUNT = 159
+EXPECTED_FEATURE_COUNT = 164
 
 
 @dataclass
@@ -52,6 +54,8 @@ def compute_all_features(
     insider_df: pd.DataFrame | None = None,
     alt_data_df: pd.DataFrame | None = None,
     frac_diff_col: str | None = None,
+    announcements_df: pd.DataFrame | None = None,
+    trends_df: pd.DataFrame | None = None,
 ) -> FeatureResult:
     """Compute all features for a single symbol.
 
@@ -64,6 +68,8 @@ def compute_all_features(
     6. derivatives (20) — needs deriv_df
     7. sentiment (8) — needs daily_articles
     8. fundamental (9) — needs earnings_df + promoter_df + insider_df
+    9. corporate_events (3) — needs announcements_df
+    10. trends (2) — needs trends_df
     """
     start_time = time.perf_counter()
     warnings: list[str] = []
@@ -76,9 +82,22 @@ def compute_all_features(
     deriv = compute_derivatives_features(ohlcv_df, deriv_df)
     sentiment = compute_sentiment_features(ohlcv_df, daily_articles)
     fundamental = compute_fundamental_features(ohlcv_df, earnings_df, promoter_df, insider_df)
+    corp_events = _build_corp_event_df(symbol, ohlcv_df, announcements_df)
+    trends = _build_trends_df(symbol, ohlcv_df, trends_df)
 
     all_features = pd.concat(
-        [technical, returns, calendar, micro, macro, deriv, sentiment, fundamental],
+        [
+            technical,
+            returns,
+            calendar,
+            micro,
+            macro,
+            deriv,
+            sentiment,
+            fundamental,
+            corp_events,
+            trends,
+        ],
         axis=1,
     )
 
@@ -119,3 +138,33 @@ def compute_all_features(
         computation_time_ms=elapsed_ms,
         warnings=warnings,
     )
+
+
+def _build_corp_event_df(
+    symbol: str,
+    ohlcv_df: pd.DataFrame,
+    announcements_df: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Iterate over OHLCV dates and compute corporate event features per row."""
+    result = pd.DataFrame(index=ohlcv_df.index)
+    for idx in ohlcv_df.index:
+        as_of = pd.Timestamp(idx).date()
+        feats = compute_corporate_event_features(symbol, as_of, announcements_df)
+        for k, v in feats.items():
+            result.loc[idx, k] = v
+    return result
+
+
+def _build_trends_df(
+    symbol: str,
+    ohlcv_df: pd.DataFrame,
+    trends_df: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Iterate over OHLCV dates and compute trends features per row."""
+    result = pd.DataFrame(index=ohlcv_df.index)
+    for idx in ohlcv_df.index:
+        as_of = pd.Timestamp(idx).date()
+        feats = compute_trends_features(symbol, as_of, trends_df)
+        for k, v in feats.items():
+            result.loc[idx, k] = v
+    return result

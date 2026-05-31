@@ -199,6 +199,21 @@ fundamental:
     - {name: fund_promoter_buying_30d, source: sebi_sast, unit: binary}
     - {name: fund_insider_buy_sell_ratio, source: sebi_sast, unit: ratio_0_1}
 
+corporate_events:
+  count: 3
+  module: alphavedha.features.corporate_events
+  features:
+    - {name: corp_days_to_next_board, source: bse_corporate_announcements, unit: days}
+    - {name: corp_days_since_dividend, source: bse_corporate_announcements, unit: days}
+    - {name: corp_event_this_week, source: bse_corporate_announcements, unit: binary}
+
+trends:
+  count: 2
+  module: alphavedha.features.trends_features
+  features:
+    - {name: trends_sector_7d, window: 7, source: google_trends, unit: ratio_0_100}
+    - {name: trends_sector_change, window: 7, source: google_trends, unit: diff}
+
 # Stub summary: 16 features return NaN/hardcoded values.
 # These need data providers that don't exist yet:
 #   - NSE participant-wise OI (4 deriv features)
