@@ -21,6 +21,7 @@ dependencies = [
     "numpy>=1.26",
     "httpx>=0.27",
     "aiohttp>=3.9",
+    "pytrends>=4.9",
 
     # Database
     "sqlalchemy>=2.0",

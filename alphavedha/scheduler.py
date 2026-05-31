@@ -29,6 +29,11 @@ RETRAIN_DAY = "saturday"
 RETRAIN_TIME = "22:00"
 REBALANCE_CHECK_DAY = "monday"
 REBALANCE_CHECK_TIME = "07:00"
+QUALITY_CHECK_TIME = "15:50"
+BSE_INGESTION_DAY = "sunday"
+BSE_INGESTION_TIME = "21:00"
+TRENDS_INGESTION_TIME = "21:30"
+INTRADAY_POLL_INTERVAL_MINUTES = 2
 REBALANCE_MONTHS = {3, 9}
 
 
@@ -51,6 +56,10 @@ class SchedulerState:
     last_drift_check: datetime | None = None
     last_retrain: datetime | None = None
     last_rebalance_check: datetime | None = None
+    last_quality_check: datetime | None = None
+    last_bse_ingestion: datetime | None = None
+    last_trends_ingestion: datetime | None = None
+    last_intraday_poll: datetime | None = None
 
 
 def _run_async(coro: object) -> object:
@@ -260,10 +269,151 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_bse_ingestion(self) -> JobResult:
+        """Weekly BSE corporate announcements ingestion — runs Sunday night."""
+        result = JobResult(job_name="bse_ingestion", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="bse_ingestion")
+
+        try:
+            from datetime import date, timedelta
+
+            import yaml
+
+            from alphavedha.data.database import get_session_factory
+            from alphavedha.data.ingestion import ingest_bse_announcements
+
+            stocks_path = Path("configs/stocks.yaml")
+            if not stocks_path.exists():
+                result.error = "configs/stocks.yaml not found"
+                result.finished_at = _now_ist()
+                self._record_job(result)
+                return result
+
+            with stocks_path.open() as f:
+                stocks_cfg = yaml.safe_load(f)
+
+            symbols: list[str] = []
+            for sector_symbols in stocks_cfg.get("sectors", {}).values():
+                symbols.extend(sector_symbols)
+
+            today = date.today()
+            start = today - timedelta(days=7)
+
+            async def _bse_task() -> int:
+                factory = get_session_factory()
+                async with factory() as session:
+                    return await ingest_bse_announcements(symbols, start, today, session)
+
+            rows = _run_async(_bse_task())
+            result.symbols_processed = len(symbols)
+            result.success = True
+            self._state.last_bse_ingestion = _now_ist()
+            logger.info(
+                "scheduler_job_complete",
+                job="bse_ingestion",
+                symbols=len(symbols),
+                rows_upserted=rows,
+            )
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="bse_ingestion", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_trends_ingestion(self) -> JobResult:
+        """Weekly Google Trends ingestion — runs Sunday night after BSE job."""
+        result = JobResult(job_name="trends_ingestion", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="trends_ingestion")
+
+        try:
+            from alphavedha.data.ingestion import ingest_trends
+
+            sector_data = _run_async(ingest_trends())
+            result.symbols_processed = len(sector_data)
+            result.success = True
+            self._state.last_trends_ingestion = _now_ist()
+            logger.info(
+                "scheduler_job_complete",
+                job="trends_ingestion",
+                sectors_fetched=len(sector_data),
+            )
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="trends_ingestion", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_intraday_poll(self) -> JobResult:
+        """Poll live prices every 2 minutes during market hours."""
+        result = JobResult(job_name="intraday_poll", started_at=_now_ist())
+
+        from alphavedha.data.live_feed import is_market_open
+
+        if not is_market_open():
+            result.success = True
+            result.finished_at = _now_ist()
+            return result
+
+        logger.info("scheduler_job_start", job="intraday_poll")
+
+        try:
+            import yaml
+
+            from alphavedha.data.database import get_session_factory
+            from alphavedha.data.live_feed import LiveDataPoller
+
+            stocks_path = Path("configs/stocks.yaml")
+            if not stocks_path.exists():
+                result.error = "configs/stocks.yaml not found"
+                result.finished_at = _now_ist()
+                self._record_job(result)
+                return result
+
+            with stocks_path.open() as f:
+                stocks_cfg = yaml.safe_load(f)
+
+            symbols: list[str] = []
+            for sector_symbols in stocks_cfg.get("sectors", {}).values():
+                symbols.extend(sector_symbols)
+
+            poller = LiveDataPoller(symbols=symbols, session_factory=get_session_factory())
+            poll_results = _run_async(poller.poll_once())
+
+            successes = sum(1 for r in poll_results if r.success)
+            result.symbols_processed = successes
+            result.success = True
+            self._state.last_intraday_poll = _now_ist()
+            logger.info(
+                "scheduler_job_complete",
+                job="intraday_poll",
+                symbols=len(symbols),
+                successes=successes,
+            )
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="intraday_poll", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def setup_schedule(self) -> None:
         """Register all jobs with the schedule library."""
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
+        schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
+        schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
+
+        getattr(schedule.every(), BSE_INGESTION_DAY).at(BSE_INGESTION_TIME).do(
+            self.run_bse_ingestion,
+        )
+        getattr(schedule.every(), BSE_INGESTION_DAY).at(TRENDS_INGESTION_TIME).do(
+            self.run_trends_ingestion,
+        )
 
         getattr(schedule.every(), DRIFT_CHECK_DAY).at(DRIFT_CHECK_TIME).do(
             self.run_drift_check,
@@ -285,6 +435,41 @@ class AlphaVedhaScheduler:
             retrain_day=RETRAIN_DAY,
             rebalance_day=REBALANCE_CHECK_DAY,
         )
+
+    def run_quality_check(self) -> JobResult:
+        """Nightly data quality check — runs after market close data is available."""
+        result = JobResult(job_name="quality_check", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="quality_check")
+        try:
+            from datetime import date
+
+            from alphavedha.data.database import get_session_factory
+            from alphavedha.data.quality import QualityChecker
+            from alphavedha.monitoring.alerts import EmailAlerter
+
+            today = date.today()
+
+            async def _task() -> None:
+                factory = get_session_factory()
+                async with factory() as session:
+                    checker = QualityChecker(session=session)
+                    report = await checker.run_full_check(today)
+                    await checker.persist_report(report)
+                    if report.n_critical > 0:
+                        EmailAlerter().data_quality_failed(report)
+
+            _run_async(_task())
+            result.success = True
+            self._state.last_quality_check = _now_ist()
+            logger.info("scheduler_job_complete", job="quality_check")
+        except Exception as exc:
+            result.success = False
+            result.error = str(exc)
+            logger.error("scheduler_job_failed", job="quality_check", error=str(exc))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
 
     def _maybe_monthly_retrain(self) -> JobResult | None:
         """Only run retrain on the first Saturday of the month."""

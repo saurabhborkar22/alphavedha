@@ -268,3 +268,77 @@ class Feature(Base):
     feature_version: Mapped[str] = mapped_column(String(20), primary_key=True)
     feature_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+
+class DataLineage(Base):
+    """Tracks data provenance: which provider, when fetched, how many rows."""
+
+    __tablename__ = "data_lineage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    table_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (Index("ix_data_lineage_symbol_date", "symbol", "date"),)
+
+
+class DataQualityReport(Base):
+    """Results of automated data quality checks (completeness, freshness, consistency)."""
+
+    __tablename__ = "data_quality_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    report_date: Mapped[date] = mapped_column(Date, nullable=False)
+    check_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    severity: Mapped[str] = mapped_column(String(10), nullable=False)
+    detail: Mapped[str] = mapped_column(String(1000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        Index("ix_dqr_date", "report_date"),
+        Index("ix_dqr_symbol", "symbol"),
+    )
+
+
+class CorporateAnnouncement(Base):
+    """BSE/NSE corporate announcements: dividends, AGMs, board meetings, results."""
+
+    __tablename__ = "corporate_announcements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    announced_date: Mapped[date] = mapped_column(Date, nullable=False)
+    ex_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "announced_date", "event_type", name="uq_corp_announcement"),
+        Index("ix_corp_ann_symbol", "symbol"),
+        Index("ix_corp_ann_date", "announced_date"),
+    )
+
+
+class IntradayOHLCV(Base):
+    """Live intraday OHLCV snapshot — one row per symbol per trading day, updated in-place by the polling loop."""
+
+    __tablename__ = "intraday_ohlcv"
+
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
+    open: Mapped[float] = mapped_column(Float, nullable=False)
+    high: Mapped[float] = mapped_column(Float, nullable=False)
+    low: Mapped[float] = mapped_column(Float, nullable=False)
+    last_price: Mapped[float] = mapped_column(Float, nullable=False)
+    volume: Mapped[int] = mapped_column(Integer, nullable=False)
+    tick_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")

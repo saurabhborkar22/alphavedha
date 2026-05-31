@@ -7,11 +7,15 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
+import pandas as pd
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphavedha.data.preprocessing.pipeline import run_pipeline
+from alphavedha.data.providers.bse_provider import BSEProvider
+from alphavedha.data.providers.trends_provider import GoogleTrendsProvider
 from alphavedha.data.providers.yfinance_provider import YFinanceProvider
 from alphavedha.data.store import store_derivatives, store_earnings, store_fii_dii, store_ohlcv
 from alphavedha.data.universe import (
@@ -20,6 +24,31 @@ from alphavedha.data.universe import (
 )
 
 logger = structlog.get_logger(__name__)
+
+
+async def _write_lineage(
+    session: AsyncSession,
+    *,
+    symbol: str | None,
+    record_date: date,
+    table_name: str,
+    provider: str,
+    fetched_at: datetime,
+    row_count: int,
+) -> None:
+    """Record data provenance for auditing."""
+    from alphavedha.data.models import DataLineage
+
+    row = DataLineage(
+        symbol=symbol,
+        date=record_date,
+        table_name=table_name,
+        provider=provider,
+        fetched_at=fetched_at,
+        row_count=row_count,
+    )
+    session.add(row)
+    await session.commit()
 
 
 @dataclass
@@ -265,3 +294,59 @@ async def ingest_earnings(
         quarters=result.total_quarters,
     )
     return result
+
+
+async def ingest_bse_announcements(
+    symbols: list[str],
+    start: date,
+    end: date,
+    session: AsyncSession,
+) -> int:
+    """Fetch BSE corporate announcements for symbols and upsert into DB.
+
+    Returns total number of announcement records processed.
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from alphavedha.data.models import CorporateAnnouncement
+
+    provider = BSEProvider()
+    bulk = await provider.fetch_bulk(symbols, start, end)
+
+    total = 0
+    for sym_records in bulk.values():
+        for rec in sym_records:
+            stmt = (
+                pg_insert(CorporateAnnouncement)
+                .values(
+                    symbol=rec.symbol,
+                    announced_date=rec.announced_date,
+                    ex_date=rec.ex_date,
+                    event_type=rec.event_type,
+                    description=rec.description,
+                )
+                .on_conflict_do_nothing(constraint="uq_corp_announcement")
+            )
+            await session.execute(stmt)
+            total += 1
+    await session.commit()
+    logger.info(
+        "ingest_bse_announcements.complete",
+        total=total,
+        symbols=len(symbols),
+        start=str(start),
+        end=str(end),
+    )
+    return total
+
+
+async def ingest_trends() -> dict[str, pd.DataFrame]:
+    """Fetch Google Trends for all 5 market sectors.
+
+    Returns dict mapping sector name to DataFrame of interest-over-time data.
+    This data is held in memory and not persisted to DB (used directly for feature computation).
+    """
+    provider = GoogleTrendsProvider()
+    trends = await provider.fetch_all_sectors()
+    logger.info("ingest_trends.complete", sectors=list(trends.keys()))
+    return trends

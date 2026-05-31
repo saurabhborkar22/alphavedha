@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import date
 
 import structlog
 import typer
@@ -276,6 +277,133 @@ def data_earnings_refresh(
         console.print(f"[yellow]Errors ({len(result.errors)}):[/yellow]")
         for sym, err in list(result.errors.items())[:5]:
             console.print(f"  [dim]{sym}: {err}[/dim]")
+
+
+@data_app.command("live-status")
+def data_live_status(
+    symbols: list[str] = typer.Argument(None, help="Symbols to show (default: all today)"),
+) -> None:
+    """Show current intraday OHLCV prices from DB."""
+    asyncio.run(_run_live_status(symbols or []))
+
+
+async def _run_live_status(symbols: list[str]) -> None:
+    import datetime as dt_module
+
+    from sqlalchemy import select
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import IntradayOHLCV
+
+    today = dt_module.date.today()
+    factory = get_session_factory()
+    async with factory() as session:
+        stmt = select(IntradayOHLCV).where(IntradayOHLCV.date == today)
+        if symbols:
+            stmt = stmt.where(IntradayOHLCV.symbol.in_(symbols))
+        rows = (await session.execute(stmt)).scalars().all()
+
+    if not rows:
+        typer.echo(f"No intraday data for {today}. Is the market open?")
+        return
+
+    header = f"{'Symbol':<12} {'Open':>8} {'High':>8} {'Low':>8} {'Last':>8} {'Volume':>12} {'Ticks':>6}  Updated"
+    typer.echo(f"Intraday OHLCV -- {today}")
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    for row in sorted(rows, key=lambda r: r.symbol):
+        typer.echo(
+            f"{row.symbol:<12} {row.open:>8.2f} {row.high:>8.2f} {row.low:>8.2f} "
+            f"{row.last_price:>8.2f} {row.volume:>12,} {row.tick_count:>6}  "
+            f"{row.last_updated.strftime('%H:%M:%S')}"
+        )
+
+
+@data_app.command("fetch-bse")
+def data_fetch_bse(
+    symbols: list[str] = typer.Argument(..., help="NSE symbols e.g. TCS.NS INFY.NS"),
+    days: int = typer.Option(30, "--days", "-d", help="How many days back to fetch"),
+) -> None:
+    """Fetch BSE corporate announcements for given symbols and store in DB."""
+    from datetime import date as date_type
+    from datetime import timedelta
+
+    end = date_type.today()
+    start = end - timedelta(days=days)
+    asyncio.run(_run_fetch_bse(symbols, start, end))
+
+
+async def _run_fetch_bse(symbols: list[str], start: date, end: date) -> None:
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.ingestion import ingest_bse_announcements
+
+    factory = get_session_factory()
+    async with factory() as session:
+        count = await ingest_bse_announcements(symbols, start, end, session=session)
+    typer.echo(f"Fetched {count} announcements for {len(symbols)} symbol(s).")
+
+
+@data_app.command("quality-check")
+def data_quality_check(
+    check_date: str = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Date to check (YYYY-MM-DD). Defaults to today.",
+    ),
+    demo: bool = typer.Option(False, "--demo", help="Use demo DB connection"),
+) -> None:
+    """Run data quality checks and print report."""
+    from datetime import date as date_type
+
+    run_date = date_type.fromisoformat(check_date) if check_date else date_type.today()
+    asyncio.run(_run_quality_check(run_date, demo=demo))
+
+
+async def _run_quality_check(run_date: object, demo: bool) -> None:
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.quality import QualityChecker
+
+    # demo flag has no effect on quality checks — always connects to real DB
+    factory = get_session_factory()
+    async with factory() as session:
+        checker = QualityChecker(session=session)
+        report = await checker.run_full_check(run_date)
+        await checker.persist_report(report)
+
+    typer.echo(f"Quality check for {run_date}")
+    typer.echo(f"  Passed:   {report.n_passed}")
+    typer.echo(f"  Warnings: {report.n_warnings}")
+    typer.echo(f"  Critical: {report.n_critical}")
+    if report.n_critical > 0:
+        typer.secho("CRITICAL failures detected!", fg=typer.colors.RED)
+        for r in report.results:
+            if not r.passed and r.severity == "critical":
+                typer.echo(f"    [{r.check_type}] {r.detail}")
+
+
+@data_app.command("fetch-trends")
+def data_fetch_trends(
+    demo: bool = typer.Option(False, "--demo", help="Dry run (no network calls)"),
+) -> None:
+    """Fetch Google Trends for all 5 market sectors and display summary."""
+    asyncio.run(_run_fetch_trends(demo=demo))
+
+
+async def _run_fetch_trends(demo: bool) -> None:
+    from alphavedha.data.ingestion import ingest_trends
+
+    if demo:
+        typer.echo("Demo mode: skipping Google Trends fetch.")
+        return
+
+    trends = await ingest_trends()
+    for sector, df in trends.items():
+        if df.empty:
+            typer.echo(f"  {sector}: no data")
+        else:
+            latest = float(df.iloc[-1].mean()) if not df.empty else 0.0
+            typer.echo(f"  {sector}: {len(df)} rows, latest avg = {latest:.1f}")
 
 
 app.add_typer(data_app, name="data")
