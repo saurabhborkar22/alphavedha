@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import date
 
 import structlog
 import typer
@@ -292,7 +293,7 @@ def data_fetch_bse(
     asyncio.run(_run_fetch_bse(symbols, start, end))
 
 
-async def _run_fetch_bse(symbols: list[str], start: object, end: object) -> None:
+async def _run_fetch_bse(symbols: list[str], start: date, end: date) -> None:
     from alphavedha.data.database import get_session_factory
     from alphavedha.data.ingestion import ingest_bse_announcements
 
