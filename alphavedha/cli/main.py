@@ -342,6 +342,30 @@ async def _run_quality_check(run_date: object, demo: bool) -> None:
                 typer.echo(f"    [{r.check_type}] {r.detail}")
 
 
+@data_app.command("fetch-trends")
+def data_fetch_trends(
+    demo: bool = typer.Option(False, "--demo", help="Dry run (no network calls)"),
+) -> None:
+    """Fetch Google Trends for all 5 market sectors and display summary."""
+    asyncio.run(_run_fetch_trends(demo=demo))
+
+
+async def _run_fetch_trends(demo: bool) -> None:
+    from alphavedha.data.ingestion import ingest_trends
+
+    if demo:
+        typer.echo("Demo mode: skipping Google Trends fetch.")
+        return
+
+    trends = await ingest_trends()
+    for sector, df in trends.items():
+        if df.empty:
+            typer.echo(f"  {sector}: no data")
+        else:
+            latest = float(df.iloc[-1].mean()) if not df.empty else 0.0
+            typer.echo(f"  {sector}: {len(df)} rows, latest avg = {latest:.1f}")
+
+
 app.add_typer(data_app, name="data")
 
 

@@ -9,11 +9,13 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
+import pandas as pd
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphavedha.data.preprocessing.pipeline import run_pipeline
 from alphavedha.data.providers.bse_provider import BSEProvider
+from alphavedha.data.providers.trends_provider import GoogleTrendsProvider
 from alphavedha.data.providers.yfinance_provider import YFinanceProvider
 from alphavedha.data.store import store_derivatives, store_earnings, store_fii_dii, store_ohlcv
 from alphavedha.data.universe import (
@@ -336,3 +338,15 @@ async def ingest_bse_announcements(
         end=str(end),
     )
     return total
+
+
+async def ingest_trends() -> dict[str, pd.DataFrame]:
+    """Fetch Google Trends for all 5 market sectors.
+
+    Returns dict mapping sector name to DataFrame of interest-over-time data.
+    This data is held in memory and not persisted to DB (used directly for feature computation).
+    """
+    provider = GoogleTrendsProvider()
+    trends = await provider.fetch_all_sectors()
+    logger.info("ingest_trends.complete", sectors=list(trends.keys()))
+    return trends
