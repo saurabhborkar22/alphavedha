@@ -278,6 +278,30 @@ def data_earnings_refresh(
             console.print(f"  [dim]{sym}: {err}[/dim]")
 
 
+@data_app.command("fetch-bse")
+def data_fetch_bse(
+    symbols: list[str] = typer.Argument(..., help="NSE symbols e.g. TCS.NS INFY.NS"),
+    days: int = typer.Option(30, "--days", "-d", help="How many days back to fetch"),
+) -> None:
+    """Fetch BSE corporate announcements for given symbols and store in DB."""
+    from datetime import date as date_type
+    from datetime import timedelta
+
+    end = date_type.today()
+    start = end - timedelta(days=days)
+    asyncio.run(_run_fetch_bse(symbols, start, end))
+
+
+async def _run_fetch_bse(symbols: list[str], start: object, end: object) -> None:
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.ingestion import ingest_bse_announcements
+
+    factory = get_session_factory()
+    async with factory() as session:
+        count = await ingest_bse_announcements(symbols, start, end, session=session)
+    typer.echo(f"Fetched {count} announcements for {len(symbols)} symbol(s).")
+
+
 @data_app.command("quality-check")
 def data_quality_check(
     check_date: str = typer.Option(

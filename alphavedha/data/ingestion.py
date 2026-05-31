@@ -13,6 +13,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alphavedha.data.preprocessing.pipeline import run_pipeline
+from alphavedha.data.providers.bse_provider import BSEProvider
 from alphavedha.data.providers.yfinance_provider import YFinanceProvider
 from alphavedha.data.store import store_derivatives, store_earnings, store_fii_dii, store_ohlcv
 from alphavedha.data.universe import (
@@ -291,3 +292,47 @@ async def ingest_earnings(
         quarters=result.total_quarters,
     )
     return result
+
+
+async def ingest_bse_announcements(
+    symbols: list[str],
+    start: date,
+    end: date,
+    session: AsyncSession,
+) -> int:
+    """Fetch BSE corporate announcements for symbols and upsert into DB.
+
+    Returns total number of announcement records processed.
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from alphavedha.data.models import CorporateAnnouncement
+
+    provider = BSEProvider()
+    bulk = await provider.fetch_bulk(symbols, start, end)
+
+    total = 0
+    for sym_records in bulk.values():
+        for rec in sym_records:
+            stmt = (
+                pg_insert(CorporateAnnouncement)
+                .values(
+                    symbol=rec.symbol,
+                    announced_date=rec.announced_date,
+                    ex_date=rec.ex_date,
+                    event_type=rec.event_type,
+                    description=rec.description,
+                )
+                .on_conflict_do_nothing(constraint="uq_corp_announcement")
+            )
+            await session.execute(stmt)
+            total += 1
+    await session.commit()
+    logger.info(
+        "ingest_bse_announcements.complete",
+        total=total,
+        symbols=len(symbols),
+        start=str(start),
+        end=str(end),
+    )
+    return total
