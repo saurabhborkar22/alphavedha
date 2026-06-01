@@ -145,11 +145,11 @@ def create_app(demo: bool | None = None) -> FastAPI:
         )
 
     app.include_router(health.router)
+    app.include_router(ui_support.router)  # registered first so demo scan/intraday take precedence
     app.include_router(predictions.router)
     app.include_router(paper_trading.router)
     app.include_router(dashboard.router)
     app.include_router(public.router)
-    app.include_router(ui_support.router)
 
     Instrumentator(
         should_group_status_codes=True,

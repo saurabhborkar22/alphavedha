@@ -166,6 +166,34 @@ class PipelineStatusItem(BaseModel):
     coverage: float
 
 
+class ScanStockItem(BaseModel):
+    symbol: str
+    name: str
+    price: float
+    change_pct: float
+    sector: str
+    cap: str
+    direction: str
+    confidence: float
+    regime: str
+    t7: dict[str, float]
+    t15: dict[str, float]
+    t30: dict[str, float]
+    sparkline: list[float]
+    composite_score: float
+    meta_confidence: float
+    magnitude: float
+    price_targets: dict[str, float]
+    top_feature: str
+    ai_insight: str
+
+
+class ScanResponseModel(BaseModel):
+    buy_candidates: list[ScanStockItem]
+    sell_candidates: list[ScanStockItem]
+    excluded: list[str]
+
+
 class StockSearchResult(BaseModel):
     symbol: str
     name: str
@@ -198,6 +226,53 @@ NIFTY_50: list[tuple[str, str, str, str]] = [
     ("NTPC", "NTPC Limited", "Energy", "Large"),
 ]
 
+NIFTY_50_MID: list[tuple[str, str, str, str]] = [
+    ("PIDILITIND", "Pidilite Industries", "FMCG", "Mid"),
+    ("MUTHOOTFIN", "Muthoot Finance", "Finance", "Mid"),
+    ("VOLTAS", "Voltas", "Infrastructure", "Mid"),
+    ("IDEA", "Vodafone Idea", "Telecom", "Mid"),
+    ("IDFCFIRSTB", "IDFC First Bank", "Banking", "Mid"),
+    ("BANKBARODA", "Bank of Baroda", "Banking", "Mid"),
+    ("TATAPOWER", "Tata Power", "Energy", "Mid"),
+    ("GAIL", "GAIL India", "Energy", "Mid"),
+    ("MPHASIS", "Mphasis", "IT", "Mid"),
+    ("FEDERALBNK", "Federal Bank", "Banking", "Mid"),
+]
+
+# Approximate reference prices for realistic demo data
+_REF_PRICES: dict[str, float] = {
+    "TCS": 3800,
+    "HDFCBANK": 1650,
+    "RELIANCE": 2950,
+    "INFY": 1780,
+    "ICICIBANK": 1200,
+    "SBIN": 820,
+    "BHARTIARTL": 1580,
+    "LT": 3500,
+    "AXISBANK": 1180,
+    "ITC": 470,
+    "MARUTI": 12500,
+    "SUNPHARMA": 1700,
+    "WIPRO": 560,
+    "HCLTECH": 1680,
+    "BAJFINANCE": 6900,
+    "TATASTEEL": 165,
+    "ADANIENT": 2400,
+    "KOTAKBANK": 1950,
+    "HINDUNILVR": 2600,
+    "NTPC": 390,
+    "PIDILITIND": 2800,
+    "MUTHOOTFIN": 1900,
+    "VOLTAS": 1550,
+    "IDEA": 12,
+    "IDFCFIRSTB": 72,
+    "BANKBARODA": 260,
+    "TATAPOWER": 420,
+    "GAIL": 215,
+    "MPHASIS": 2900,
+    "FEDERALBNK": 195,
+}
+
 FEATURE_NAMES = [
     "RSI_14",
     "MACD",
@@ -213,6 +288,76 @@ FEATURE_NAMES = [
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
+
+_REGIMES = ["Bull", "Bear", "Sideways", "HighVol"]
+_INSIGHTS = [
+    "Strong momentum with FII accumulation",
+    "Breakout above 200-DMA on volume",
+    "Put/Call ratio at multi-week low — bullish bias",
+    "Options chain shows strong support at current levels",
+    "Delivery % rising — retail conviction building",
+]
+
+
+def _make_scan_stock(symbol: str, name: str, sector: str, cap: str, seed_str: str) -> ScanStockItem:
+    s = _seed(seed_str)
+    ref = _REF_PRICES.get(symbol, 1000.0)
+    price = round(ref * (0.92 + s * 0.16), 2)
+    change_pct = round((s - 0.5) * 6, 2)
+    direction = "UP" if s > 0.45 else "DOWN"
+    confidence = round(55 + s * 38, 1)
+    comp = round(40 + s * 55, 2)
+    regime_idx = int(s * 4) % 4
+    spark_vals = _seeded_list(f"{seed_str}-spark", 20, price * 0.96, price * 1.04)
+    tgt_low = round(price * (1 + 0.03 * (1 if direction == "UP" else -1)), 2)
+    tgt_mid = round(price * (1 + 0.06 * (1 if direction == "UP" else -1)), 2)
+    tgt_high = round(price * (1 + 0.10 * (1 if direction == "UP" else -1)), 2)
+    insight_idx = int(s * len(_INSIGHTS)) % len(_INSIGHTS)
+    return ScanStockItem(
+        symbol=symbol,
+        name=name,
+        sector=sector,
+        cap=cap,
+        price=price,
+        change_pct=change_pct,
+        direction=direction,
+        confidence=confidence,
+        regime=_REGIMES[regime_idx],
+        composite_score=comp,
+        meta_confidence=round(s, 4),
+        magnitude=round(abs(change_pct) / 100, 4),
+        t7={"low": tgt_low, "high": tgt_high, "pct": round(abs(change_pct) * 1.2, 2)},
+        t15={
+            "low": round(tgt_low * 0.98, 2),
+            "high": round(tgt_high * 1.02, 2),
+            "pct": round(abs(change_pct) * 2.0, 2),
+        },
+        t30={
+            "low": round(tgt_low * 0.95, 2),
+            "high": round(tgt_high * 1.05, 2),
+            "pct": round(abs(change_pct) * 3.2, 2),
+        },
+        sparkline=spark_vals,
+        price_targets={"low": tgt_low, "mid": tgt_mid, "high": tgt_high},
+        top_feature=FEATURE_NAMES[int(s * len(FEATURE_NAMES)) % len(FEATURE_NAMES)],
+        ai_insight=_INSIGHTS[insight_idx],
+    )
+
+
+@router.get("/scan/{tier}", response_model=ScanResponseModel)
+async def scan_stocks(tier: str = "large") -> ScanResponseModel:
+    universe = NIFTY_50 if tier != "mid" else NIFTY_50 + NIFTY_50_MID
+    today = datetime.now().strftime("%Y-%m-%d")
+    stocks = [
+        _make_scan_stock(sym, name, sec, cap, f"{sym}-{today}") for sym, name, sec, cap in universe
+    ]
+    buy = sorted(
+        [s for s in stocks if s.direction == "UP"], key=lambda x: x.confidence, reverse=True
+    )
+    sell = sorted(
+        [s for s in stocks if s.direction == "DOWN"], key=lambda x: x.confidence, reverse=True
+    )
+    return ScanResponseModel(buy_candidates=buy, sell_candidates=sell, excluded=[])
 
 
 @router.get("/predict/{symbol}/explain", response_model=ExplainResponse)
