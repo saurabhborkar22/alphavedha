@@ -10,7 +10,11 @@ RUN apt-get update && \
 COPY pyproject.toml README.md ./
 COPY alphavedha/ alphavedha/
 
-RUN pip install --no-cache-dir --prefix=/install .
+# Install CPU-only PyTorch first to avoid pulling 2GB+ of CUDA/GPU packages.
+# The VPS has no GPU — CUDA wheels (nvidia_nccl, triton, etc.) are wasted space.
+RUN pip install --no-cache-dir --prefix=/install \
+    torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir --prefix=/install .
 
 # Stage 2: Runtime
 FROM python:3.12-slim
