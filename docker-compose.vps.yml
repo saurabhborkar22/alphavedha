@@ -62,6 +62,7 @@ services:
     build:
       context: ../alphavedha-ui
       dockerfile: Dockerfile
+      shm_size: '256mb'
       args:
         NEXT_PUBLIC_API_URL: /api
     container_name: alphavedha-ui

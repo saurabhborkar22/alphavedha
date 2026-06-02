@@ -98,7 +98,7 @@ backtest:
 	$(PYTHON) -m alphavedha.cli.main backtest portfolio
 
 # ─── VPS Deployment ──────────────────────────────────────────
-VPS_COMPOSE = docker compose -f docker-compose.vps.yml
+VPS_COMPOSE = docker compose -f docker-compose.vps.yml --env-file .env.vps
 
 vps-up:
 	$(VPS_COMPOSE) up -d --build
