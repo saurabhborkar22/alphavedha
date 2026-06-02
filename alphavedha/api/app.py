@@ -157,3 +157,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
     ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
     return app
+
+
+# Module-level instance for uvicorn: `uvicorn alphavedha.api.app:app`
+app = create_app()
