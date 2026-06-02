@@ -21,6 +21,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        INSTALL_TARGET: vps
     container_name: alphavedha-api
     env_file: .env.vps
     expose:
@@ -45,6 +47,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        INSTALL_TARGET: vps
     container_name: alphavedha-scheduler
     env_file: .env.vps
     command: ["python", "-m", "alphavedha.scheduler", "start"]
