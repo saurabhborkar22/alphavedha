@@ -14,6 +14,8 @@ COPY alphavedha/ alphavedha/
 # INSTALL_TARGET=full installs everything from pyproject.toml (dev/training use).
 ARG INSTALL_TARGET=vps
 RUN if [ "$INSTALL_TARGET" = "vps" ]; then \
+        pip install --no-cache-dir --prefix=/install \
+            torch --index-url https://download.pytorch.org/whl/cpu && \
         pip install --no-cache-dir --prefix=/install -r requirements-vps.txt && \
         pip install --no-cache-dir --prefix=/install --no-deps .; \
     else \

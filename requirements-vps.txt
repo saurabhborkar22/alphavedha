@@ -23,6 +23,13 @@ ta>=0.11
 statsmodels>=0.14
 scikit-learn>=1.5
 
+# ML — imported at module level by models/__init__.py (needed even in demo mode)
+# torch is installed separately in Dockerfile with CPU-only index to avoid CUDA packages
+xgboost>=2.1
+hmmlearn>=0.3
+mapie>=0.9
+safetensors>=0.4
+
 # API
 fastapi>=0.111
 uvicorn[standard]>=0.30
