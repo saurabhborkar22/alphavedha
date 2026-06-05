@@ -7,10 +7,22 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md requirements-vps.txt ./
 COPY alphavedha/ alphavedha/
 
-RUN pip install --no-cache-dir --prefix=/install .
+# INSTALL_TARGET=vps installs only serving deps (no torch/transformers/vectorbt).
+# INSTALL_TARGET=full installs everything from pyproject.toml (dev/training use).
+ARG INSTALL_TARGET=vps
+RUN if [ "$INSTALL_TARGET" = "vps" ]; then \
+        pip install --no-cache-dir --prefix=/install \
+            torch --index-url https://download.pytorch.org/whl/cpu && \
+        pip install --no-cache-dir --prefix=/install -r requirements-vps.txt && \
+        pip install --no-cache-dir --prefix=/install --no-deps .; \
+    else \
+        pip install --no-cache-dir --prefix=/install \
+            torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+        pip install --no-cache-dir --prefix=/install .; \
+    fi
 
 # Stage 2: Runtime
 FROM python:3.12-slim

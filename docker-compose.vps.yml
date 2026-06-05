@@ -1,0 +1,121 @@
+services:
+
+  nginx:
+    image: nginx:alpine
+    container_name: alphavedha-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx-vps.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - ui
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_TARGET: vps
+    container_name: alphavedha-api
+    env_file: .env.vps
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - model-artifacts:/app/models/artifacts
+      - app-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_TARGET: vps
+    container_name: alphavedha-scheduler
+    env_file: .env.vps
+    command: ["python", "-m", "alphavedha.scheduler", "start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    volumes:
+      - model-artifacts:/app/models/artifacts
+      - app-logs:/app/logs
+
+  ui:
+    build:
+      context: ../alphavedha-ui
+      dockerfile: Dockerfile
+      shm_size: '256mb'
+      args:
+        NEXT_PUBLIC_API_URL: /api
+    container_name: alphavedha-ui
+    expose:
+      - "3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', r => process.exit(r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: alphavedha-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alphavedha}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-alphavedha}
+    expose:
+      - "5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alphavedha}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: alphavedha-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    expose:
+      - "6379"
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:
+  model-artifacts:
+  app-logs:

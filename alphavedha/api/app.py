@@ -16,7 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from alphavedha.api.deps import set_service
-from alphavedha.api.routes import dashboard, health, paper_trading, predictions, public
+from alphavedha.api.routes import dashboard, health, paper_trading, predictions, public, ui_support
 from alphavedha.config import get_config
 from alphavedha.exceptions import (
     ModelNotFoundError,
@@ -145,6 +145,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
         )
 
     app.include_router(health.router)
+    app.include_router(ui_support.router)  # registered first so demo scan/intraday take precedence
     app.include_router(predictions.router)
     app.include_router(paper_trading.router)
     app.include_router(dashboard.router)
@@ -156,3 +157,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
     ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
     return app
+
+
+# Module-level instance for uvicorn: `uvicorn alphavedha.api.app:app`
+app = create_app()

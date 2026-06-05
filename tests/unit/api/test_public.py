@@ -24,26 +24,23 @@ class TestTrackRecord:
 
     def test_has_summary(self, client: TestClient) -> None:
         data = client.get("/public/track-record").json()
-        assert "summary" in data
-        summary = data["summary"]
-        assert "accuracy_all_time" in summary
-        assert "total_predictions" in summary
-        assert summary["total_predictions"] > 0
+        assert "total_predictions" in data
+        assert "directional_accuracy" in data
+        assert data["total_predictions"] > 0
 
     def test_has_breakdowns(self, client: TestClient) -> None:
         data = client.get("/public/track-record").json()
-        summary = data["summary"]
-        assert len(summary["by_regime"]) > 0
-        assert len(summary["by_sector"]) > 0
-        assert len(summary["by_confidence_bucket"]) > 0
+        assert len(data["by_confidence"]) > 0
+        assert "band" in data["by_confidence"][0]
+        assert "accuracy" in data["by_confidence"][0]
 
     def test_has_monthly_returns(self, client: TestClient) -> None:
         data = client.get("/public/track-record").json()
-        assert len(data["monthly_returns"]) > 0
-        first = data["monthly_returns"][0]
-        assert "month" in first
-        assert "portfolio_return" in first
-        assert "benchmark_return" in first
+        assert len(data["recent_predictions"]) > 0
+        first = data["recent_predictions"][0]
+        assert "date" in first
+        assert "symbol" in first
+        assert "predicted" in first
 
 
 class TestPredictions:

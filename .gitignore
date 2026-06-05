@@ -24,6 +24,7 @@ ENV/
 .env.*
 !.env.example
 !.env.prod.example
+!.env.vps.example
 *.pem
 *.key
 *.p12

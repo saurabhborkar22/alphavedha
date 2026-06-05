@@ -96,3 +96,30 @@ serve-prod:
 # ─── Backtest ────────────────────────────────────────────────
 backtest:
 	$(PYTHON) -m alphavedha.cli.main backtest portfolio
+
+# ─── VPS Deployment ──────────────────────────────────────────
+VPS_COMPOSE = docker compose -f docker-compose.vps.yml --env-file .env.vps
+
+vps-up:
+	$(VPS_COMPOSE) up -d --build
+
+vps-down:
+	$(VPS_COMPOSE) down
+
+vps-restart:
+	$(VPS_COMPOSE) restart
+
+vps-logs:
+	$(VPS_COMPOSE) logs -f --tail=100
+
+vps-status:
+	$(VPS_COMPOSE) ps
+
+vps-migrate:
+	$(VPS_COMPOSE) exec api alembic upgrade head
+
+vps-shell-api:
+	$(VPS_COMPOSE) exec api bash
+
+vps-shell-db:
+	$(VPS_COMPOSE) exec postgres psql -U alphavedha -d alphavedha
