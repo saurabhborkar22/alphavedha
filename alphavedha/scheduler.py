@@ -507,3 +507,11 @@ class AlphaVedhaScheduler:
     def stop(self) -> None:
         """Signal the scheduler to stop."""
         self._state.is_running = False
+
+
+if __name__ == "__main__":
+    import os
+
+    _demo = os.environ.get("ALPHAVEDHA_DEMO", "").lower() in ("1", "true", "yes")
+    _tier = os.environ.get("ALPHAVEDHA_TIER", "large")
+    AlphaVedhaScheduler(tier=_tier, demo=_demo).run_forever()
