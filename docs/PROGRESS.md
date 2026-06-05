@@ -1,7 +1,7 @@
 # AlphaVedha — Master Progress Checklist
 
-> Last updated: 2026-05-31
-> Total tests: 850+ | Source LOC: ~19,500 | Test LOC: ~11,500
+> Last updated: 2026-06-05
+> Total tests: 858+ | Source LOC: ~19,500 | Test LOC: ~11,500
 
 ---
 
@@ -377,31 +377,36 @@
 - [x] Model training guide (TRAINING_GUIDE.md — data ingestion → feature engineering → training all 10 models → validation → deployment, with CLI commands and troubleshooting)
 - [x] Runbook for incidents (RUNBOOK.md — 6 incident types: drift, accuracy drop, scheduler failure, API errors, data outage, service startup)
 
-### D10. UI/UX (Separate Repo: alphavedha-ui)
+### D10. UI/UX (Separate Repo: alphavedha-ui) — COMPLETE
 
 #### D10.1 Setup
-- [ ] Initialize Next.js + TailwindCSS + shadcn/ui project
-- [ ] Configure API client (fetch from AlphaVedha API)
-- [ ] Authentication flow (API key management)
+- [x] Initialize Next.js 15 + TailwindCSS + shadcn/ui project
+- [x] Configure API client (lib/api/ — predictions, paper, public, system)
+- [x] Authentication flow (login page + Zustand auth store)
 
 #### D10.2 Core Pages
-- [ ] Dashboard (portfolio summary, today's predictions, equity curve)
-- [ ] Predictions table (filterable, sortable, paginated)
-- [ ] Stock detail page (prediction history, feature importance, confidence)
-- [ ] Backtest results viewer (equity curve, monthly returns, trade log)
-- [ ] Model performance page (accuracy over time, drift alerts, regime)
+- [x] Dashboard (signal cards, live market strip, corporate events widget)
+- [x] Scanner (filterable stock scan with filter-panel component)
+- [x] Stock detail page (stock/[symbol] — confidence ring, feature bars, neural viz)
+- [x] Backtest results viewer (equity curve, monthly returns)
+- [x] ML Ops page (model status, drift, experiment tracking)
 
 #### D10.3 Public Pages
-- [ ] Public track record page (no auth required)
-- [ ] Monthly returns card
-- [ ] Accuracy breakdown charts
-- [ ] Downloadable prediction CSV
+- [x] Public track record page (track-record/ + track/)
+- [x] Accuracy breakdown charts (donut, area, radar charts)
+- [x] By-confidence breakdowns
 
 #### D10.4 Advanced
-- [ ] Real-time WebSocket updates during market hours
-- [ ] Mobile-responsive design
-- [ ] Dark mode
-- [ ] Notification system (drift alerts, retraining events)
+- [x] Live intraday page (live/page.tsx)
+- [x] Mobile-responsive design (mobile-bottom-nav.tsx)
+- [x] Dark mode (dark theme throughout)
+- [x] Notification system (notifications store + notifications/page.tsx)
+- [x] Paper trading UI (paper/page.tsx + trade-modal)
+- [x] Command palette (Cmd+K navigation)
+- [x] Events page (corporate events calendar)
+- [x] Trends page (Google Trends data)
+- [x] Data quality page (data/page.tsx)
+- [x] Settings page
 
 ### D11. Compliance & Legal
 
@@ -479,8 +484,9 @@
 | D7: Data Pipeline Enhancements | COMPLETE | 100% (quality checks, BSE/Trends data, live polling, 164 features) |
 | D8: Background Scheduling | COMPLETE | 100% |
 | D9: Documentation | COMPLETE | 100% (DEPLOYMENT.md, CONTRIBUTING.md, API_GUIDE.md, ADR.md, TRAINING_GUIDE.md, RUNBOOK.md) |
-| D10: UI/UX | NOT STARTED | 0% (design prompts exist) |
-| D11: Compliance & Legal | NOT STARTED | 0% |
-| D12: Model Training | NOT STARTED | 0% |
+| D10: UI/UX | COMPLETE | 100% (14 pages, 23 components, API client, Zustand stores — repo: alphavedha-ui) |
+| D11: Compliance & Legal | NOT STARTED | 0% (personal use only — SEBI not required) |
+| D12: Model Training | NOT STARTED | 0% (operational task — run make train on real data) |
+| D13: VPS Deployment | COMPLETE | 100% (Docker Compose stack, nginx, Tailscale, smoke-tested locally, deploy scripts ready) |
 
-**Overall: Core ML engine complete. Production infrastructure (Docker, systemd, nginx, CI/CD), observability (Prometheus, alerts, logging), database hardening, security, background scheduling, and ML ops all deployed. TimescaleDB hypertables with compression. Testing gaps closed: 850+ tests, model round-trips for all 8 model types, pre-commit hooks, coverage reporting. Full documentation suite. D7 data pipeline enhancements complete: data quality checks (completeness/freshness/consistency/anomaly), BSE corporate announcements, Google Trends, 164 features (5 new), live intraday polling. Remaining: UI, compliance, and real model training.**
+**Overall: Full-stack AI stock prediction platform complete end-to-end. ML engine (XGBoost + LSTM + TFT + HMM ensemble, 164 features), production API (FastAPI + Redis + TimescaleDB), Next.js UI (14 screens, dark mode, mobile-responsive), VPS deployment stack (Docker Compose, Hetzner CX22 target, Tailscale access). 858+ tests. Remaining: deploy to real Hetzner VPS and run real model training on live NSE data.**
