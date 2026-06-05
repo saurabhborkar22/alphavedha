@@ -189,9 +189,11 @@ class ScanStockItem(BaseModel):
 
 
 class ScanResponseModel(BaseModel):
+    tier: str
     buy_candidates: list[ScanStockItem]
     sell_candidates: list[ScanStockItem]
     excluded: list[str]
+    total_scanned: int
 
 
 class StockSearchResult(BaseModel):
@@ -344,8 +346,21 @@ def _make_scan_stock(symbol: str, name: str, sector: str, cap: str, seed_str: st
     )
 
 
+_VALID_SCAN_TIERS = {"large", "mid", "small"}
+
+
 @router.get("/scan/{tier}", response_model=ScanResponseModel)
-async def scan_stocks(tier: str = "large") -> ScanResponseModel:
+async def scan_stocks(
+    tier: str,
+    top_n: int = Query(default=10, ge=1, le=50),
+) -> ScanResponseModel:
+    from fastapi import HTTPException
+
+    tier = tier.lower().strip()
+    if tier not in _VALID_SCAN_TIERS:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid tier '{tier}'. Use: {_VALID_SCAN_TIERS}"
+        )
     universe = NIFTY_50 if tier != "mid" else NIFTY_50 + NIFTY_50_MID
     today = datetime.now().strftime("%Y-%m-%d")
     stocks = [
@@ -353,11 +368,17 @@ async def scan_stocks(tier: str = "large") -> ScanResponseModel:
     ]
     buy = sorted(
         [s for s in stocks if s.direction == "UP"], key=lambda x: x.confidence, reverse=True
-    )
+    )[:top_n]
     sell = sorted(
         [s for s in stocks if s.direction == "DOWN"], key=lambda x: x.confidence, reverse=True
+    )[:top_n]
+    return ScanResponseModel(
+        tier=tier,
+        buy_candidates=buy,
+        sell_candidates=sell,
+        excluded=[],
+        total_scanned=len(stocks),
     )
-    return ScanResponseModel(buy_candidates=buy, sell_candidates=sell, excluded=[])
 
 
 @router.get("/predict/{symbol}/explain", response_model=ExplainResponse)
