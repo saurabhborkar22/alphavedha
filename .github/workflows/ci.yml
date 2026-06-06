@@ -82,9 +82,43 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies and pip-audit
-        run: pip install -e ".[dev]" pip-audit
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: security-${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: security-${{ runner.os }}-pip-
 
-      - name: Audit dependencies
-        run: pip-audit --strict --desc
-        continue-on-error: true
+      - name: Install audit tools
+        run: pip install pip-audit pip-tools
+
+      - name: Compile third-party dependency lockfile
+        run: pip-compile pyproject.toml --extra dev --output-file /tmp/audit-reqs.txt --quiet
+
+      - name: Audit third-party dependencies
+        run: pip-audit --strict --desc -r /tmp/audit-reqs.txt
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: [lint, test, security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17  # v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          fingerprint: ${{ secrets.VPS_HOST_FINGERPRINT }}
+          envs: GITHUB_SHA
+          script: |
+            set -euo pipefail
+            cd /opt/alphavedha/alphavedha
+            git fetch origin
+            git -c advice.detachedHead=false checkout "$GITHUB_SHA"
+            docker compose -f docker-compose.vps.yml build api scheduler
+            docker compose -f docker-compose.vps.yml up -d api scheduler
+            docker compose -f docker-compose.vps.yml exec -T api alembic upgrade head
+            echo "Deploy complete: $GITHUB_SHA"
