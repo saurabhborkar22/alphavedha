@@ -82,11 +82,21 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies and pip-audit
-        run: pip install -e ".[dev]" pip-audit
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: security-${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: security-${{ runner.os }}-pip-
 
-      - name: Audit dependencies
-        run: pip-audit --desc --skip-editable
+      - name: Install audit tools
+        run: pip install pip-audit pip-tools
+
+      - name: Compile third-party dependency lockfile
+        run: pip-compile pyproject.toml --extra dev --output-file /tmp/audit-reqs.txt --quiet
+
+      - name: Audit third-party dependencies
+        run: pip-audit --strict --desc -r /tmp/audit-reqs.txt
 
   deploy:
     name: Deploy to VPS
