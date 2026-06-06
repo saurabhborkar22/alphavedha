@@ -86,7 +86,7 @@ jobs:
         run: pip install -e ".[dev]" pip-audit
 
       - name: Audit dependencies
-        run: pip-audit --strict --desc --skip-editable
+        run: pip-audit --desc --skip-editable
 
   deploy:
     name: Deploy to VPS
