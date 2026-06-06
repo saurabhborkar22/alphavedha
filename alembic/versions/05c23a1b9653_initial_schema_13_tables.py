@@ -241,61 +241,6 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_index("ix_index_constituents_symbol", "index_constituents", ["symbol"], unique=False)
-    op.create_table(
-        "data_lineage",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("symbol", sa.String(length=20), nullable=True),
-        sa.Column("date", sa.Date(), nullable=False),
-        sa.Column("table_name", sa.String(length=50), nullable=False),
-        sa.Column("provider", sa.String(length=50), nullable=False),
-        sa.Column("fetched_at", sa.DateTime(), nullable=False),
-        sa.Column("row_count", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default="now()", nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_data_lineage_symbol_date", "data_lineage", ["symbol", "date"], unique=False)
-    op.create_table(
-        "data_quality_reports",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("symbol", sa.String(length=20), nullable=True),
-        sa.Column("report_date", sa.Date(), nullable=False),
-        sa.Column("check_type", sa.String(length=30), nullable=False),
-        sa.Column("passed", sa.Boolean(), nullable=False),
-        sa.Column("severity", sa.String(length=10), nullable=False),
-        sa.Column("detail", sa.String(length=1000), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default="now()", nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_dqr_date", "data_quality_reports", ["report_date"], unique=False)
-    op.create_index("ix_dqr_symbol", "data_quality_reports", ["symbol"], unique=False)
-    op.create_table(
-        "corporate_announcements",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("symbol", sa.String(length=20), nullable=False),
-        sa.Column("announced_date", sa.Date(), nullable=False),
-        sa.Column("ex_date", sa.Date(), nullable=True),
-        sa.Column("event_type", sa.String(length=20), nullable=False),
-        sa.Column("description", sa.String(length=500), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default="now()", nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("symbol", "announced_date", "event_type", name="uq_corp_announcement"),
-    )
-    op.create_index("ix_corp_ann_symbol", "corporate_announcements", ["symbol"], unique=False)
-    op.create_index("ix_corp_ann_date", "corporate_announcements", ["announced_date"], unique=False)
-    op.create_table(
-        "intraday_ohlcv",
-        sa.Column("symbol", sa.String(length=20), nullable=False),
-        sa.Column("date", sa.Date(), nullable=False),
-        sa.Column("open", sa.Float(), nullable=False),
-        sa.Column("high", sa.Float(), nullable=False),
-        sa.Column("low", sa.Float(), nullable=False),
-        sa.Column("last_price", sa.Float(), nullable=False),
-        sa.Column("volume", sa.Integer(), nullable=False),
-        sa.Column("tick_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("last_updated", sa.DateTime(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default="now()", nullable=False),
-        sa.PrimaryKeyConstraint("symbol", "date"),
-    )
     # ### end Alembic commands ###
 
 
@@ -321,15 +266,6 @@ def downgrade() -> None:
     op.drop_table("daily_pnl")
     op.drop_index("ix_alternative_data_type_date", table_name="alternative_data")
     op.drop_table("alternative_data")
-    op.drop_table("intraday_ohlcv")
-    op.drop_index("ix_corp_ann_date", table_name="corporate_announcements")
-    op.drop_index("ix_corp_ann_symbol", table_name="corporate_announcements")
-    op.drop_table("corporate_announcements")
-    op.drop_index("ix_dqr_symbol", table_name="data_quality_reports")
-    op.drop_index("ix_dqr_date", table_name="data_quality_reports")
-    op.drop_table("data_quality_reports")
-    op.drop_index("ix_data_lineage_symbol_date", table_name="data_lineage")
-    op.drop_table("data_lineage")
     op.drop_index("ix_index_constituents_symbol", table_name="index_constituents")
     op.drop_index("ix_index_constituents_lookup", table_name="index_constituents")
     op.drop_table("index_constituents")
