@@ -58,7 +58,7 @@ async def store_features(
                     feature_json=feature_dict,
                 )
                 .on_conflict_do_update(
-                    constraint="uq_feature",
+                    index_elements=["symbol", "date", "feature_version"],
                     set_={"feature_json": feature_dict},
                 )
             )
@@ -151,7 +151,7 @@ async def store_ohlcv(
                 pg_insert(DailyOHLCV)
                 .values(**values)
                 .on_conflict_do_update(
-                    constraint="uq_daily_ohlcv_symbol_date",
+                    index_elements=["symbol", "date"],
                     set_=update_values,
                 )
             )
@@ -246,7 +246,7 @@ async def store_fii_dii(rows: list[dict]) -> int:
                     net_value=row["net_value"],
                 )
                 .on_conflict_do_update(
-                    constraint="uq_institutional_flow",
+                    index_elements=["date", "category"],
                     set_={
                         "buy_value": row["buy_value"],
                         "sell_value": row["sell_value"],
@@ -318,7 +318,7 @@ async def store_derivatives(rows: list[dict]) -> int:
                     options_data_json=row.get("options_data_json"),
                 )
                 .on_conflict_do_update(
-                    constraint="uq_derivatives_data",
+                    index_elements=["symbol", "date"],
                     set_={
                         "futures_oi": row.get("futures_oi"),
                         "futures_price": row.get("futures_price"),
@@ -611,7 +611,7 @@ async def store_news_articles(rows: list[dict]) -> int:
                 pg_insert(NewsArticle)
                 .values(**values)
                 .on_conflict_do_update(
-                    constraint="uq_news_article_hash",
+                    index_elements=["content_hash", "published_date"],
                     set_={"sentiment_score": values["sentiment_score"]},
                 )
             )
@@ -760,7 +760,7 @@ async def store_paper_trade(row: dict) -> int:
             pg_insert(PaperTrade)
             .values(**values)
             .on_conflict_do_update(
-                constraint="uq_paper_trade",
+                index_elements=["symbol", "prediction_date"],
                 set_={k: v for k, v in values.items() if k not in ("symbol", "prediction_date")},
             )
         )
