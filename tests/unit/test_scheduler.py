@@ -128,7 +128,7 @@ class TestAlphaVedhaScheduler:
         schedule.clear()
         sched = AlphaVedhaScheduler(demo=True)
         sched.setup_schedule()
-        assert len(schedule.get_jobs()) == 9
+        assert len(schedule.get_jobs()) == 11  # 2 new jobs: xgboost_retrain, lstm_tft_retrain
 
     def test_maybe_monthly_retrain_first_week(self) -> None:
         sched = AlphaVedhaScheduler(demo=True)
