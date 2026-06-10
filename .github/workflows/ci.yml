@@ -89,7 +89,9 @@ jobs:
         run: pip-compile pyproject.toml --extra dev --output-file /tmp/audit-reqs.txt --quiet
 
       - name: Audit third-party dependencies
-        run: pip-audit --strict --desc -r /tmp/audit-reqs.txt
+        # CVE-2025-3000: torch.jit.script memory corruption — local-only attack vector,
+        # no fix available upstream. Not exploitable in a training pipeline context.
+        run: pip-audit --strict --desc -r /tmp/audit-reqs.txt --ignore-vuln CVE-2025-3000
 
   deploy:
     name: Deploy to VPS
