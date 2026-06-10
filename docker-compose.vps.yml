@@ -61,6 +61,26 @@ services:
       - model-artifacts:/app/models/artifacts
       - app-logs:/app/logs
 
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_TARGET: vps
+    container_name: alphavedha-trainer
+    env_file: .env.vps
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+    profiles:
+      - training
+    volumes:
+      - model-artifacts:/app/models/artifacts
+      - app-logs:/app/logs
+
   ui:
     build:
       context: ../alphavedha-ui

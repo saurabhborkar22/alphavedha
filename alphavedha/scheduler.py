@@ -27,6 +27,9 @@ DRIFT_CHECK_DAY = "saturday"
 DRIFT_CHECK_TIME = "20:00"
 RETRAIN_DAY = "saturday"
 RETRAIN_TIME = "22:00"
+XGBOOST_RETRAIN_TIME = "23:30"  # daily, after market-close data refresh
+LSTM_TFT_RETRAIN_DAY = "saturday"
+LSTM_TFT_RETRAIN_TIME = "22:30"  # weekly, after drift check
 REBALANCE_CHECK_DAY = "monday"
 REBALANCE_CHECK_TIME = "07:00"
 QUALITY_CHECK_TIME = "15:50"
@@ -55,6 +58,8 @@ class SchedulerState:
     last_evaluation_run: datetime | None = None
     last_drift_check: datetime | None = None
     last_retrain: datetime | None = None
+    last_xgboost_retrain: datetime | None = None
+    last_lstm_tft_retrain: datetime | None = None
     last_rebalance_check: datetime | None = None
     last_quality_check: datetime | None = None
     last_bse_ingestion: datetime | None = None
@@ -206,6 +211,94 @@ class AlphaVedhaScheduler:
         except Exception as e:
             result.error = str(e)
             logger.error("scheduler_job_failed", job="monthly_retrain", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_daily_xgboost_retrain(self) -> JobResult:
+        """Retrain XGBoost nightly after market-close data is ingested.
+
+        Runs on cx23 (2 vCPU, 4GB) — XGBoost fits comfortably within that budget.
+        LSTM/TFT are NOT retrained here; those need more RAM and run weekly.
+        """
+        result = JobResult(job_name="xgboost_retrain", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="xgboost_retrain", tier=self._tier)
+
+        try:
+            from alphavedha.training.pipeline import train_xgboost
+
+            train_result = _run_async(train_xgboost(self._tier))
+            result.success = train_result.artifact_path is not None
+            result.symbols_processed = train_result.n_symbols
+            self._state.last_xgboost_retrain = _now_ist()
+
+            if result.success:
+                logger.info(
+                    "scheduler_job_complete",
+                    job="xgboost_retrain",
+                    symbols=train_result.n_symbols,
+                    artifact=str(train_result.artifact_path),
+                    elapsed_s=train_result.total_time_seconds,
+                )
+            else:
+                result.error = "no artifact produced — check training logs"
+                logger.warning("xgboost_retrain_no_artifact", tier=self._tier)
+
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="xgboost_retrain", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_weekly_lstm_tft_retrain(self) -> JobResult:
+        """Retrain LSTM and TFT models every Saturday night.
+
+        These models need ~8-16GB RAM. On cx23 (4GB) they will OOM.
+        This job is gated by the ALPHAVEDHA_HEAVY_TRAINING env var so it only
+        runs when the server has been scaled up (or on a machine with enough RAM).
+        Set ALPHAVEDHA_HEAVY_TRAINING=1 in .env.vps before running.
+        """
+        result = JobResult(job_name="lstm_tft_retrain", started_at=_now_ist())
+
+        import os
+
+        if not os.environ.get("ALPHAVEDHA_HEAVY_TRAINING"):
+            logger.info(
+                "lstm_tft_retrain_skipped",
+                reason="ALPHAVEDHA_HEAVY_TRAINING not set — scale server to cx43 first",
+            )
+            result.success = True
+            result.error = "skipped: ALPHAVEDHA_HEAVY_TRAINING not set"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="lstm_tft_retrain", tier=self._tier)
+
+        try:
+            from alphavedha.training.pipeline import train_lstm, train_tft
+
+            lstm_result = _run_async(train_lstm(self._tier))
+            tft_result = _run_async(train_tft(self._tier))
+
+            result.success = (
+                lstm_result.artifact_path is not None and tft_result.artifact_path is not None
+            )
+            self._state.last_lstm_tft_retrain = _now_ist()
+
+            logger.info(
+                "scheduler_job_complete",
+                job="lstm_tft_retrain",
+                lstm_ok=lstm_result.artifact_path is not None,
+                tft_ok=tft_result.artifact_path is not None,
+            )
+
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="lstm_tft_retrain", error=str(e))
 
         result.finished_at = _now_ist()
         self._record_job(result)
@@ -406,6 +499,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
+        schedule.every().day.at(XGBOOST_RETRAIN_TIME).do(self.run_daily_xgboost_retrain)
         schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
 
         getattr(schedule.every(), BSE_INGESTION_DAY).at(BSE_INGESTION_TIME).do(
@@ -423,6 +517,10 @@ class AlphaVedhaScheduler:
             self._maybe_monthly_retrain,
         )
 
+        getattr(schedule.every(), LSTM_TFT_RETRAIN_DAY).at(LSTM_TFT_RETRAIN_TIME).do(
+            self.run_weekly_lstm_tft_retrain,
+        )
+
         getattr(schedule.every(), REBALANCE_CHECK_DAY).at(REBALANCE_CHECK_TIME).do(
             self._maybe_quarterly_rebalance,
         )
@@ -431,6 +529,8 @@ class AlphaVedhaScheduler:
             "scheduler_configured",
             prediction_time=PREDICTION_TIME,
             evaluation_time=EVALUATION_TIME,
+            xgboost_retrain_time=XGBOOST_RETRAIN_TIME,
+            lstm_tft_retrain_day=LSTM_TFT_RETRAIN_DAY,
             drift_day=DRIFT_CHECK_DAY,
             retrain_day=RETRAIN_DAY,
             rebalance_day=REBALANCE_CHECK_DAY,
