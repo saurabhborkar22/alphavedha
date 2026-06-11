@@ -925,7 +925,9 @@ async def train_ensemble(
     lstm_model = LSTMModel.load(lstm_artifact)
     tft_model = TemporalAttentionModel.load(tft_artifact)
 
-    ens_metrics, ens_dir = _train_ensemble_on_data(xgb_model, lstm_model, tft_model, data, top_features)
+    ens_metrics, ens_dir = _train_ensemble_on_data(
+        xgb_model, lstm_model, tft_model, data, top_features
+    )
     result.extra_metrics = ens_metrics
     if ens_dir != Path():
         result.artifact_path = ens_dir
@@ -982,13 +984,17 @@ async def train_meta_labeling(
     lstm_model = LSTMModel.load(lstm_artifact)
     tft_model = TemporalAttentionModel.load(tft_artifact)
 
-    meta_metrics, meta_dir = _train_meta_labeling_on_data(xgb_model, lstm_model, tft_model, data, top_features)
+    meta_metrics, meta_dir = _train_meta_labeling_on_data(
+        xgb_model, lstm_model, tft_model, data, top_features
+    )
     result.extra_metrics = meta_metrics
     if meta_dir != Path():
         result.artifact_path = meta_dir
     result.total_time_seconds = time.perf_counter() - start_time
 
-    logger.info("train_complete", model="meta_labeling", total_time=round(result.total_time_seconds, 1))
+    logger.info(
+        "train_complete", model="meta_labeling", total_time=round(result.total_time_seconds, 1)
+    )
     return result
 
 
