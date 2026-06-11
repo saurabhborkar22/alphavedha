@@ -521,6 +521,42 @@ def train_regime_cmd(
     _print_train_result(result)
 
 
+@train_app.command("ensemble")
+def train_ensemble_cmd(
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+) -> None:
+    """Train stacking ensemble (requires XGBoost, LSTM, TFT artifacts)."""
+    from alphavedha.training.pipeline import train_ensemble
+
+    console.print(f"Training [bold]Stacking Ensemble[/bold] on [bold]{tier}[/bold] cap stocks...")
+    result = asyncio.run(train_ensemble(tier))
+    _print_train_result(result)
+
+
+@train_app.command("meta")
+def train_meta_cmd(
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+) -> None:
+    """Train meta-labeling model (requires XGBoost, LSTM, TFT, Ensemble artifacts)."""
+    from alphavedha.training.pipeline import train_meta_labeling
+
+    console.print(f"Training [bold]Meta-Labeling[/bold] on [bold]{tier}[/bold] cap stocks...")
+    result = asyncio.run(train_meta_labeling(tier))
+    _print_train_result(result)
+
+
+@train_app.command("conformal")
+def train_conformal_cmd(
+    tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),
+) -> None:
+    """Train conformal predictor for prediction intervals."""
+    from alphavedha.training.pipeline import train_conformal
+
+    console.print(f"Training [bold]Conformal Predictor[/bold] on [bold]{tier}[/bold] cap stocks...")
+    result = asyncio.run(train_conformal(tier))
+    _print_train_result(result)
+
+
 @train_app.command("all")
 def train_all_cmd(
     tier: str = typer.Option("large", help="Market cap tier: large, mid, small"),

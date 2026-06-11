@@ -18,9 +18,12 @@ on:
           - lstm
           - tft
           - regime
+          - ensemble
+          - meta
+          - conformal
           - all
       scale_server:
-        description: "Scale server to cx43 before training (required for lstm/tft/all — not needed for xgboost/regime)"
+        description: "Scale server to cx43 before training (required for lstm/tft/all — not needed for xgboost/regime/ensemble/meta/conformal)"
         required: false
         default: false
         type: boolean

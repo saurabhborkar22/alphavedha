@@ -884,6 +884,146 @@ def _train_rl_on_data(data: TierData) -> TrainingPipelineResult:
     return result
 
 
+async def train_ensemble(
+    tier: str = "large",
+) -> TrainingPipelineResult:
+    """Train stacking ensemble (requires XGBoost, LSTM, TFT artifacts on disk)."""
+    start_time = time.perf_counter()
+    config = get_config()
+    result = TrainingPipelineResult(model_name="ensemble")
+
+    xgb_artifact = ARTIFACTS_DIR / "xgboost" / "latest"
+    lstm_artifact = ARTIFACTS_DIR / "lstm" / "latest"
+    tft_artifact = ARTIFACTS_DIR / "tft" / "latest"
+
+    for name, path in [("xgboost", xgb_artifact), ("lstm", lstm_artifact), ("tft", tft_artifact)]:
+        if not (path / "metadata.json").exists():
+            logger.error("ensemble_missing_artifact", model=name, path=str(path))
+            return result
+
+    if not (xgb_artifact / "feature_importance.csv").exists():
+        logger.error("ensemble_no_xgb_importance")
+        return result
+
+    data = await _load_tier_data(tier)
+    if data.X_train.empty:
+        return result
+
+    fi = pd.read_csv(xgb_artifact / "feature_importance.csv", index_col=0).squeeze()
+    top_n = config.models.lstm.top_n_features
+    top_features = _select_top_features(fi, top_n, list(data.X_train.columns))
+
+    result.n_symbols = data.n_symbols
+    result.n_train_rows = len(data.X_train)
+    result.n_val_rows = len(data.X_val)
+    result.errors = data.errors
+
+    from alphavedha.models.lstm_model import LSTMModel
+    from alphavedha.models.temporal_attention import TemporalAttentionModel
+
+    xgb_model = XGBoostModel.load(xgb_artifact)
+    lstm_model = LSTMModel.load(lstm_artifact)
+    tft_model = TemporalAttentionModel.load(tft_artifact)
+
+    ens_metrics, ens_dir = _train_ensemble_on_data(
+        xgb_model, lstm_model, tft_model, data, top_features
+    )
+    result.extra_metrics = ens_metrics
+    if ens_dir != Path():
+        result.artifact_path = ens_dir
+    result.total_time_seconds = time.perf_counter() - start_time
+
+    logger.info("train_complete", model="ensemble", total_time=round(result.total_time_seconds, 1))
+    return result
+
+
+async def train_meta_labeling(
+    tier: str = "large",
+) -> TrainingPipelineResult:
+    """Train meta-labeling model (requires XGBoost, LSTM, TFT, and Ensemble artifacts on disk)."""
+    start_time = time.perf_counter()
+    config = get_config()
+    result = TrainingPipelineResult(model_name="meta_labeling")
+
+    xgb_artifact = ARTIFACTS_DIR / "xgboost" / "latest"
+    lstm_artifact = ARTIFACTS_DIR / "lstm" / "latest"
+    tft_artifact = ARTIFACTS_DIR / "tft" / "latest"
+    ensemble_artifact = ARTIFACTS_DIR / "ensemble" / "latest"
+
+    for name, path in [
+        ("xgboost", xgb_artifact),
+        ("lstm", lstm_artifact),
+        ("tft", tft_artifact),
+        ("ensemble", ensemble_artifact),
+    ]:
+        if not (path / "metadata.json").exists():
+            logger.error("meta_labeling_missing_artifact", model=name, path=str(path))
+            return result
+
+    if not (xgb_artifact / "feature_importance.csv").exists():
+        logger.error("meta_labeling_no_xgb_importance")
+        return result
+
+    data = await _load_tier_data(tier)
+    if data.X_train.empty:
+        return result
+
+    fi = pd.read_csv(xgb_artifact / "feature_importance.csv", index_col=0).squeeze()
+    top_n = config.models.lstm.top_n_features
+    top_features = _select_top_features(fi, top_n, list(data.X_train.columns))
+
+    result.n_symbols = data.n_symbols
+    result.n_train_rows = len(data.X_train)
+    result.n_val_rows = len(data.X_val)
+    result.errors = data.errors
+
+    from alphavedha.models.lstm_model import LSTMModel
+    from alphavedha.models.temporal_attention import TemporalAttentionModel
+
+    xgb_model = XGBoostModel.load(xgb_artifact)
+    lstm_model = LSTMModel.load(lstm_artifact)
+    tft_model = TemporalAttentionModel.load(tft_artifact)
+
+    meta_metrics, meta_dir = _train_meta_labeling_on_data(
+        xgb_model, lstm_model, tft_model, data, top_features
+    )
+    result.extra_metrics = meta_metrics
+    if meta_dir != Path():
+        result.artifact_path = meta_dir
+    result.total_time_seconds = time.perf_counter() - start_time
+
+    logger.info(
+        "train_complete", model="meta_labeling", total_time=round(result.total_time_seconds, 1)
+    )
+    return result
+
+
+async def train_conformal(
+    tier: str = "large",
+) -> TrainingPipelineResult:
+    """Train conformal predictor for prediction intervals (no base model dependencies)."""
+    start_time = time.perf_counter()
+    result = TrainingPipelineResult(model_name="conformal")
+
+    data = await _load_tier_data(tier)
+    if data.X_train.empty:
+        return result
+
+    result.n_symbols = data.n_symbols
+    result.n_train_rows = len(data.X_train)
+    result.n_val_rows = len(data.X_val)
+    result.errors = data.errors
+
+    conf_metrics, conf_dir = _train_conformal_on_data(data)
+    result.extra_metrics = conf_metrics
+    if conf_dir != Path():
+        result.artifact_path = conf_dir
+    result.total_time_seconds = time.perf_counter() - start_time
+
+    logger.info("train_complete", model="conformal", total_time=round(result.total_time_seconds, 1))
+    return result
+
+
 async def train_all(
     tier: str = "large",
 ) -> dict[str, TrainingPipelineResult]:
