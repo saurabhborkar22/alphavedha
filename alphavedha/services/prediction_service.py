@@ -32,42 +32,31 @@ class PredictionService:
         self._engine = registry.get_prediction_engine()
         self._ranker = StockRanker()
 
-    def _get_features(self, symbol: str) -> pd.DataFrame:
+    async def _get_features(self, symbol: str) -> pd.DataFrame:
         if self._registry.is_demo:
             return self._registry.get_demo_features(symbol)
-        return self._load_real_features(symbol)
+        return await self._load_real_features(symbol)
 
-    def _load_real_features(self, symbol: str) -> pd.DataFrame:
+    async def _load_real_features(self, symbol: str) -> pd.DataFrame:
         """Load the latest computed features from the feature store.
 
         Fetches the most recent row from the PostgreSQL feature store.
         Falls back to on-the-fly computation from OHLCV data if the
         feature store is empty for this symbol.
         """
-        import asyncio
-
         from alphavedha.data.store import load_features
 
         today = date.today()
         start = today - timedelta(days=7)
 
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    features_df = pool.submit(
-                        asyncio.run, load_features(symbol, start, today)
-                    ).result()
-            else:
-                features_df = asyncio.run(load_features(symbol, start, today))
-        except Exception:
-            logger.warning("feature_store_unavailable", symbol=symbol)
+            features_df = await load_features(symbol, start, today)
+        except Exception as e:
+            logger.warning("feature_store_unavailable", symbol=symbol, error=str(e))
             features_df = pd.DataFrame()
 
         if features_df.empty:
-            features_df = self._compute_features_on_the_fly(symbol)
+            features_df = await self._compute_features_on_the_fly(symbol)
 
         if features_df.empty:
             raise ValueError(
@@ -77,10 +66,8 @@ class PredictionService:
 
         return features_df.iloc[[-1]]
 
-    def _compute_features_on_the_fly(self, symbol: str) -> pd.DataFrame:
+    async def _compute_features_on_the_fly(self, symbol: str) -> pd.DataFrame:
         """Compute features from cached OHLCV data when feature store is empty."""
-        import asyncio
-
         from alphavedha.data.store import load_ohlcv
         from alphavedha.features.pipeline import compute_all_features
 
@@ -88,16 +75,9 @@ class PredictionService:
         start = today - timedelta(days=300)
 
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    ohlcv_df = pool.submit(asyncio.run, load_ohlcv(symbol, start, today)).result()
-            else:
-                ohlcv_df = asyncio.run(load_ohlcv(symbol, start, today))
-        except Exception:
-            logger.warning("ohlcv_store_unavailable", symbol=symbol)
+            ohlcv_df = await load_ohlcv(symbol, start, today)
+        except Exception as e:
+            logger.warning("ohlcv_store_unavailable", symbol=symbol, error=str(e))
             return pd.DataFrame()
 
         if ohlcv_df.empty or len(ohlcv_df) < 60:
@@ -109,18 +89,19 @@ class PredictionService:
             return pd.DataFrame()
 
         try:
-            result = compute_all_features(symbol=symbol, ohlcv_df=ohlcv_df)
+            # CPU-heavy (~2-4s) — run off the event loop
+            result = await asyncio.to_thread(compute_all_features, symbol=symbol, ohlcv_df=ohlcv_df)
             return result.df
         except Exception as e:
             logger.warning("feature_computation_failed", symbol=symbol, error=str(e))
             return pd.DataFrame()
 
-    def _get_symbols(self, tier: str) -> list[str]:
+    async def _get_symbols(self, tier: str) -> list[str]:
         if self._registry.is_demo:
             return self._registry.get_demo_symbols()
         from alphavedha.data.universe import get_symbols_for_tier
 
-        return get_symbols_for_tier(tier)
+        return await get_symbols_for_tier(tier)
 
     async def warm_up(self) -> None:
         """Run a single prediction to warm up the full inference path."""
@@ -129,7 +110,7 @@ class PredictionService:
             if not tiers:
                 logger.warning("warmup_no_tiers")
                 return
-            symbols = self._get_symbols(tiers[0])
+            symbols = await self._get_symbols(tiers[0])
             if not symbols:
                 logger.warning("warmup_no_symbols")
                 return
@@ -154,7 +135,7 @@ class PredictionService:
             logger.debug("cache_hit", symbol=symbol)
             return cached
 
-        features = self._get_features(symbol)
+        features = await self._get_features(symbol)
         prediction = self._engine.predict(symbol, features, sector=sector)
 
         await self._cache.set(cache_key, prediction)
@@ -171,7 +152,7 @@ class PredictionService:
         Returns:
             RankingResult with buy_candidates, sell_candidates, and excluded.
         """
-        symbols = self._get_symbols(tier)
+        symbols = await self._get_symbols(tier)
         logger.info("scan_started", tier=tier, symbols=len(symbols))
 
         predictions = await self.predict_batch(symbols)
