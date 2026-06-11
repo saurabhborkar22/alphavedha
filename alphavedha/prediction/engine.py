@@ -98,9 +98,11 @@ class PredictionEngine:
 
         base_predictions = self._run_base_models(features, warnings)
 
+        # Prediction arrays are row-aligned with `features`; the latest
+        # observation is the LAST row (sequence models pad earlier rows).
         if strategy.require_all_models_agree:
             directions = [
-                int(p.direction[0])
+                int(p.direction[-1])
                 for p in base_predictions.values()
                 if hasattr(p, "direction") and len(p.direction) > 0
             ]
@@ -111,11 +113,11 @@ class PredictionEngine:
 
         ensemble_result = self._ensemble.predict(
             base_predictions,
-            regime_probs.reshape(1, -1),
+            np.tile(regime_probs.reshape(1, -1), (len(features), 1)),
         )
-        direction = int(ensemble_result.direction[0])
-        magnitude = float(ensemble_result.magnitude[0])
-        disagreement = float(ensemble_result.model_disagreement[0])
+        direction = int(ensemble_result.direction[-1])
+        magnitude = float(ensemble_result.magnitude[-1])
+        disagreement = float(ensemble_result.model_disagreement[-1])
 
         meta_confidence, is_tradeable = self._run_meta(features, ensemble_result, warnings)
 
@@ -124,7 +126,7 @@ class PredictionEngine:
 
         if strategy.require_all_models_agree:
             directions = [
-                int(p.direction[0])
+                int(p.direction[-1])
                 for p in base_predictions.values()
                 if hasattr(p, "direction") and len(p.direction) > 0
             ]
@@ -229,7 +231,7 @@ class PredictionEngine:
                 ensemble_result.direction,
                 ensemble_result.confidence,
             )
-            return float(meta_result.meta_confidence[0]), bool(meta_result.is_tradeable[0])
+            return float(meta_result.meta_confidence[-1]), bool(meta_result.is_tradeable[-1])
         except Exception as e:
             logger.warning("meta_model_failed", error=str(e))
             warnings.append(f"Meta-labeling failed: {e}")
@@ -243,9 +245,9 @@ class PredictionEngine:
         try:
             result = self._conformal.predict(features)
             return (
-                float(result.price_low[0]),
-                float(result.price_mid[0]),
-                float(result.price_high[0]),
+                float(result.price_low[-1]),
+                float(result.price_mid[-1]),
+                float(result.price_high[-1]),
             )
         except Exception as e:
             logger.warning("conformal_failed", error=str(e))

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import structlog
 
-from alphavedha.exceptions import ModelNotFoundError
+from alphavedha.exceptions import ModelNotFoundError, PredictionError
 
 logger = structlog.get_logger(__name__)
 
@@ -68,6 +68,22 @@ class BaseModel(ABC):
     @property
     def is_fitted(self) -> bool:
         return self._is_fitted
+
+    def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Subset and reorder X to the features the model was trained on.
+
+        Models trained on a feature subset (e.g. LSTM/TFT on top-30 by
+        importance) receive the full feature matrix at prediction time.
+        """
+        if not self._feature_names or list(X.columns) == self._feature_names:
+            return X
+        missing = [f for f in self._feature_names if f not in X.columns]
+        if missing:
+            raise PredictionError(
+                f"{self._name}: input is missing {len(missing)} trained "
+                f"feature(s), e.g. {missing[:5]}"
+            )
+        return X[self._feature_names]
 
     @abstractmethod
     def fit(

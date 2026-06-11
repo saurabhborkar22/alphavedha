@@ -90,10 +90,10 @@ class ConformalPredictor:
             raise ModelTrainingError("ConformalPredictor is not fitted. Call fit() first.")
         if len(X) == 0:
             raise InsufficientDataError("Cannot predict with empty input")
-        if np.any(~np.isfinite(X.values)):
-            raise DataQualityError("Input contains NaN or Inf values")
 
-        y_pred, y_pis = self._mapie.predict_interval(X.values)
+        # Training data was NaN/Inf-filled with 0 (_fill_nan_for_torch) — match it
+        X_arr = np.nan_to_num(X.values.astype(np.float64), nan=0.0, posinf=0.0, neginf=0.0)
+        y_pred, y_pis = self._mapie.predict_interval(X_arr)
 
         # y_pis shape: (n_samples, 2, n_confidence_levels)
         price_low = y_pis[:, 0, 0]

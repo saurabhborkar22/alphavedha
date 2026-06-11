@@ -37,17 +37,31 @@ class PredictionService:
             return self._registry.get_demo_features(symbol)
         return await self._load_real_features(symbol)
 
-    async def _load_real_features(self, symbol: str) -> pd.DataFrame:
-        """Load the latest computed features from the feature store.
+    @property
+    def _feature_window_rows(self) -> int:
+        """Rows of feature history needed per prediction.
 
-        Fetches the most recent row from the PostgreSQL feature store.
-        Falls back to on-the-fly computation from OHLCV data if the
-        feature store is empty for this symbol.
+        LSTM/TFT need a full sequence window to emit a prediction for the
+        latest row — anything shorter lands entirely in their warmup pad.
+        """
+        return max(
+            self._config.models.lstm.sequence_length,
+            self._config.models.tft.sequence_length,
+        )
+
+    async def _load_real_features(self, symbol: str) -> pd.DataFrame:
+        """Load the latest window of computed features from the feature store.
+
+        Fetches the most recent `_feature_window_rows` rows from the
+        PostgreSQL feature store. Falls back to on-the-fly computation from
+        OHLCV data if the feature store has too little history.
         """
         from alphavedha.data.store import load_features
 
+        n_rows = self._feature_window_rows
         today = date.today()
-        start = today - timedelta(days=7)
+        # Calendar buffer: ~250 trading days per 365 calendar days
+        start = today - timedelta(days=max(2 * n_rows, 30))
 
         try:
             features_df = await load_features(symbol, start, today)
@@ -55,8 +69,10 @@ class PredictionService:
             logger.warning("feature_store_unavailable", symbol=symbol, error=str(e))
             features_df = pd.DataFrame()
 
-        if features_df.empty:
-            features_df = await self._compute_features_on_the_fly(symbol)
+        if len(features_df) < n_rows:
+            computed = await self._compute_features_on_the_fly(symbol)
+            if len(computed) > len(features_df):
+                features_df = computed
 
         if features_df.empty:
             raise ValueError(
@@ -64,7 +80,7 @@ class PredictionService:
                 "Run `alphavedha data refresh` to populate the feature store."
             )
 
-        return features_df.iloc[[-1]]
+        return features_df.tail(n_rows)
 
     async def _compute_features_on_the_fly(self, symbol: str) -> pd.DataFrame:
         """Compute features from cached OHLCV data when feature store is empty."""

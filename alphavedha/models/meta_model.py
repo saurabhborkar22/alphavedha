@@ -21,6 +21,7 @@ from alphavedha.exceptions import (
     InsufficientDataError,
     ModelNotFoundError,
     ModelTrainingError,
+    PredictionError,
 )
 
 logger = structlog.get_logger(__name__)
@@ -122,6 +123,9 @@ class MetaLabelingModel:
             raise ModelTrainingError("MetaLabelingModel is not fitted. Call fit() first.")
 
         X_aug = self._build_features(X_features, ensemble_direction, ensemble_confidence)
+        X_aug = self._align_features(X_aug)
+        # Training data was NaN/Inf-filled with 0 (_fill_nan_for_torch) — match it
+        X_aug = X_aug.replace([np.inf, -np.inf], np.nan).fillna(0.0)
         self._validate_inputs(X_aug)
 
         if len(X_aug) == 0:
@@ -173,6 +177,18 @@ class MetaLabelingModel:
 
         logger.info("meta_labeling_loaded", path=str(directory))
         return model
+
+    def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Subset and reorder X to the features the model was trained on."""
+        if not self._feature_names or list(X.columns) == self._feature_names:
+            return X
+        missing = [f for f in self._feature_names if f not in X.columns]
+        if missing:
+            raise PredictionError(
+                f"meta_labeling: input is missing {len(missing)} trained "
+                f"feature(s), e.g. {missing[:5]}"
+            )
+        return X[self._feature_names]
 
     @staticmethod
     def _build_features(
