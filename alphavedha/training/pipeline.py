@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 import structlog
@@ -173,8 +174,27 @@ async def _load_tier_data(
     oof_ratio: float = 0.15,
     val_ratio: float = 0.15,
     embargo_days: int = 20,
+    use_cache: bool = True,
 ) -> TierData:
-    """Load all symbol data for a tier with 3-way temporal split."""
+    """Load all symbol data for a tier with 3-way temporal split.
+
+    Results are cached to disk keyed by (tier, today, split params) so that
+    sequential model trainings on the same day skip the ~5 min feature
+    recomputation. The cache is invalidated daily and on split-param changes.
+    """
+    cache_dir = ARTIFACTS_DIR / "tier_data_cache"
+    cache_path = (
+        cache_dir
+        / f"{tier}_{date.today().isoformat()}_{oof_ratio}_{val_ratio}_{embargo_days}.joblib"
+    )
+    if use_cache and cache_path.exists():
+        try:
+            cached: TierData = joblib.load(cache_path)
+            logger.info("tier_data_cache_hit", path=str(cache_path))
+            return cached
+        except Exception as e:
+            logger.warning("tier_data_cache_load_failed", error=str(e))
+
     symbols = await get_symbols_for_tier(tier)
     if not symbols:
         logger.error("train_no_symbols", tier=tier)
@@ -282,7 +302,7 @@ async def _load_tier_data(
         features=len(X_train.columns) if not X_train.empty else 0,
     )
 
-    return TierData(
+    result = TierData(
         X_train=X_train,
         y_train=y_train,
         ret_train=ret_train,
@@ -296,6 +316,19 @@ async def _load_tier_data(
         n_symbols=n_symbols,
         errors=errors,
     )
+
+    if use_cache and not X_train.empty:
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            for old in cache_dir.glob(f"{tier}_*.joblib"):
+                if old != cache_path:
+                    old.unlink(missing_ok=True)
+            joblib.dump(result, cache_path)
+            logger.info("tier_data_cache_saved", path=str(cache_path))
+        except Exception as e:
+            logger.warning("tier_data_cache_save_failed", error=str(e))
+
+    return result
 
 
 def _select_top_features(

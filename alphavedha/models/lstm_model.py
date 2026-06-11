@@ -21,6 +21,8 @@ from alphavedha.exceptions import ModelNotFoundError, ModelTrainingError
 from alphavedha.models.base import BaseModel, PredictionResult, TrainResult
 from alphavedha.models.sequence_utils import (
     EarlyStopping,
+    FastSequenceLoader,
+    FeatureScaler,
     SequenceDataset,
     compute_combined_loss,
     create_data_loaders,
@@ -70,6 +72,7 @@ class LSTMModel(BaseModel):
         cfg = config or LSTMConfig()
         self._lstm_config = cfg
         self._network: LSTMNetwork | None = None
+        self._scaler: FeatureScaler | None = None
         self._device = get_device()
         super().__init__(
             name=name,
@@ -107,6 +110,15 @@ class LSTMModel(BaseModel):
             return_train = pd.Series(np.zeros(len(X_train)), index=X_train.index)
         if return_val is None and X_val is not None:
             return_val = pd.Series(np.zeros(len(X_val)), index=X_val.index)
+
+        self._scaler = FeatureScaler.fit(X_train.values)
+        X_train = pd.DataFrame(
+            self._scaler.transform(X_train.values), index=X_train.index, columns=X_train.columns
+        )
+        if X_val is not None:
+            X_val = pd.DataFrame(
+                self._scaler.transform(X_val.values), index=X_val.index, columns=X_val.columns
+            )
 
         train_loader, val_loader = create_data_loaders(
             X_train=X_train,
@@ -213,7 +225,7 @@ class LSTMModel(BaseModel):
         if self._network is not None:
             self._network.train(False)
 
-    def _compute_metrics(self, loader: DataLoader) -> dict[str, float]:  # type: ignore[type-arg]
+    def _compute_metrics(self, loader: FastSequenceLoader) -> dict[str, float]:
         if self._network is None:
             return {}
         self._set_inference_mode()
@@ -253,6 +265,8 @@ class LSTMModel(BaseModel):
         n_warmup = seq_len - 1
 
         X_arr = X.values.astype(np.float32)
+        if self._scaler is not None:
+            X_arr = self._scaler.transform(X_arr)
         dummy_dir = np.zeros(n_total, dtype=float)
         dummy_mag = np.zeros(n_total, dtype=np.float32)
 
@@ -316,6 +330,7 @@ class LSTMModel(BaseModel):
             "num_layers": self._lstm_config.num_layers,
             "dropout": self._lstm_config.dropout,
             "sequence_length": self._lstm_config.sequence_length,
+            "scaler": self._scaler.to_dict() if self._scaler is not None else None,
         }
         (directory / "model_config.json").write_text(json.dumps(model_config, indent=2))
 
@@ -346,6 +361,8 @@ class LSTMModel(BaseModel):
         network.to(model._device)
 
         model._network = network
+        scaler_dict = model_config.get("scaler")
+        model._scaler = FeatureScaler.from_dict(scaler_dict) if scaler_dict else None
         model._lstm_config = LSTMConfig(
             hidden_size=model_config["hidden_size"],
             num_layers=model_config["num_layers"],

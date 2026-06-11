@@ -21,6 +21,7 @@ from alphavedha.exceptions import ModelNotFoundError, ModelTrainingError
 from alphavedha.models.base import BaseModel, PredictionResult, TrainResult
 from alphavedha.models.sequence_utils import (
     EarlyStopping,
+    FeatureScaler,
     MultiHorizonSequenceDataset,
     SequenceDataset,
     compute_combined_loss,
@@ -186,6 +187,7 @@ class TemporalAttentionModel(BaseModel):
         cfg = config or TFTConfig()
         self._tft_config = cfg
         self._network: TemporalAttentionNetwork | None = None
+        self._scaler: FeatureScaler | None = None
         self._device = get_device()
         self._last_horizons: dict[int, PredictionResult] = {}
         self._last_attention_weights: np.ndarray | None = None
@@ -233,6 +235,15 @@ class TemporalAttentionModel(BaseModel):
             return_train = pd.Series(np.zeros(len(X_train)), index=X_train.index)
         if return_val is None and X_val is not None:
             return_val = pd.Series(np.zeros(len(X_val)), index=X_val.index)
+
+        self._scaler = FeatureScaler.fit(X_train.values)
+        X_train = pd.DataFrame(
+            self._scaler.transform(X_train.values), index=X_train.index, columns=X_train.columns
+        )
+        if X_val is not None:
+            X_val = pd.DataFrame(
+                self._scaler.transform(X_val.values), index=X_val.index, columns=X_val.columns
+            )
 
         train_ds = MultiHorizonSequenceDataset(
             X=X_train.values,
@@ -424,6 +435,8 @@ class TemporalAttentionModel(BaseModel):
         n_warmup = seq_len - 1
 
         X_arr = X.values.astype(np.float32)
+        if self._scaler is not None:
+            X_arr = self._scaler.transform(X_arr)
         dummy_dir = np.zeros(n_total, dtype=float)
         dummy_mag = np.zeros(n_total, dtype=np.float32)
 
@@ -517,6 +530,7 @@ class TemporalAttentionModel(BaseModel):
             "dropout": self._tft_config.dropout,
             "sequence_length": self._tft_config.sequence_length,
             "horizons": self._tft_config.horizons,
+            "scaler": self._scaler.to_dict() if self._scaler is not None else None,
         }
         (directory / "model_config.json").write_text(json.dumps(model_config, indent=2))
 
@@ -551,6 +565,8 @@ class TemporalAttentionModel(BaseModel):
         network.to(model._device)
 
         model._network = network
+        scaler_dict = model_config.get("scaler")
+        model._scaler = FeatureScaler.from_dict(scaler_dict) if scaler_dict else None
         model._tft_config = TFTConfig(
             hidden_size=model_config["hidden_size"],
             num_layers=model_config["num_layers"],
