@@ -47,7 +47,8 @@ RUN mkdir -p /app/models/artifacts /app/logs && \
 USER alphavedha
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
 
 EXPOSE 8000
 
