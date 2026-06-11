@@ -351,4 +351,7 @@ class ModelRegistry:
             scorer=CompositeScorer(),
             risk_manager=risk_manager,
             model_version=self._real_version,
+            # Trained ConformalPredictor predicts forward returns (fit on
+            # ret_oof) — convert intervals to prices at serving time.
+            conformal_outputs_returns=True,
         )

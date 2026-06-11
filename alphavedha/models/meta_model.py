@@ -148,6 +148,7 @@ class MetaLabelingModel:
 
         metadata: dict[str, Any] = {
             "name": "meta_labeling_model",
+            "version": "0.0.1",
             "created_at": datetime.now(UTC).isoformat(),
             "config": self._config.model_dump(),
             "metrics": self._training_metrics,

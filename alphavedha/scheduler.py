@@ -29,6 +29,7 @@ IST = ZoneInfo("Asia/Kolkata")
 
 PREDICTION_TIME = "08:30"
 EVALUATION_TIME = "15:45"
+DATA_REFRESH_TIME = "17:00"  # daily OHLCV ingestion after market close (15:30 IST)
 DRIFT_CHECK_DAY = "saturday"
 DRIFT_CHECK_TIME = "20:00"
 RETRAIN_DAY = "saturday"
@@ -75,6 +76,7 @@ class SchedulerState:
     last_lstm_tft_retrain: datetime | None = None
     last_rebalance_check: datetime | None = None
     last_quality_check: datetime | None = None
+    last_data_refresh: datetime | None = None
     last_bse_ingestion: datetime | None = None
     last_trends_ingestion: datetime | None = None
     last_intraday_poll: datetime | None = None
@@ -313,17 +315,22 @@ class AlphaVedhaScheduler:
             cache = PredictionCache(redis_client=None)
             service = PredictionService(registry=registry, cache=cache, config=config)
 
-            ranking = _run_async(service.scan_tier(self._tier, top_n=50))
+            from alphavedha.prediction.ranker import StockRanker
 
-            candidates = list(ranking.buy_candidates) + list(ranking.sell_candidates)
+            predictions = _run_async(service.predict_tier(self._tier))
+            ranking = StockRanker().rank(predictions, top_n=50)
+
+            # Persist ALL predictions (not only tradeable candidates) so the
+            # track record measures model accuracy even on days the
+            # meta-labeling gate keeps every position closed.
             persisted = 0
             if self._demo:
                 logger.info("paper_trade_persistence_skipped", reason="demo mode")
             else:
                 prediction_date = _now_ist().date()
-                persisted = _run_async(_persist_paper_trades(candidates, prediction_date))
+                persisted = _run_async(_persist_paper_trades(predictions, prediction_date))
 
-            result.symbols_processed = len(candidates)
+            result.symbols_processed = len(predictions)
             result.success = True
             self._state.last_prediction_run = _now_ist()
 
@@ -375,6 +382,39 @@ class AlphaVedhaScheduler:
         except Exception as e:
             result.error = str(e)
             logger.error("scheduler_job_failed", job="daily_evaluation", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_data_refresh(self) -> JobResult:
+        """Ingest the latest OHLCV data for the configured tier after market close.
+
+        Without this, the OHLCV store stays frozen at the last backfill —
+        predictions go stale and matured paper trades can never be evaluated
+        (evaluation needs closes from after the prediction date).
+        """
+        result = JobResult(job_name="daily_data_refresh", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="daily_data_refresh", tier=self._tier)
+
+        try:
+            from alphavedha.data.ingestion import refresh_latest
+
+            ingestion = _run_async(refresh_latest(self._tier, lookback_days=5))
+            result.symbols_processed = ingestion.symbols_succeeded
+            result.success = True
+            self._state.last_data_refresh = _now_ist()
+
+            logger.info(
+                "scheduler_job_complete",
+                job="daily_data_refresh",
+                symbols_succeeded=ingestion.symbols_succeeded,
+                symbols_failed=ingestion.symbols_failed,
+                rows_stored=ingestion.total_rows_stored,
+            )
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="daily_data_refresh", error=str(e))
 
         result.finished_at = _now_ist()
         self._record_job(result)
@@ -716,6 +756,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
+        schedule.every().day.at(DATA_REFRESH_TIME).do(self.run_data_refresh)
         schedule.every().day.at(XGBOOST_RETRAIN_TIME).do(self.run_daily_xgboost_retrain)
         schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
 
@@ -746,6 +787,7 @@ class AlphaVedhaScheduler:
             "scheduler_configured",
             prediction_time=PREDICTION_TIME,
             evaluation_time=EVALUATION_TIME,
+            data_refresh_time=DATA_REFRESH_TIME,
             xgboost_retrain_time=XGBOOST_RETRAIN_TIME,
             lstm_tft_retrain_day=LSTM_TFT_RETRAIN_DAY,
             drift_day=DRIFT_CHECK_DAY,

@@ -33,7 +33,8 @@ from alphavedha.scheduler import (
 
 
 def _make_prediction(symbol: str, direction: int = 1) -> SimpleNamespace:
-    """Minimal stand-in for StockPrediction with the fields the scheduler persists."""
+    """Minimal stand-in for StockPrediction with the fields the scheduler
+    persists and the ranker filters on."""
     return SimpleNamespace(
         symbol=symbol,
         direction=direction,
@@ -41,6 +42,9 @@ def _make_prediction(symbol: str, direction: int = 1) -> SimpleNamespace:
         meta_confidence=0.71,
         model_version="v0.1.0",
         regime="bull",
+        is_tradeable=True,
+        position_size_pct=0.05,
+        composite_score=70.0,
     )
 
 
@@ -156,7 +160,7 @@ class TestAlphaVedhaScheduler:
         schedule.clear()
         sched = AlphaVedhaScheduler(demo=True)
         sched.setup_schedule()
-        assert len(schedule.get_jobs()) == 11  # 2 new jobs: xgboost_retrain, lstm_tft_retrain
+        assert len(schedule.get_jobs()) == 12  # incl. daily data refresh
 
     def test_maybe_monthly_retrain_first_week(self) -> None:
         sched = AlphaVedhaScheduler(demo=True)
@@ -272,13 +276,12 @@ class TestAlphaVedhaScheduler:
         assert {3, 9} == REBALANCE_MONTHS
 
     def test_run_daily_predictions_real_mode_persists(self) -> None:
-        """Non-demo predictions must be persisted as paper trades."""
+        """Non-demo predictions must ALL be persisted as paper trades —
+        including ones the meta-labeling gate marks untradeable, so the
+        track record measures model accuracy on no-signal days too."""
         sched = AlphaVedhaScheduler(demo=False)
-        ranking = SimpleNamespace(
-            buy_candidates=[_make_prediction("TCS", 1)],
-            sell_candidates=[_make_prediction("INFY", -1)],
-        )
-        mock_service = SimpleNamespace(scan_tier=AsyncMock(return_value=ranking))
+        predictions = [_make_prediction("TCS", 1), _make_prediction("INFY", -1)]
+        mock_service = SimpleNamespace(predict_tier=AsyncMock(return_value=predictions))
 
         with (
             patch(
@@ -653,3 +656,23 @@ class TestStorePnlSummary:
             await _store_pnl_summary(as_of, EvaluationSummary(n_evaluated=1))
 
         mock_store.assert_not_awaited()
+
+
+class TestDataRefreshJob:
+    def test_run_data_refresh_success(self) -> None:
+        sched = AlphaVedhaScheduler(demo=True)
+        ingestion = SimpleNamespace(symbols_succeeded=50, symbols_failed=0, total_rows_stored=250)
+        with patch("alphavedha.scheduler._run_async", return_value=ingestion):
+            result = sched.run_data_refresh()
+        assert result.job_name == "daily_data_refresh"
+        assert result.success is True
+        assert result.symbols_processed == 50
+        assert sched.state.last_data_refresh is not None
+
+    def test_run_data_refresh_failure_recorded(self) -> None:
+        sched = AlphaVedhaScheduler(demo=True)
+        with patch("alphavedha.scheduler._run_async", side_effect=Exception("yfinance down")):
+            result = sched.run_data_refresh()
+        assert result.success is False
+        assert result.error is not None
+        assert "yfinance down" in result.error

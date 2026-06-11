@@ -147,6 +147,7 @@ class StackingEnsemble:
 
         metadata: dict[str, Any] = {
             "name": "stacking_ensemble",
+            "version": "0.0.1",
             "created_at": datetime.now(UTC).isoformat(),
             "config": self._config.model_dump(),
             "metrics": self._training_metrics,
