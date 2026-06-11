@@ -243,6 +243,18 @@ async def load_recent_closes(symbol: str, lookback_days: int = 60) -> pd.DataFra
 
 # ── yfinance fetchers (sync — call via asyncio.to_thread) ────────────────────
 
+# Indices use Yahoo index tickers, not the .NS equity suffix
+_INDEX_TICKERS: dict[str, str] = {
+    "NIFTY50": "^NSEI",
+    "NIFTY": "^NSEI",
+    "BANKNIFTY": "^NSEBANK",
+    "SENSEX": "^BSESN",
+}
+
+
+def _yf_ticker(symbol: str) -> str:
+    return _INDEX_TICKERS.get(symbol.upper(), f"{symbol}.NS")
+
 
 def fetch_intraday_5m(symbol: str) -> dict[str, Any] | None:
     """Today's 5-minute candles for one NSE symbol via yfinance, or None.
@@ -256,7 +268,7 @@ def fetch_intraday_5m(symbol: str) -> dict[str, Any] | None:
     try:
         import yfinance as yf
 
-        ticker = yf.Ticker(f"{symbol}.NS")
+        ticker = yf.Ticker(_yf_ticker(symbol))
         hist = ticker.history(period="1d", interval="5m")
         if hist.empty:
             return None
@@ -274,7 +286,7 @@ def fetch_intraday_5m(symbol: str) -> dict[str, Any] | None:
                     "high": round(float(row["High"]), 2),
                     "low": round(float(row["Low"]), 2),
                     "close": round(float(row["Close"]), 2),
-                    "volume": int(row["Volume"]),
+                    "volume": int(row["Volume"]) if pd.notna(row["Volume"]) else 0,
                 }
             )
         result = {"candles": candles, "prev_close": prev_close}
@@ -298,7 +310,7 @@ def fetch_intraday_bulk(symbols: list[str]) -> dict[str, pd.DataFrame]:
     try:
         import yfinance as yf
 
-        tickers = [f"{s}.NS" for s in symbols]
+        tickers = [_yf_ticker(s) for s in symbols]
         data = yf.download(
             tickers=tickers,
             period="1d",
@@ -312,7 +324,7 @@ def fetch_intraday_bulk(symbols: list[str]) -> dict[str, pd.DataFrame]:
         out: dict[str, pd.DataFrame] = {}
         for sym in symbols:
             try:
-                df = data[f"{sym}.NS"] if isinstance(data.columns, pd.MultiIndex) else data
+                df = data[_yf_ticker(sym)] if isinstance(data.columns, pd.MultiIndex) else data
                 df = df.dropna(how="all")
                 if not df.empty:
                     out[sym] = df

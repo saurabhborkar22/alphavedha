@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+from collections import OrderedDict
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Any
@@ -19,6 +21,7 @@ IST = ZoneInfo("Asia/Kolkata")
 _MARKET_OPEN = (9, 15)
 _MARKET_CLOSE = (15, 30)
 _MARKET_HOURS_TTL = 300
+_MAX_LOCAL_ENTRIES = 256
 
 
 def _now_ist() -> datetime:
@@ -56,10 +59,13 @@ class PredictionCache:
     next market open so stale data is never served past a session boundary.
 
     Pass ``redis_client=None`` to disable caching entirely (no-op mode).
+    When a Redis client is configured but unreachable, a bounded in-process
+    cache takes over so repeated predictions aren't recomputed from scratch.
     """
 
     def __init__(self, redis_client: Any | None = None) -> None:
         self._redis = redis_client
+        self._local: OrderedDict[str, tuple[float, str]] = OrderedDict()
 
     async def get(self, key: str) -> StockPrediction | None:
         """Fetch a cached prediction by key. Returns None on miss or error."""
@@ -67,12 +73,16 @@ class PredictionCache:
             return None
         try:
             raw = await self._redis.get(key)
-            if raw is None:
-                return None
+        except Exception as exc:
+            logger.warning("cache_get_failed", key=key, error=str(exc))
+            raw = self._local_get(key)
+        if raw is None:
+            return None
+        try:
             data = json.loads(raw)
             return _deserialize_prediction(data)
         except Exception as exc:
-            logger.warning("cache_get_failed", key=key, error=str(exc))
+            logger.warning("cache_deserialize_failed", key=key, error=str(exc))
             return None
 
     async def set(self, key: str, prediction: StockPrediction) -> None:
@@ -83,9 +93,30 @@ class PredictionCache:
             data = asdict(prediction)
             raw = json.dumps(data, cls=_NumpyEncoder)
             ttl = self._compute_ttl()
+        except Exception as exc:
+            logger.warning("cache_serialize_failed", key=key, error=str(exc))
+            return
+        try:
             await self._redis.set(key, raw, ex=ttl)
         except Exception as exc:
             logger.warning("cache_set_failed", key=key, error=str(exc))
+            self._local_set(key, raw, ttl)
+
+    def _local_get(self, key: str) -> str | None:
+        item = self._local.get(key)
+        if item is None:
+            return None
+        expiry, raw = item
+        if time.monotonic() > expiry:
+            del self._local[key]
+            return None
+        return raw
+
+    def _local_set(self, key: str, raw: str, ttl: int) -> None:
+        self._local[key] = (time.monotonic() + ttl, raw)
+        self._local.move_to_end(key)
+        while len(self._local) > _MAX_LOCAL_ENTRIES:
+            self._local.popitem(last=False)
 
     async def health_check(self) -> bool:
         """Return True if Redis is reachable."""
