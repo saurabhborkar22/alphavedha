@@ -22,8 +22,8 @@ from alphavedha.exceptions import ModelNotFoundError, ModelTrainingError
 from alphavedha.models.base import BaseModel, PredictionResult, TrainResult
 from alphavedha.models.sequence_utils import (
     EarlyStopping,
+    FastMultiHorizonLoader,
     FeatureScaler,
-    MultiHorizonSequenceDataset,
     SequenceDataset,
     compute_combined_loss,
     get_device,
@@ -248,26 +248,28 @@ class TemporalAttentionModel(BaseModel):
                 self._scaler.transform(X_val.values), index=X_val.index, columns=X_val.columns
             )
 
-        train_ds = MultiHorizonSequenceDataset(
+        train_loader = FastMultiHorizonLoader(
             X=X_train.values,
             y_direction=y_train.values,
             y_magnitude=return_train.values,
             sequence_length=cfg.sequence_length,
             horizons=cfg.horizons,
+            batch_size=cfg.batch_size,
             sample_weight=(sample_weight.values if sample_weight is not None else None),
+            shuffle=True,
         )
-        train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True)
 
         val_loader = None
         if X_val is not None and y_val is not None and return_val is not None:
-            val_ds = MultiHorizonSequenceDataset(
+            val_loader = FastMultiHorizonLoader(
                 X=X_val.values,
                 y_direction=y_val.values,
                 y_magnitude=return_val.values,
                 sequence_length=cfg.sequence_length,
                 horizons=cfg.horizons,
+                batch_size=cfg.batch_size,
+                shuffle=False,
             )
-            val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False)
 
         n_features = X_train.shape[1]
         self._network = TemporalAttentionNetwork(
@@ -284,6 +286,16 @@ class TemporalAttentionModel(BaseModel):
         early_stop = EarlyStopping(patience=cfg.early_stopping_patience, min_delta=1e-4)
         best_state: dict[str, torch.Tensor] | None = None
         horizons_sorted = sorted(cfg.horizons)
+
+        # Inverse-frequency class weights — the neutral class (~15% of triple
+        # barrier labels) is otherwise drowned out by up/down.
+        y_arr = y_train.dropna().astype(int).to_numpy() + 1
+        counts = np.bincount(np.clip(y_arr, 0, 2), minlength=3).astype(np.float64)
+        class_weights = torch.tensor(
+            counts.sum() / (3.0 * np.maximum(counts, 1.0)),
+            dtype=torch.float32,
+            device=self._device,
+        )
 
         for epoch in range(cfg.max_epochs):
             self._network.train()
@@ -306,7 +318,7 @@ class TemporalAttentionModel(BaseModel):
                     h_reg = reg_outputs[h][mask]
                     h_y_dir = h_dirs[:, j][mask]
                     h_y_mag = h_mags[:, j][mask]
-                    h_w = weights[mask]
+                    h_w = weights[mask] * class_weights[h_y_dir]
                     h_loss = compute_combined_loss(h_cls, h_reg, h_y_dir, h_y_mag, h_w)
                     total_loss = total_loss + _HORIZON_LOSS_WEIGHTS[j] * h_loss
 
@@ -344,7 +356,7 @@ class TemporalAttentionModel(BaseModel):
                             h_reg = reg_outputs[h][mask]
                             h_y_dir = h_dirs[:, j][mask]
                             h_y_mag = h_mags[:, j][mask]
-                            h_w = weights[mask]
+                            h_w = weights[mask] * class_weights[h_y_dir]
                             h_loss = compute_combined_loss(h_cls, h_reg, h_y_dir, h_y_mag, h_w)
                             vloss = vloss + _HORIZON_LOSS_WEIGHTS[j] * h_loss
                         val_losses.append(vloss.item())
@@ -399,7 +411,7 @@ class TemporalAttentionModel(BaseModel):
             hyperparams=dict(self._config),
         )
 
-    def _compute_metrics(self, loader: DataLoader) -> dict[str, float]:  # type: ignore[type-arg]
+    def _compute_metrics(self, loader: FastMultiHorizonLoader) -> dict[str, float]:
         if self._network is None:
             return {}
         self._set_inference_mode()

@@ -145,7 +145,7 @@ class TFTConfig(BaseModel):
     num_layers: int = 2
     dropout: float = 0.1
     learning_rate: float = 0.001
-    batch_size: int = 64
+    batch_size: int = 128
     max_epochs: int = 50
     early_stopping_patience: int = 10
     horizons: list[int] = Field(default_factory=lambda: [7, 15, 30])
