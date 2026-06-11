@@ -127,8 +127,8 @@ jobs:
             cd /opt/alphavedha/alphavedha
             git fetch origin
             git -c advice.detachedHead=false checkout "$GITHUB_SHA"
-            docker compose -f docker-compose.vps.yml --profile training build api scheduler trainer
-            docker compose -f docker-compose.vps.yml up -d api scheduler
-            docker compose -f docker-compose.vps.yml restart nginx
-            docker compose -f docker-compose.vps.yml exec -T api alembic upgrade head
+            docker compose --env-file .env.vps -f docker-compose.vps.yml --profile training build api scheduler trainer
+            docker compose --env-file .env.vps -f docker-compose.vps.yml up -d api scheduler
+            docker compose --env-file .env.vps -f docker-compose.vps.yml restart nginx
+            docker compose --env-file .env.vps -f docker-compose.vps.yml exec -T api alembic upgrade head
             echo "Deploy complete: $GITHUB_SHA"

@@ -65,6 +65,7 @@ class PredictionEngine:
         risk_manager: RiskManager,
         regime_strategy: RegimeStrategySelector | None = None,
         model_version: str = "v0.1.0",
+        conformal_outputs_returns: bool = False,
     ) -> None:
         self._models: dict[str, BaseModelProtocol] = {
             "xgboost": xgboost,
@@ -79,6 +80,10 @@ class PredictionEngine:
         self._risk_manager = risk_manager
         self._regime_strategy = regime_strategy or RegimeStrategySelector()
         self._model_version = model_version
+        # The production conformal model is trained on forward returns, not
+        # prices — when set, its intervals are converted to price space
+        # using the latest close.
+        self._conformal_outputs_returns = conformal_outputs_returns
 
     def predict(
         self,
@@ -134,6 +139,12 @@ class PredictionEngine:
                 is_tradeable = False
 
         price_low, price_mid, price_high = self._run_conformal(features, warnings)
+        if self._conformal_outputs_returns and "close" in features.columns:
+            last_close = float(features["close"].iloc[-1])
+            if np.isfinite(last_close) and last_close > 0:
+                price_low = last_close * (1.0 + price_low)
+                price_mid = last_close * (1.0 + price_mid)
+                price_high = last_close * (1.0 + price_high)
 
         regime_result = self._build_regime_result(regime_name, regime_probs)
         composite_score = self._scorer.score(ensemble_result, regime_result, features)

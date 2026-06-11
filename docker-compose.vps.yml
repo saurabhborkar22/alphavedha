@@ -106,7 +106,7 @@ services:
     container_name: alphavedha-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alphavedha}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set — pass --env-file .env.vps}
       POSTGRES_DB: ${POSTGRES_DB:-alphavedha}
     expose:
       - "5432"
@@ -122,14 +122,14 @@ services:
   redis:
     image: redis:7-alpine
     container_name: alphavedha-redis
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set — pass --env-file .env.vps}"]
     expose:
       - "6379"
     volumes:
       - redisdata:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set — pass --env-file .env.vps}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

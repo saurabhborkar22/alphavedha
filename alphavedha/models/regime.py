@@ -159,6 +159,7 @@ class RegimeDetector:
 
         metadata: dict[str, Any] = {
             "name": "regime_detector",
+            "version": "0.0.1",
             "created_at": datetime.now(UTC).isoformat(),
             "state_mapping": self._state_mapping,
             "config": self._config.model_dump(),

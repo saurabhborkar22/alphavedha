@@ -326,3 +326,49 @@ class TestPredictionEngine:
         result = engine.predict("TCS", features)
         assert result.position_size_pct == 0.0
         assert result.is_tradeable is False
+
+    def test_conformal_returns_converted_to_prices(self, features: pd.DataFrame) -> None:
+        """With conformal_outputs_returns=True, return-space intervals are
+        converted to price space using the latest close."""
+        conf = MagicMock()
+        conf.predict.return_value = ConformalResult(
+            price_low=np.array([-0.02]),
+            price_mid=np.array([0.01]),
+            price_high=np.array([0.04]),
+            interval_width=np.array([0.06]),
+            coverage=0.90,
+        )
+        engine = PredictionEngine(
+            xgboost=_mock_base_model("xgboost"),
+            lstm=_mock_base_model("lstm"),
+            tft=_mock_base_model("tft"),
+            regime=_mock_regime(),
+            ensemble=_mock_ensemble(),
+            meta_model=_mock_meta(),
+            conformal=conf,
+            scorer=CompositeScorer(),
+            risk_manager=_mock_risk_manager(),
+            conformal_outputs_returns=True,
+        )
+        features_with_close = features.assign(close=200.0)
+        result = engine.predict("TCS", features_with_close)
+        assert result.price_target_low == pytest.approx(196.0)
+        assert result.price_target_mid == pytest.approx(202.0)
+        assert result.price_target_high == pytest.approx(208.0)
+
+    def test_conformal_passthrough_without_flag(self, features: pd.DataFrame) -> None:
+        """Default engine keeps conformal output untouched even when a
+        close column is present."""
+        engine = PredictionEngine(
+            xgboost=_mock_base_model("xgboost"),
+            lstm=_mock_base_model("lstm"),
+            tft=_mock_base_model("tft"),
+            regime=_mock_regime(),
+            ensemble=_mock_ensemble(),
+            meta_model=_mock_meta(),
+            conformal=_mock_conformal(),
+            scorer=CompositeScorer(),
+            risk_manager=_mock_risk_manager(),
+        )
+        result = engine.predict("TCS", features.assign(close=200.0))
+        assert result.price_target_mid == pytest.approx(100.0)

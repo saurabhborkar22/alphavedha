@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 import structlog
 
@@ -32,6 +33,7 @@ class PredictionService:
         self._engine = registry.get_prediction_engine()
         self._ranker = StockRanker()
         self._inflight_scans: dict[str, asyncio.Task[RankingResult]] = {}
+        self._market_features_cache: tuple[date, pd.DataFrame | None] | None = None
 
     async def _get_features(self, symbol: str) -> pd.DataFrame:
         if self._registry.is_demo:
@@ -108,10 +110,76 @@ class PredictionService:
         try:
             # CPU-heavy (~2-4s) — run off the event loop
             result = await asyncio.to_thread(compute_all_features, symbol=symbol, ohlcv_df=ohlcv_df)
-            return result.df
         except Exception as e:
             logger.warning("feature_computation_failed", symbol=symbol, error=str(e))
             return pd.DataFrame()
+
+        await self._persist_features(symbol, result.df)
+        return result.df
+
+    async def _persist_features(self, symbol: str, features_df: pd.DataFrame) -> None:
+        """Write computed features through to the feature store (best-effort)."""
+        from alphavedha.data.store import store_features
+
+        try:
+            stored = await store_features(symbol, features_df)
+            logger.debug("features_persisted", symbol=symbol, rows=stored)
+        except Exception as e:
+            logger.warning("feature_persist_failed", symbol=symbol, error=str(e))
+
+    async def _get_market_features(self) -> pd.DataFrame | None:
+        """Market-level returns/volatility for regime detection, cached per day.
+
+        Reconstructs the same series the regime detector was trained on:
+        equal-weight portfolio log returns of the default tier plus their
+        20-day realized volatility (see training pipeline _get_regime_probs).
+        """
+        if self._registry.is_demo:
+            return None
+        today = date.today()
+        if self._market_features_cache is not None and self._market_features_cache[0] == today:
+            return self._market_features_cache[1]
+        market_features = await self._build_market_features()
+        self._market_features_cache = (today, market_features)
+        return market_features
+
+    async def _build_market_features(self) -> pd.DataFrame | None:
+        from alphavedha.data.store import load_ohlcv
+
+        tiers = self._config.universe.default_tiers
+        if not tiers:
+            return None
+        try:
+            symbols = await self._get_symbols(tiers[0])
+        except Exception as e:
+            logger.warning("market_features_symbols_failed", error=str(e))
+            return None
+
+        today = date.today()
+        start = today - timedelta(days=400)
+        all_returns: list[pd.Series] = []
+        for symbol in symbols:
+            try:
+                ohlcv_df = await load_ohlcv(symbol, start, today)
+            except Exception:
+                continue
+            if "close" in ohlcv_df.columns and len(ohlcv_df) > 50:
+                returns = np.log(ohlcv_df["close"] / ohlcv_df["close"].shift(1)).dropna()
+                all_returns.append(returns)
+
+        if not all_returns:
+            logger.warning("market_features_no_data")
+            return None
+
+        combined = pd.concat(all_returns, axis=1)
+        portfolio_returns = combined.mean(axis=1).dropna()
+        realized_vol = portfolio_returns.rolling(20).std().dropna()
+        portfolio_returns = portfolio_returns.loc[realized_vol.index]
+        if portfolio_returns.empty:
+            return None
+
+        logger.info("market_features_built", rows=len(portfolio_returns))
+        return pd.DataFrame({"returns": portfolio_returns, "volatility": realized_vol})
 
     async def _get_symbols(self, tier: str) -> list[str]:
         if self._registry.is_demo:
@@ -153,7 +221,10 @@ class PredictionService:
             return cached
 
         features = await self._get_features(symbol)
-        prediction = self._engine.predict(symbol, features, sector=sector)
+        market_features = await self._get_market_features()
+        prediction = self._engine.predict(
+            symbol, features, sector=sector, market_features=market_features
+        )
 
         await self._cache.set(cache_key, prediction)
         logger.info("prediction_generated", symbol=symbol, direction=prediction.direction)
@@ -180,11 +251,21 @@ class PredictionService:
         return await task
 
     async def _scan_tier_impl(self, tier: str, top_n: int) -> RankingResult:
+        predictions = await self.predict_tier(tier)
+        return self._ranker.rank(predictions, top_n=top_n)
+
+    async def predict_tier(self, tier: str) -> list[StockPrediction]:
+        """Predict every symbol in a tier, without ranking or filtering.
+
+        Args:
+            tier: Universe tier name (e.g. "large", "mid").
+
+        Returns:
+            List of StockPrediction for all symbols in the tier.
+        """
         symbols = await self._get_symbols(tier)
         logger.info("scan_started", tier=tier, symbols=len(symbols))
-
-        predictions = await self.predict_batch(symbols)
-        return self._ranker.rank(predictions, top_n=top_n)
+        return await self.predict_batch(symbols)
 
     async def predict_batch(self, symbols: list[str]) -> list[StockPrediction]:
         """Predict multiple symbols concurrently, preserving input order.
