@@ -2,18 +2,127 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 import pandas as pd
 import structlog
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 
 from alphavedha.exceptions import InsufficientDataError
 
 logger = structlog.get_logger(__name__)
 
 _LABEL_MAP = {-1: 0, 0: 1, 1: 2}
+
+
+class FeatureScaler:
+    """Per-feature standardization fit on train data only — no leakage into val/test."""
+
+    def __init__(self, mean: np.ndarray, scale: np.ndarray) -> None:
+        self.mean = np.asarray(mean, dtype=np.float32)
+        self.scale = np.asarray(scale, dtype=np.float32)
+
+    @classmethod
+    def fit(cls, X: np.ndarray) -> FeatureScaler:
+        with np.errstate(invalid="ignore"):
+            mean = np.nanmean(X, axis=0)
+            scale = np.nanstd(X, axis=0)
+        mean = np.nan_to_num(mean, nan=0.0)
+        scale = np.where(np.isnan(scale) | (scale < 1e-8), 1.0, scale)
+        return cls(mean, scale)
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return ((X - self.mean) / self.scale).astype(np.float32)
+
+    def to_dict(self) -> dict[str, list[float]]:
+        return {"mean": self.mean.tolist(), "scale": self.scale.tolist()}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, list[float]]) -> FeatureScaler:
+        return cls(np.asarray(d["mean"]), np.asarray(d["scale"]))
+
+
+class FastSequenceLoader:
+    """Pre-materialized sliding-window batches for single-horizon training.
+
+    Replaces DataLoader+SequenceDataset in the training loop: windows are built
+    once as a zero-copy unfold view, and each epoch slices whole batches by
+    index instead of collating tens of thousands of per-sample __getitem__
+    calls in Python.
+    """
+
+    def __init__(
+        self,
+        X: np.ndarray,
+        y_direction: np.ndarray,
+        y_magnitude: np.ndarray,
+        sequence_length: int = 60,
+        batch_size: int = 64,
+        sample_weight: np.ndarray | None = None,
+        shuffle: bool = False,
+    ) -> None:
+        n_samples = X.shape[0]
+        if n_samples < sequence_length:
+            raise InsufficientDataError(f"Need at least {sequence_length} samples, got {n_samples}")
+
+        X_t = torch.from_numpy(np.ascontiguousarray(X, dtype=np.float32))
+        # (n_windows, n_features, seq_len) — view, no copy
+        self._windows = X_t.unfold(0, sequence_length, 1)
+        self._seq_len = sequence_length
+        self._batch_size = batch_size
+        self._shuffle = shuffle
+
+        y_dir_arr = np.asarray(y_direction, dtype=np.float64)
+        nan_mask = np.isnan(y_dir_arr)
+        mapped_dir = np.ones(len(y_dir_arr), dtype=np.int64)
+        valid = ~nan_mask
+        mapped_dir[valid] = np.clip(y_dir_arr[valid].astype(np.int64) + 1, 0, 2)
+        self._y_direction = torch.from_numpy(mapped_dir)
+        self._y_magnitude = torch.from_numpy(np.asarray(y_magnitude, dtype=np.float32))
+        weights = (
+            np.asarray(sample_weight, dtype=np.float32)
+            if sample_weight is not None
+            else np.ones(n_samples, dtype=np.float32)
+        )
+        self._weights = torch.from_numpy(weights)
+
+        n_windows = n_samples - sequence_length + 1
+        label_idx = np.arange(n_windows) + sequence_length - 1
+        valid_starts = np.nonzero(~nan_mask[label_idx])[0]
+        if len(valid_starts) == 0:
+            raise InsufficientDataError("No valid training samples after NaN filtering")
+        self._valid_starts = torch.from_numpy(valid_starts)
+
+        logger.debug(
+            "fast_sequence_loader_created",
+            n_sequences=len(valid_starts),
+            sequence_length=sequence_length,
+            n_features=X.shape[1],
+            batch_size=batch_size,
+        )
+
+    def __len__(self) -> int:
+        return (len(self._valid_starts) + self._batch_size - 1) // self._batch_size
+
+    def __iter__(
+        self,
+    ) -> Iterator[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]:
+        order = self._valid_starts
+        if self._shuffle:
+            order = order[torch.randperm(len(order))]
+        for i in range(0, len(order), self._batch_size):
+            idx = order[i : i + self._batch_size]
+            X_seq = self._windows[idx].transpose(1, 2).contiguous()
+            label_idx = idx + self._seq_len - 1
+            yield (
+                X_seq,
+                self._y_direction[label_idx],
+                self._y_magnitude[label_idx],
+                self._weights[label_idx],
+            )
 
 
 class SequenceDataset(Dataset):  # type: ignore[type-arg]
@@ -176,26 +285,28 @@ def create_data_loaders(
     sample_weight: pd.Series | None,
     sequence_length: int,
     batch_size: int,
-) -> tuple[DataLoader, DataLoader | None]:  # type: ignore[type-arg]
-    """Create train and optional val DataLoaders from tabular data."""
-    train_ds = SequenceDataset(
+) -> tuple[FastSequenceLoader, FastSequenceLoader | None]:
+    """Create train and optional val batch loaders from tabular data."""
+    train_loader = FastSequenceLoader(
         X=X_train.values,
         y_direction=y_train.values,
         y_magnitude=return_train.values,
         sequence_length=sequence_length,
+        batch_size=batch_size,
         sample_weight=sample_weight.values if sample_weight is not None else None,
+        shuffle=True,
     )
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
 
     val_loader = None
     if X_val is not None and y_val is not None and return_val is not None:
-        val_ds = SequenceDataset(
+        val_loader = FastSequenceLoader(
             X=X_val.values,
             y_direction=y_val.values,
             y_magnitude=return_val.values,
             sequence_length=sequence_length,
+            batch_size=batch_size,
+            shuffle=False,
         )
-        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader
 
