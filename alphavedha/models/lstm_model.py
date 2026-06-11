@@ -280,7 +280,9 @@ class LSTMModel(BaseModel):
         n_total = len(X)
         n_warmup = seq_len - 1
 
-        X_arr = X.values.astype(np.float32)
+        X = self._align_features(X)
+        # Training data was NaN/Inf-filled with 0 (_fill_nan_for_torch) — match it
+        X_arr = np.nan_to_num(X.values.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
         if self._scaler is not None:
             X_arr = self._scaler.transform(X_arr)
         dummy_dir = np.zeros(n_total, dtype=float)

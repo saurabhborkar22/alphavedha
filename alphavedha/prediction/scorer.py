@@ -73,7 +73,8 @@ class CompositeScorer:
         Args:
             ensemble_result: Output from StackingEnsemble.predict().
             regime_result: Output from RegimeDetector.predict().
-            features: Single-row DataFrame with raw feature columns.
+            features: DataFrame with raw feature columns; the last row
+                (latest observation) is the one scored.
 
         Returns:
             Float in [0.0, 100.0].
@@ -87,8 +88,8 @@ class CompositeScorer:
             "volatility_risk": self._weights.volatility_risk,
         }
 
-        direction = int(ensemble_result.direction[0])
-        confidence = float(ensemble_result.confidence[0])
+        direction = int(ensemble_result.direction[-1])
+        confidence = float(ensemble_result.confidence[-1])
 
         sub_scores: dict[str, float | None] = {}
 
@@ -109,7 +110,7 @@ class CompositeScorer:
             if not cols:
                 sub_scores[score_name] = None
             else:
-                values = features[cols].iloc[0].values.astype(float)
+                values = features[cols].iloc[-1].values.astype(float)
                 finite_vals = values[np.isfinite(values)]
                 if len(finite_vals) == 0:
                     sub_scores[score_name] = None
