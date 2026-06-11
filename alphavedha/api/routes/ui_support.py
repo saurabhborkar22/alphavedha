@@ -1,17 +1,37 @@
+"""UI support endpoints — dashboard widgets, scans, paper trading, monitoring.
+
+Demo mode (ALPHAVEDHA_DEMO=1) serves deterministic synthetic data, which is
+useful for demos and screenshots. With demo mode off, every endpoint serves
+REAL data (database, model artifacts, yfinance) or an honest empty/zero
+response — never fabricated numbers.
+"""
+
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import math
-from datetime import datetime, timedelta
+import os
+from datetime import date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Query
+import structlog
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+
+from alphavedha.services import ui_data
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["ui-support"])
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _is_demo() -> bool:
+    """True when the ALPHAVEDHA_DEMO env var enables demo (synthetic) mode."""
+    return os.environ.get("ALPHAVEDHA_DEMO", "").lower() in ("1", "true", "yes")
 
 
 def _seed(s: str) -> float:
@@ -26,6 +46,9 @@ def _seeded_list(seed_str: str, n: int, lo: float, hi: float) -> list[float]:
         s = (s * 16807 + i * 0.001) % 1.0
         out.append(round(lo + s * (hi - lo), 4))
     return out
+
+
+_DIRECTION_LABELS = {1: "UP", -1: "DOWN", 0: "HOLD"}
 
 
 # ── response models ───────────────────────────────────────────────────────────
@@ -241,6 +264,12 @@ NIFTY_50_MID: list[tuple[str, str, str, str]] = [
     ("FEDERALBNK", "Federal Bank", "Banking", "Mid"),
 ]
 
+_NAME_BY_SYMBOL: dict[str, str] = {sym: name for sym, name, _, _ in NIFTY_50 + NIFTY_50_MID}
+
+# Small symbol strip the UI shows on the intraday scanner when no symbol is
+# given — kept small so the non-demo yfinance fetch stays bounded.
+_INTRADAY_STRIP: list[tuple[str, str]] = [(sym, name) for sym, name, _, _ in NIFTY_50[:10]]
+
 # Approximate reference prices for realistic demo data
 _REF_PRICES: dict[str, float] = {
     "TCS": 3800,
@@ -289,7 +318,7 @@ FEATURE_NAMES = [
 ]
 
 
-# ── endpoints ─────────────────────────────────────────────────────────────────
+# ── scan ──────────────────────────────────────────────────────────────────────
 
 _REGIMES = ["Bull", "Bear", "Sideways", "HighVol"]
 _INSIGHTS = [
@@ -349,18 +378,7 @@ def _make_scan_stock(symbol: str, name: str, sector: str, cap: str, seed_str: st
 _VALID_SCAN_TIERS = {"large", "mid", "small"}
 
 
-@router.get("/scan/{tier}", response_model=ScanResponseModel)
-async def scan_stocks(
-    tier: str,
-    top_n: int = Query(default=10, ge=1, le=50),
-) -> ScanResponseModel:
-    from fastapi import HTTPException
-
-    tier = tier.lower().strip()
-    if tier not in _VALID_SCAN_TIERS:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid tier '{tier}'. Use: {_VALID_SCAN_TIERS}"
-        )
+def _demo_scan(tier: str, top_n: int) -> ScanResponseModel:
     universe = NIFTY_50 if tier != "mid" else NIFTY_50 + NIFTY_50_MID
     today = datetime.now().strftime("%Y-%m-%d")
     stocks = [
@@ -381,8 +399,104 @@ async def scan_stocks(
     )
 
 
-@router.get("/predict/{symbol}/explain", response_model=ExplainResponse)
-async def explain_prediction(symbol: str) -> ExplainResponse:
+async def _scan_item_from_prediction(pred: Any, cap: str) -> ScanStockItem:
+    """Map a real StockPrediction into the UI scan item schema."""
+    price = 0.0
+    change_pct = 0.0
+    sparkline: list[float] = []
+    closes = await ui_data.load_recent_closes(pred.symbol)
+    if not closes.empty:
+        series = closes["close"].astype(float)
+        price = round(float(series.iloc[-1]), 2)
+        if len(series) >= 2 and float(series.iloc[-2]) != 0.0:
+            change_pct = round((float(series.iloc[-1]) / float(series.iloc[-2]) - 1) * 100, 2)
+        sparkline = [round(float(v), 2) for v in series.tail(20)]
+
+    direction = _DIRECTION_LABELS.get(int(pred.direction), "HOLD")
+    confidence = round(float(pred.meta_confidence) * 100, 1)
+    targets = {
+        "low": round(float(pred.price_target_low), 2),
+        "mid": round(float(pred.price_target_mid), 2),
+        "high": round(float(pred.price_target_high), 2),
+    }
+    # The engine produces one conformal band — reuse it honestly per horizon.
+    horizon = {
+        "low": targets["low"],
+        "high": targets["high"],
+        "pct": round(abs(float(pred.magnitude)) * 100, 2),
+    }
+    top_features = ui_data.read_xgb_feature_importance(limit=1)
+    sector = ui_data.load_sector_map().get(pred.symbol, "")
+    return ScanStockItem(
+        symbol=pred.symbol,
+        name=_NAME_BY_SYMBOL.get(pred.symbol, pred.symbol),
+        price=price,
+        change_pct=change_pct,
+        sector=ui_data.sector_display_name(sector) if sector else "Unknown",
+        cap=cap,
+        direction=direction,
+        confidence=confidence,
+        regime=str(pred.regime),
+        t7=horizon,
+        t15=dict(horizon),
+        t30=dict(horizon),
+        sparkline=sparkline,
+        composite_score=round(float(pred.composite_score), 2),
+        meta_confidence=round(float(pred.meta_confidence), 4),
+        magnitude=round(float(pred.magnitude), 4),
+        price_targets=targets,
+        top_feature=top_features[0][0] if top_features else "",
+        ai_insight=(
+            f"Ensemble {direction} signal in {pred.regime} regime "
+            f"({confidence:.0f}% meta-confidence)"
+        ),
+    )
+
+
+async def _real_scan(tier: str, top_n: int) -> ScanResponseModel:
+    from alphavedha.api.deps import get_service
+
+    service = get_service()
+    result = await service.scan_tier(tier, top_n=top_n)
+    cap = tier.capitalize()
+    buy = [await _scan_item_from_prediction(p, cap) for p in result.buy_candidates]
+    sell = [await _scan_item_from_prediction(p, cap) for p in result.sell_candidates]
+    return ScanResponseModel(
+        tier=tier,
+        buy_candidates=buy,
+        sell_candidates=sell,
+        excluded=[sym for sym, _reason in result.excluded],
+        total_scanned=len(buy) + len(sell) + len(result.excluded),
+    )
+
+
+@router.get("/scan/{tier}", response_model=ScanResponseModel)
+async def scan_stocks(
+    tier: str,
+    top_n: int = Query(default=10, ge=1, le=50),
+) -> ScanResponseModel:
+    tier = tier.lower().strip()
+    if tier not in _VALID_SCAN_TIERS:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid tier '{tier}'. Use: {_VALID_SCAN_TIERS}"
+        )
+    if _is_demo():
+        return _demo_scan(tier, top_n)
+    try:
+        return await _real_scan(tier, top_n)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("real_scan_failed", tier=tier, error=str(e))
+        return ScanResponseModel(
+            tier=tier, buy_candidates=[], sell_candidates=[], excluded=[], total_scanned=0
+        )
+
+
+# ── explain ───────────────────────────────────────────────────────────────────
+
+
+def _demo_explain(symbol: str) -> ExplainResponse:
     vals = _seeded_list(f"{symbol}-feat", 10, 0.3, 0.95)
     attn_raw = _seeded_list(f"{symbol}-attn", 60, 0.1, 0.9)
     attn = [round(v * (0.5 + 0.5 * (i / 59)), 4) for i, v in enumerate(attn_raw)]
@@ -421,22 +535,146 @@ async def explain_prediction(symbol: str) -> ExplainResponse:
     )
 
 
-@router.get("/portfolio/summary", response_model=PortfolioSummaryResponse)
-async def portfolio_summary() -> PortfolioSummaryResponse:
-    return PortfolioSummaryResponse(
-        value=2_485_000,
-        daily_change_pct=2.3,
-        daily_change_abs=55_842,
-        sharpe_30d=1.84,
-        active_signals=12,
-        equity=1_000_000,
-        unrealized_pnl=24_800,
-        daily_pnl=5_200,
+async def _real_explain(symbol: str) -> ExplainResponse:
+    feature_importance = [
+        FeatureImportance(name=name, value=round(value, 4))
+        for name, value in ui_data.read_xgb_feature_importance(limit=10)
+    ]
+    model_breakdown: list[ModelBreakdown] = []
+    try:
+        from alphavedha.api.deps import get_service
+
+        pred = await get_service().predict_single(symbol.upper().strip())
+        direction = _DIRECTION_LABELS.get(int(pred.direction), "HOLD")
+        agreement = max(0.0, 1.0 - float(pred.model_disagreement))
+        model_breakdown = [
+            ModelBreakdown(
+                name="Ensemble",
+                direction=direction,
+                confidence=round(float(pred.meta_confidence) * 100, 1),
+                weight=round(agreement, 2),
+                color="#3b82f6",
+            )
+        ]
+    except Exception as e:
+        logger.warning("real_explain_prediction_failed", symbol=symbol, error=str(e))
+    # No cheap real attention source — return honestly empty.
+    return ExplainResponse(
+        feature_importance=feature_importance,
+        attention=[],
+        model_breakdown=model_breakdown,
     )
 
 
-@router.get("/models/status", response_model=ModelsStatusResponse)
-async def models_status() -> ModelsStatusResponse:
+@router.get("/predict/{symbol}/explain", response_model=ExplainResponse)
+async def explain_prediction(symbol: str) -> ExplainResponse:
+    if _is_demo():
+        return _demo_explain(symbol)
+    try:
+        return await _real_explain(symbol)
+    except Exception as e:
+        logger.warning("real_explain_failed", symbol=symbol, error=str(e))
+        return ExplainResponse(feature_importance=[], attention=[], model_breakdown=[])
+
+
+# ── portfolio summary ─────────────────────────────────────────────────────────
+
+_EMPTY_PORTFOLIO = {
+    "value": 0.0,
+    "daily_change_pct": 0.0,
+    "daily_change_abs": 0.0,
+    "sharpe_30d": 0.0,
+    "active_signals": 0,
+    "equity": 0.0,
+    "unrealized_pnl": 0.0,
+    "daily_pnl": 0.0,
+}
+
+
+async def _real_portfolio_summary() -> PortfolioSummaryResponse:
+    from alphavedha.data.store import load_daily_pnl, load_paper_trades
+
+    value = 0.0
+    daily_change_pct = 0.0
+    daily_change_abs = 0.0
+    sharpe_30d = 0.0
+
+    pnl = await load_daily_pnl()
+    if not pnl.empty:
+        latest = pnl.iloc[-1]
+        value = round(float(latest["portfolio_value"]), 2)
+        daily_ret = float(latest["daily_return"])
+        daily_change_pct = round(daily_ret * 100, 2)
+        if len(pnl) >= 2:
+            daily_change_abs = round(value - float(pnl.iloc[-2]["portfolio_value"]), 2)
+        elif daily_ret > -1.0:
+            daily_change_abs = round(value - value / (1 + daily_ret), 2)
+        returns = pnl["daily_return"].astype(float).tail(30)
+        std = float(returns.std())
+        if len(returns) >= 2 and std > 0:
+            sharpe_30d = round(float(returns.mean()) / std * math.sqrt(252), 2)
+
+    active_signals = 0
+    unrealized_pnl = 0.0
+    trades = await load_paper_trades()
+    if not trades.empty:
+        open_trades = trades[trades["exit_price"].isna() & trades["entry_price"].notna()]
+        active_signals = len(open_trades)
+        for _, trade in open_trades.tail(25).iterrows():
+            closes = await ui_data.load_recent_closes(str(trade["symbol"]), lookback_days=10)
+            if closes.empty:
+                continue
+            ltp = float(closes["close"].astype(float).iloc[-1])
+            entry = float(trade["entry_price"])
+            side = 1 if int(trade["predicted_direction"]) >= 0 else -1
+            unrealized_pnl += (ltp - entry) * side
+
+    return PortfolioSummaryResponse(
+        value=value,
+        daily_change_pct=daily_change_pct,
+        daily_change_abs=daily_change_abs,
+        sharpe_30d=sharpe_30d,
+        active_signals=active_signals,
+        equity=value,
+        unrealized_pnl=round(unrealized_pnl, 2),
+        daily_pnl=daily_change_abs,
+    )
+
+
+@router.get("/portfolio/summary", response_model=PortfolioSummaryResponse)
+async def portfolio_summary() -> PortfolioSummaryResponse:
+    if _is_demo():
+        return PortfolioSummaryResponse(
+            value=2_485_000,
+            daily_change_pct=2.3,
+            daily_change_abs=55_842,
+            sharpe_30d=1.84,
+            active_signals=12,
+            equity=1_000_000,
+            unrealized_pnl=24_800,
+            daily_pnl=5_200,
+        )
+    try:
+        return await _real_portfolio_summary()
+    except Exception as e:
+        logger.warning("real_portfolio_summary_failed", error=str(e))
+        return PortfolioSummaryResponse(**_EMPTY_PORTFOLIO)
+
+
+# ── models status ─────────────────────────────────────────────────────────────
+
+_MODEL_DISPLAY_NAMES = {
+    "xgboost": "XGBoost",
+    "lstm": "LSTM",
+    "tft": "TFT",
+    "regime": "HMM Regime",
+    "ensemble": "Stacking Ensemble",
+    "meta_labeling": "Meta-Labeling",
+    "conformal": "Conformal",
+}
+
+
+def _demo_models_status() -> ModelsStatusResponse:
     return ModelsStatusResponse(
         models=[
             ModelInfo(
@@ -512,24 +750,101 @@ async def models_status() -> ModelsStatusResponse:
     )
 
 
+def _real_models_status() -> ModelsStatusResponse:
+    models: list[ModelInfo] = []
+    for name in ui_data.MODEL_ARTIFACT_NAMES:
+        metadata = ui_data.read_model_metadata(name)
+        if metadata is None:
+            continue
+        metrics = metadata.get("metrics") or {}
+        raw_acc = metrics.get("val_accuracy", metrics.get("accuracy", 0.0))
+        try:
+            acc = float(raw_acc)
+        except (TypeError, ValueError):
+            acc = 0.0
+        accuracy_pct = round(acc * 100, 1) if 0.0 <= acc <= 1.0 else round(acc, 1)
+        last_trained = str(metadata.get("created_at", ""))[:16].replace("T", " ")
+        models.append(
+            ModelInfo(
+                name=_MODEL_DISPLAY_NAMES.get(name, name),
+                version=str(metadata.get("version", "")),
+                last_trained=last_trained,
+                accuracy=accuracy_pct,
+                accuracy_7d=0.0,  # no live accuracy tracking yet — honest zero
+                drift_score=0.0,  # no stored drift reports yet — honest zero
+                inference_ms=0,
+                status="active",
+            )
+        )
+    return ModelsStatusResponse(
+        models=models,
+        agreement_count=0,
+        total_models=len(models),
+        ensemble_confidence=0.0,
+        ensemble_direction="",
+        feature_drift=[],
+        pipeline=None,
+        system=ui_data.system_resources(),
+    )
+
+
+@router.get("/models/status", response_model=ModelsStatusResponse)
+async def models_status() -> ModelsStatusResponse:
+    if _is_demo():
+        return _demo_models_status()
+    try:
+        return _real_models_status()
+    except Exception as e:
+        logger.warning("real_models_status_failed", error=str(e))
+        return ModelsStatusResponse(
+            models=[],
+            agreement_count=0,
+            total_models=0,
+            ensemble_confidence=0.0,
+            ensemble_direction="",
+            feature_drift=[],
+            pipeline=None,
+            system=None,
+        )
+
+
+# ── backtest (no stored backtest run — honest zeros when demo off) ───────────
+
+
 @router.get("/backtest/summary", response_model=BacktestSummaryResponse)
 async def backtest_summary() -> BacktestSummaryResponse:
+    if _is_demo():
+        return BacktestSummaryResponse(
+            cagr=0.241,
+            sharpe=1.84,
+            max_drawdown=-0.143,
+            win_rate=0.623,
+            total_trades=342,
+            avg_hold_days=4.2,
+            profit_factor=2.1,
+            calmar=1.69,
+            date_from="2019-01-01",
+            date_to="2024-12-31",
+        )
     return BacktestSummaryResponse(
-        cagr=0.241,
-        sharpe=1.84,
-        max_drawdown=-0.143,
-        win_rate=0.623,
-        total_trades=342,
-        avg_hold_days=4.2,
-        profit_factor=2.1,
-        calmar=1.69,
-        date_from="2019-01-01",
-        date_to="2024-12-31",
+        cagr=0.0,
+        sharpe=0.0,
+        max_drawdown=0.0,
+        win_rate=0.0,
+        total_trades=0,
+        avg_hold_days=0.0,
+        profit_factor=0.0,
+        calmar=0.0,
+        date_from="",
+        date_to="",
     )
 
 
 @router.get("/backtest/equity")
 async def backtest_equity() -> dict[str, Any]:
+    if not _is_demo():
+        return {"strategy": [], "benchmark": []}
+
     def gen(seed: int, annual: float) -> list[dict[str, Any]]:
         s, pts = seed, [1_000_000.0]
         today = datetime.today()
@@ -548,6 +863,8 @@ async def backtest_equity() -> dict[str, Any]:
 
 @router.get("/backtest/monthly")
 async def backtest_monthly() -> list[dict[str, Any]]:
+    if not _is_demo():
+        return []
     data = [
         (2019, [2.1, -0.8, 3.4, 1.2, -1.5, 4.2, 0.6, -2.1, 3.8, 1.9, -0.3, 2.7]),
         (2020, [1.8, 3.1, -1.2, 2.5, 0.9, -0.4, 3.6, 1.1, -1.8, 4.1, 2.3, 1.5]),
@@ -565,6 +882,8 @@ async def backtest_monthly() -> list[dict[str, Any]]:
 
 @router.get("/backtest/distribution")
 async def backtest_distribution() -> list[dict[str, Any]]:
+    if not _is_demo():
+        return []
     return [
         {"label": "< -5%", "count": 18},
         {"label": "-5 to -3%", "count": 34},
@@ -579,7 +898,12 @@ async def backtest_distribution() -> list[dict[str, Any]]:
 
 @router.get("/backtest/rolling-sharpe")
 async def backtest_rolling_sharpe() -> list[dict[str, Any]]:
+    if not _is_demo():
+        return []
     return [{"y": round(1.2 + (i / 51) * 0.64 + 0.1 * math.sin(i * 0.4), 3)} for i in range(52)]
+
+
+# ── stock search (static factual reference data — same in both modes) ─────────
 
 
 @router.get("/stocks/search")
@@ -593,62 +917,59 @@ async def stocks_search(q: str = Query(default="")) -> dict[str, Any]:
     return {"results": [r.model_dump() for r in results[:10]]}
 
 
-@router.get("/intraday/live")
-async def intraday_live(symbol: str | None = None, tier: str | None = None) -> dict[str, Any]:
-    from alphavedha.data.live_feed import is_market_open
+# ── intraday ──────────────────────────────────────────────────────────────────
 
-    market_open = is_market_open()
 
-    if symbol:
-        # Return detailed single-symbol response
-        s = _seed(symbol)
-        base = round(1000 + s * 4000, 2)
-        chg = round((s - 0.5) * 4, 2)
-        import random as _r
+def _demo_intraday_symbol(symbol: str) -> dict[str, Any]:
+    s = _seed(symbol)
+    base = round(1000 + s * 4000, 2)
+    chg = round((s - 0.5) * 4, 2)
+    import random as _r
 
-        _r.seed(int(s * 1000))
-        candles = []
-        price = base * 0.998
-        for i in range(78):  # 78 x 5min bars in a trading day
-            o = price
-            h = round(o * (1 + _r.uniform(0, 0.005)), 2)
-            lo = round(o * (1 - _r.uniform(0, 0.005)), 2)
-            c = round(lo + _r.random() * (h - lo), 2)
-            candles.append(
-                {
-                    "time": f"09:{15 + i * 5 // 60:02d}:{(i * 5) % 60:02d}",
-                    "open": o,
-                    "high": h,
-                    "low": lo,
-                    "close": c,
-                    "volume": _r.randint(10000, 500000),
-                }
-            )
-            price = c
-        ticks = [
+    _r.seed(int(s * 1000))
+    candles = []
+    price = base * 0.998
+    for i in range(78):  # 78 x 5min bars in a trading day
+        o = price
+        h = round(o * (1 + _r.uniform(0, 0.005)), 2)
+        lo = round(o * (1 - _r.uniform(0, 0.005)), 2)
+        c = round(lo + _r.random() * (h - lo), 2)
+        candles.append(
             {
-                "time": f"15:{i:02d}",
-                "price": round(base * (1 + (i - 30) * 0.0002), 2),
-                "change": round((i - 30) * 0.02, 2),
-                "volume": _r.randint(1000, 50000),
+                "time": f"09:{15 + i * 5 // 60:02d}:{(i * 5) % 60:02d}",
+                "open": o,
+                "high": h,
+                "low": lo,
+                "close": c,
+                "volume": _r.randint(10000, 500000),
             }
-            for i in range(20)
-        ]
-        return {
-            "symbol": symbol,
-            "ltp": round(base * (1 + chg / 100), 2),
-            "open": round(base * 0.998, 2),
-            "high": round(base * 1.012, 2),
-            "low": round(base * 0.988, 2),
-            "prev_close": base,
-            "change_pct": chg,
-            "volume": int(s * 5_000_000),
-            "intraday_signal": "UP" if s > 0.5 else "DOWN",
-            "candles": candles[:48],
-            "recent_ticks": ticks,
+        )
+        price = c
+    ticks = [
+        {
+            "time": f"15:{i:02d}",
+            "price": round(base * (1 + (i - 30) * 0.0002), 2),
+            "change": round((i - 30) * 0.02, 2),
+            "volume": _r.randint(1000, 50000),
         }
+        for i in range(20)
+    ]
+    return {
+        "symbol": symbol,
+        "ltp": round(base * (1 + chg / 100), 2),
+        "open": round(base * 0.998, 2),
+        "high": round(base * 1.012, 2),
+        "low": round(base * 0.988, 2),
+        "prev_close": base,
+        "change_pct": chg,
+        "volume": int(s * 5_000_000),
+        "intraday_signal": "UP" if s > 0.5 else "DOWN",
+        "candles": candles[:48],
+        "recent_ticks": ticks,
+    }
 
-    # Return list for scanner view
+
+def _demo_intraday_list(market_open: bool) -> dict[str, Any]:
     stocks = []
     for sym, name, _sec, cap in NIFTY_50:
         s = _seed(sym)
@@ -671,13 +992,180 @@ async def intraday_live(symbol: str | None = None, tier: str | None = None) -> d
     return {"stocks": stocks, "market_open": market_open}
 
 
+async def _daily_fallback_quote(symbol: str) -> dict[str, Any] | None:
+    """Latest stored daily OHLCV mapped into the intraday quote shape."""
+    closes = await ui_data.load_recent_closes(symbol, lookback_days=10)
+    if closes.empty:
+        return None
+    last = closes.iloc[-1]
+    prev_close = float(closes.iloc[-2]["close"]) if len(closes) >= 2 else float(last["open"])
+    ltp = float(last["close"])
+    change_pct = round((ltp / prev_close - 1) * 100, 2) if prev_close else 0.0
+    return {
+        "symbol": symbol,
+        "ltp": round(ltp, 2),
+        "open": round(float(last["open"]), 2),
+        "high": round(float(last["high"]), 2),
+        "low": round(float(last["low"]), 2),
+        "prev_close": round(prev_close, 2),
+        "change_pct": change_pct,
+        "volume": int(last["volume"]),
+        "intraday_signal": "UP" if change_pct >= 0 else "DOWN",
+        "candles": [],
+        "recent_ticks": [],
+        "sparkline": [round(float(v), 2) for v in closes["close"].astype(float).tail(30)],
+    }
+
+
+async def _real_intraday_symbol(symbol: str) -> dict[str, Any]:
+    data = await asyncio.to_thread(ui_data.fetch_intraday_5m, symbol)
+    if data and data.get("candles"):
+        candles: list[dict[str, Any]] = data["candles"]
+        ltp = float(candles[-1]["close"])
+        prev_close = data.get("prev_close")
+        if not prev_close:
+            closes = await ui_data.load_recent_closes(symbol, lookback_days=10)
+            if not closes.empty:
+                prev_close = float(closes["close"].astype(float).iloc[-1])
+        change_pct = round((ltp / float(prev_close) - 1) * 100, 2) if prev_close else 0.0
+        ticks = [
+            {
+                "time": c["time"][:5],
+                "price": c["close"],
+                "change": round((float(c["close"]) / float(prev_close) - 1) * 100, 2)
+                if prev_close
+                else 0.0,
+                "volume": c["volume"],
+            }
+            for c in candles[-20:]
+        ]
+        return {
+            "symbol": symbol,
+            "ltp": round(ltp, 2),
+            "open": float(candles[0]["open"]),
+            "high": max(float(c["high"]) for c in candles),
+            "low": min(float(c["low"]) for c in candles),
+            "prev_close": round(float(prev_close), 2) if prev_close else 0.0,
+            "change_pct": change_pct,
+            "volume": int(sum(int(c["volume"]) for c in candles)),
+            "intraday_signal": "UP" if change_pct >= 0 else "DOWN",
+            "candles": candles,
+            "recent_ticks": ticks,
+        }
+
+    fallback = await _daily_fallback_quote(symbol)
+    if fallback is not None:
+        fallback.pop("sparkline", None)
+        return fallback
+    return {
+        "symbol": symbol,
+        "ltp": 0.0,
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "prev_close": 0.0,
+        "change_pct": 0.0,
+        "volume": 0,
+        "intraday_signal": "",
+        "candles": [],
+        "recent_ticks": [],
+    }
+
+
+async def _real_intraday_list(market_open: bool) -> dict[str, Any]:
+    strip_symbols = [sym for sym, _name in _INTRADAY_STRIP]
+    bulk = await asyncio.to_thread(ui_data.fetch_intraday_bulk, strip_symbols)
+    stocks: list[dict[str, Any]] = []
+    for sym, name in _INTRADAY_STRIP:
+        df = bulk.get(sym)
+        if df is not None and not df.empty:
+            opens = df["Open"].astype(float)
+            closes = df["Close"].astype(float)
+            day_open = float(opens.iloc[0])
+            price = float(closes.iloc[-1])
+            stocks.append(
+                {
+                    "symbol": sym,
+                    "name": name,
+                    "open": round(day_open, 2),
+                    "high": round(float(df["High"].astype(float).max()), 2),
+                    "low": round(float(df["Low"].astype(float).min()), 2),
+                    "price": round(price, 2),
+                    "volume": int(df["Volume"].fillna(0).sum()),
+                    "change_pct": round((price / day_open - 1) * 100, 2) if day_open else 0.0,
+                    "sparkline": [round(float(v), 2) for v in closes.tail(30)],
+                    "cap": "Large",
+                }
+            )
+            continue
+        quote = await _daily_fallback_quote(sym)
+        if quote is None:
+            continue
+        stocks.append(
+            {
+                "symbol": sym,
+                "name": name,
+                "open": quote["open"],
+                "high": quote["high"],
+                "low": quote["low"],
+                "price": quote["ltp"],
+                "volume": quote["volume"],
+                "change_pct": quote["change_pct"],
+                "sparkline": quote.get("sparkline", []),
+                "cap": "Large",
+            }
+        )
+    return {"stocks": stocks, "market_open": market_open}
+
+
+@router.get("/intraday/live")
+async def intraday_live(symbol: str | None = None, tier: str | None = None) -> dict[str, Any]:
+    from alphavedha.data.live_feed import is_market_open
+
+    market_open = is_market_open()
+
+    if _is_demo():
+        if symbol:
+            return _demo_intraday_symbol(symbol)
+        return _demo_intraday_list(market_open)
+
+    try:
+        if symbol:
+            return await _real_intraday_symbol(symbol.upper().strip())
+        return await _real_intraday_list(market_open)
+    except Exception as e:
+        logger.warning("real_intraday_failed", symbol=symbol, error=str(e))
+        if symbol:
+            return {
+                "symbol": symbol,
+                "ltp": 0.0,
+                "open": 0.0,
+                "high": 0.0,
+                "low": 0.0,
+                "prev_close": 0.0,
+                "change_pct": 0.0,
+                "volume": 0,
+                "intraday_signal": "",
+                "candles": [],
+                "recent_ticks": [],
+            }
+        return {"stocks": [], "market_open": market_open}
+
+
+# ── system health ─────────────────────────────────────────────────────────────
+
+
 @router.get("/system/health", response_model=SystemResources)
 async def system_health() -> SystemResources:
-    return SystemResources(cpu_pct=34.2, memory_pct=61.8, gpu_pct=28.4, disk_pct=15.1)
+    if _is_demo():
+        return SystemResources(cpu_pct=34.2, memory_pct=61.8, gpu_pct=28.4, disk_pct=15.1)
+    return SystemResources(**ui_data.system_resources())
 
 
-@router.get("/system/data-quality")
-async def data_quality() -> dict[str, Any]:
+# ── data quality ──────────────────────────────────────────────────────────────
+
+
+def _demo_data_quality() -> dict[str, Any]:
     today = datetime.now().isoformat()
     return {
         "overall_score": 94,
@@ -758,6 +1246,93 @@ async def data_quality() -> dict[str, Any]:
     }
 
 
+async def _real_data_quality() -> dict[str, Any]:
+    now_iso = datetime.now().isoformat()
+    stats = await ui_data.ohlcv_store_stats()
+    latest = stats["latest_date"]
+    # ~3 trading days expressed in calendar days (covers weekends).
+    fresh_cutoff = date.today() - timedelta(days=5)
+    per_symbol: list[tuple[str, date | None]] = stats["per_symbol_latest"]
+    fresh_count = sum(1 for _, d in per_symbol if d is not None and d >= fresh_cutoff)
+    coverage = round(100 * fresh_count / len(per_symbol)) if per_symbol else 0
+    if stats["row_count"] == 0:
+        status = "error"
+    elif latest is not None and latest >= fresh_cutoff:
+        status = "ok"
+    else:
+        status = "warning"
+
+    issues: list[dict[str, Any]] = []
+    if status == "error":
+        issues.append(
+            {
+                "severity": "error",
+                "title": "No OHLCV data",
+                "detail": "daily_ohlcv table is empty — run `alphavedha data refresh`",
+                "detected_at": now_iso,
+            }
+        )
+    elif status == "warning":
+        issues.append(
+            {
+                "severity": "warning",
+                "title": "OHLCV data stale",
+                "detail": f"Latest stored date is {latest} (older than 3 trading days)",
+                "detected_at": now_iso,
+            }
+        )
+
+    return {
+        "overall_score": coverage,
+        "symbols_covered": stats["symbol_count"],
+        "missing_bars": 0,
+        "last_updated": latest.isoformat() if latest else "",
+        "sources": [
+            {
+                "name": "PostgreSQL OHLCV Store",
+                "description": "Daily OHLCV (NSE via yfinance/jugaad)",
+                "status": status,
+                "last_fetch": latest.isoformat() if latest else "",
+                "coverage_pct": coverage,
+                "records_today": stats["rows_on_latest_date"],
+            }
+        ],
+        "symbol_quality": [
+            {"symbol": sym, "score": 100 if (d is not None and d >= fresh_cutoff) else 50}
+            for sym, d in per_symbol
+        ],
+        "issues": issues,
+    }
+
+
+@router.get("/system/data-quality")
+async def data_quality() -> dict[str, Any]:
+    if _is_demo():
+        return _demo_data_quality()
+    try:
+        return await _real_data_quality()
+    except Exception as e:
+        logger.warning("real_data_quality_failed", error=str(e))
+        return {
+            "overall_score": 0,
+            "symbols_covered": 0,
+            "missing_bars": 0,
+            "last_updated": "",
+            "sources": [],
+            "symbol_quality": [],
+            "issues": [
+                {
+                    "severity": "error",
+                    "title": "Database unavailable",
+                    "detail": str(e),
+                    "detected_at": datetime.now().isoformat(),
+                }
+            ],
+        }
+
+
+# ── feature drift ─────────────────────────────────────────────────────────────
+
 DRIFT_FEATURES_DATA = [
     ("RSI_14", "Technical", 0.24, 0.18, "ALERT"),
     ("FII_flow_5d", "Macro", 0.15, 0.11, "WARNING"),
@@ -774,6 +1349,10 @@ DRIFT_FEATURES_DATA = [
 
 @router.get("/features/drift")
 async def features_drift() -> list[dict[str, Any]]:
+    if not _is_demo():
+        # Real PSI/KS drift needs a stored reference feature window which is
+        # not available at request time — honest empty rather than fake drift.
+        return []
     return [
         DriftFeature(
             feature=f,
@@ -787,8 +1366,10 @@ async def features_drift() -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/experiments")
-async def list_experiments(model: str | None = None) -> list[dict[str, Any]]:
+# ── experiments ───────────────────────────────────────────────────────────────
+
+
+def _demo_experiments(model: str | None) -> list[dict[str, Any]]:
     runs = [
         ExperimentRun(
             run_id="xgb_20260514_0230",
@@ -837,12 +1418,56 @@ async def list_experiments(model: str | None = None) -> list[dict[str, Any]]:
     return [r.model_dump() for r in runs]
 
 
-@router.get("/events/corporate")
-async def corporate_events(
-    days: int = 30, symbol: str | None = None, type: str | None = None
-) -> list[dict[str, Any]]:
+def _real_experiments(model: str | None) -> list[dict[str, Any]]:
+    from alphavedha.monitoring.experiment_tracker import ExperimentTracker
+
+    tracker = ExperimentTracker(base_dir=ui_data.get_artifact_dir())
+    records = tracker.list_runs(model_name=model, limit=20)
+
+    def _pct(value: Any) -> float:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return round(v * 100, 1) if 0.0 <= v <= 1.0 else round(v, 1)
+
+    runs: list[dict[str, Any]] = []
+    for record in records:
+        runs.append(
+            ExperimentRun(
+                run_id=record.run_id,
+                model=record.model_name,
+                date=str(record.started_at)[:10],
+                train_acc=_pct(record.train_metrics.get("accuracy", 0.0)),
+                val_acc=_pct(record.val_metrics.get("accuracy", 0.0)),
+                sharpe=round(float(record.val_metrics.get("sharpe", 0.0)), 2),
+                max_dd=round(float(record.val_metrics.get("max_drawdown", 0.0)), 2),
+                feature_count=int(record.feature_count),
+                duration_min=int(record.duration_seconds // 60),
+                status="COMPLETED",
+                hyperparams=record.hyperparams,
+            ).model_dump()
+        )
+    return runs
+
+
+@router.get("/experiments")
+async def list_experiments(model: str | None = None) -> list[dict[str, Any]]:
+    if _is_demo():
+        return _demo_experiments(model)
+    try:
+        return _real_experiments(model)
+    except Exception as e:
+        logger.warning("real_experiments_failed", error=str(e))
+        return []
+
+
+# ── corporate events ──────────────────────────────────────────────────────────
+
+
+def _demo_corporate_events() -> list[CorporateEvent]:
     today = datetime.today()
-    events = [
+    return [
         CorporateEvent(
             date=(today + timedelta(days=2)).strftime("%Y-%m-%d"),
             symbol="TCS",
@@ -920,6 +1545,46 @@ async def corporate_events(
             description="Q4 FY26 Results",
         ),
     ]
+
+
+async def _real_corporate_events(days: int) -> list[CorporateEvent]:
+    pairs = [(sym, name) for sym, name, _, _ in NIFTY_50]
+    raw_events = await asyncio.to_thread(ui_data.fetch_corporate_events, pairs)
+    today = date.today()
+    window_start = today - timedelta(days=7)
+    window_end = today + timedelta(days=days)
+    events: list[CorporateEvent] = []
+    for raw in raw_events:
+        try:
+            event_date = date.fromisoformat(str(raw["date"]))
+        except ValueError:
+            continue
+        if not (window_start <= event_date <= window_end):
+            continue
+        events.append(
+            CorporateEvent(
+                date=str(raw["date"]),
+                symbol=str(raw["symbol"]),
+                company=str(raw["company"]),
+                type=str(raw["type"]),
+                description=str(raw["description"]),
+            )
+        )
+    return events
+
+
+@router.get("/events/corporate")
+async def corporate_events(
+    days: int = 30, symbol: str | None = None, type: str | None = None
+) -> list[dict[str, Any]]:
+    if _is_demo():
+        events = _demo_corporate_events()
+    else:
+        try:
+            events = await _real_corporate_events(days)
+        except Exception as e:
+            logger.warning("real_corporate_events_failed", error=str(e))
+            events = []
     if symbol:
         events = [e for e in events if e.symbol == symbol]
     if type and type != "all":
@@ -927,8 +1592,10 @@ async def corporate_events(
     return [e.model_dump() for e in events]
 
 
-@router.get("/sectors/trends")
-async def sector_trends_endpoint() -> dict[str, Any]:
+# ── sector trends ─────────────────────────────────────────────────────────────
+
+
+def _demo_sector_trends() -> dict[str, Any]:
     sectors = [
         {
             "name": "Banking",
@@ -1000,8 +1667,23 @@ async def sector_trends_endpoint() -> dict[str, Any]:
     return {"sectors": sectors, "trends_signals": trends_signals}
 
 
-@router.get("/notifications")
-async def get_notifications() -> list[dict[str, Any]]:
+@router.get("/sectors/trends")
+async def sector_trends_endpoint() -> dict[str, Any]:
+    if _is_demo():
+        return _demo_sector_trends()
+    try:
+        sectors = await ui_data.compute_sector_trends()
+    except Exception as e:
+        logger.warning("real_sector_trends_failed", error=str(e))
+        sectors = []
+    # No real Google Trends source — honest empty list.
+    return {"sectors": sectors, "trends_signals": []}
+
+
+# ── notifications ─────────────────────────────────────────────────────────────
+
+
+def _demo_notifications() -> list[dict[str, Any]]:
     now = datetime.now()
     return [
         {
@@ -1047,96 +1729,309 @@ async def get_notifications() -> list[dict[str, Any]]:
     ]
 
 
+async def _real_notifications() -> list[dict[str, Any]]:
+    from alphavedha.data.store import load_paper_trades
+
+    trades = await load_paper_trades(start=date.today() - timedelta(days=5))
+    if trades.empty:
+        return []
+    high_conf = trades[trades["confidence"].astype(float) >= 0.7]
+    if high_conf.empty:
+        return []
+    high_conf = high_conf.sort_values("prediction_date", ascending=False).head(10)
+    notifications: list[dict[str, Any]] = []
+    for _, trade in high_conf.iterrows():
+        side = _DIRECTION_LABELS.get(int(trade["predicted_direction"]), "HOLD")
+        side_label = {"UP": "BUY", "DOWN": "SELL"}.get(side, "HOLD")
+        regime = trade.get("regime")
+        body = (
+            f"Model {trade['model_version']} predicted {side} with "
+            f"{float(trade['confidence']) * 100:.0f}% confidence"
+        )
+        body += f" in {regime} regime." if regime else "."
+        notifications.append(
+            {
+                "id": f"{trade['symbol']}-{trade['prediction_date']}",
+                "type": "signal",
+                "title": f"{side_label} signal: {trade['symbol']}",
+                "body": body,
+                "read": False,
+                "created_at": str(trade["prediction_date"]),
+            }
+        )
+    return notifications
+
+
+@router.get("/notifications")
+async def get_notifications() -> list[dict[str, Any]]:
+    if _is_demo():
+        return _demo_notifications()
+    try:
+        return await _real_notifications()
+    except Exception as e:
+        logger.warning("real_notifications_failed", error=str(e))
+        return []
+
+
 @router.post("/notifications/read-all")
 async def mark_all_read() -> dict[str, str]:
     return {"status": "ok"}
 
 
+# ── paper trading ─────────────────────────────────────────────────────────────
+
+
+def _trade_id(symbol: str, prediction_date: Any) -> str:
+    return f"{symbol}:{prediction_date}"
+
+
+async def _real_paper_positions() -> list[dict[str, Any]]:
+    from alphavedha.data.store import load_paper_trades
+
+    trades = await load_paper_trades()
+    if trades.empty:
+        return []
+    open_trades = trades[trades["exit_price"].isna() & trades["entry_price"].notna()].tail(25)
+    positions: list[dict[str, Any]] = []
+    for _, trade in open_trades.iterrows():
+        symbol = str(trade["symbol"])
+        entry = float(trade["entry_price"])
+        side = "BUY" if int(trade["predicted_direction"]) >= 0 else "SELL"
+        closes = await ui_data.load_recent_closes(symbol, lookback_days=10)
+        ltp = float(closes["close"].astype(float).iloc[-1]) if not closes.empty else entry
+        sign = 1 if side == "BUY" else -1
+        positions.append(
+            {
+                "id": _trade_id(symbol, trade["prediction_date"]),
+                "symbol": symbol,
+                "side": side,
+                "quantity": 1,
+                "entry_price": round(entry, 2),
+                "ltp": round(ltp, 2),
+                "unrealized_pnl": round((ltp - entry) * sign, 2),
+            }
+        )
+    return positions
+
+
 @router.get("/paper/positions")
 async def paper_positions() -> list[dict[str, Any]]:
-    return [
-        {
-            "id": "p1",
-            "symbol": "TCS",
-            "side": "BUY",
-            "quantity": 10,
-            "entry_price": 3820.0,
-            "ltp": 3891.0,
-            "unrealized_pnl": 710.0,
-        },
-        {
-            "id": "p2",
-            "symbol": "HDFCBANK",
-            "side": "BUY",
-            "quantity": 25,
-            "entry_price": 1642.0,
-            "ltp": 1628.0,
-            "unrealized_pnl": -350.0,
-        },
-        {
-            "id": "p3",
-            "symbol": "INFY",
-            "side": "BUY",
-            "quantity": 15,
-            "entry_price": 1482.0,
-            "ltp": 1521.0,
-            "unrealized_pnl": 585.0,
-        },
-    ]
+    if _is_demo():
+        return [
+            {
+                "id": "p1",
+                "symbol": "TCS",
+                "side": "BUY",
+                "quantity": 10,
+                "entry_price": 3820.0,
+                "ltp": 3891.0,
+                "unrealized_pnl": 710.0,
+            },
+            {
+                "id": "p2",
+                "symbol": "HDFCBANK",
+                "side": "BUY",
+                "quantity": 25,
+                "entry_price": 1642.0,
+                "ltp": 1628.0,
+                "unrealized_pnl": -350.0,
+            },
+            {
+                "id": "p3",
+                "symbol": "INFY",
+                "side": "BUY",
+                "quantity": 15,
+                "entry_price": 1482.0,
+                "ltp": 1521.0,
+                "unrealized_pnl": 585.0,
+            },
+        ]
+    try:
+        return await _real_paper_positions()
+    except Exception as e:
+        logger.warning("real_paper_positions_failed", error=str(e))
+        return []
+
+
+async def _real_paper_orders() -> list[dict[str, Any]]:
+    from alphavedha.data.store import load_paper_trades
+
+    trades = await load_paper_trades()
+    if trades.empty:
+        return []
+    orders: list[dict[str, Any]] = []
+    for _, trade in trades.sort_values("prediction_date", ascending=False).head(50).iterrows():
+        symbol = str(trade["symbol"])
+        has_entry = trade["entry_price"] is not None and not (
+            isinstance(trade["entry_price"], float) and math.isnan(trade["entry_price"])
+        )
+        orders.append(
+            {
+                "id": _trade_id(symbol, trade["prediction_date"]),
+                "symbol": symbol,
+                "side": "BUY" if int(trade["predicted_direction"]) >= 0 else "SELL",
+                "quantity": 1,
+                "price": round(float(trade["entry_price"]), 2) if has_entry else 0.0,
+                "status": "FILLED" if has_entry else "PENDING",
+                "timestamp": str(trade["prediction_date"]),
+            }
+        )
+    return orders
 
 
 @router.get("/paper/orders")
 async def paper_orders() -> list[dict[str, Any]]:
-    now = datetime.now()
-    return [
-        {
-            "id": "o1",
-            "symbol": "TCS",
-            "side": "BUY",
-            "quantity": 10,
-            "price": 3820.0,
-            "status": "FILLED",
-            "timestamp": (now - timedelta(hours=2)).isoformat(),
-        },
-        {
-            "id": "o2",
-            "symbol": "HDFCBANK",
-            "side": "BUY",
-            "quantity": 25,
-            "price": 1642.0,
-            "status": "FILLED",
-            "timestamp": (now - timedelta(hours=3)).isoformat(),
-        },
-        {
-            "id": "o3",
-            "symbol": "WIPRO",
-            "side": "BUY",
-            "quantity": 20,
-            "price": 542.0,
-            "status": "PENDING",
-            "timestamp": (now - timedelta(minutes=30)).isoformat(),
-        },
-    ]
+    if _is_demo():
+        now = datetime.now()
+        return [
+            {
+                "id": "o1",
+                "symbol": "TCS",
+                "side": "BUY",
+                "quantity": 10,
+                "price": 3820.0,
+                "status": "FILLED",
+                "timestamp": (now - timedelta(hours=2)).isoformat(),
+            },
+            {
+                "id": "o2",
+                "symbol": "HDFCBANK",
+                "side": "BUY",
+                "quantity": 25,
+                "price": 1642.0,
+                "status": "FILLED",
+                "timestamp": (now - timedelta(hours=3)).isoformat(),
+            },
+            {
+                "id": "o3",
+                "symbol": "WIPRO",
+                "side": "BUY",
+                "quantity": 20,
+                "price": 542.0,
+                "status": "PENDING",
+                "timestamp": (now - timedelta(minutes=30)).isoformat(),
+            },
+        ]
+    try:
+        return await _real_paper_orders()
+    except Exception as e:
+        logger.warning("real_paper_orders_failed", error=str(e))
+        return []
 
 
 @router.get("/paper/equity-history")
 async def paper_equity_history() -> list[dict[str, Any]]:
-    base = 1_000_000.0
-    return [{"y": round(base * (1 + i * 0.002 + _seed(str(i)) * 0.003 - 0.001))} for i in range(30)]
+    if _is_demo():
+        base = 1_000_000.0
+        return [
+            {"y": round(base * (1 + i * 0.002 + _seed(str(i)) * 0.003 - 0.001))} for i in range(30)
+        ]
+    try:
+        from alphavedha.data.store import load_daily_pnl
+
+        pnl = await load_daily_pnl()
+        if pnl.empty:
+            return []
+        return [{"y": round(float(v), 2)} for v in pnl["portfolio_value"].astype(float).tail(30)]
+    except Exception as e:
+        logger.warning("real_equity_history_failed", error=str(e))
+        return []
 
 
 @router.post("/paper/orders")
 async def place_paper_order(order: dict[str, Any]) -> dict[str, str]:
-    return {"id": f"o{abs(hash(str(order))) % 10000}"}
+    if _is_demo():
+        return {"id": f"o{abs(hash(str(order))) % 10000}"}
+
+    symbol = str(order.get("symbol", "")).upper().strip()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Order requires a 'symbol'")
+    side = str(order.get("side", "BUY")).upper().strip()
+
+    entry_price: float | None = None
+    raw_price = order.get("price", order.get("entry_price"))
+    if raw_price is not None:
+        try:
+            entry_price = float(raw_price)
+        except (TypeError, ValueError):
+            entry_price = None
+    if entry_price is None:
+        closes = await ui_data.load_recent_closes(symbol, lookback_days=10)
+        if not closes.empty:
+            entry_price = float(closes["close"].astype(float).iloc[-1])
+
+    today = date.today()
+    row = {
+        "symbol": symbol,
+        "prediction_date": today,
+        "predicted_direction": -1 if side == "SELL" else 1,
+        "predicted_magnitude": float(order.get("magnitude") or 0.0),
+        "confidence": float(order.get("confidence") or 0.0),
+        "model_version": "manual",
+        "entry_price": entry_price,
+    }
+    try:
+        from alphavedha.data.store import store_paper_trade
+
+        await store_paper_trade(row)
+    except Exception as e:
+        logger.warning("paper_order_store_failed", symbol=symbol, error=str(e))
+        raise HTTPException(status_code=503, detail="Paper trade store unavailable") from e
+    return {"id": _trade_id(symbol, today.isoformat())}
 
 
 @router.post("/paper/positions/{position_id}/close")
 async def close_paper_position(position_id: str) -> dict[str, str]:
-    return {"status": "closed", "id": position_id}
+    if _is_demo():
+        return {"status": "closed", "id": position_id}
+
+    symbol, _, day_str = position_id.partition(":")
+    symbol = symbol.upper().strip()
+    try:
+        prediction_date = date.fromisoformat(day_str) if day_str else date.today()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid position id '{position_id}'") from e
+
+    try:
+        from alphavedha.data.store import load_paper_trades, update_paper_trade_outcome
+
+        trades = await load_paper_trades(symbol=symbol)
+        match = trades[trades["prediction_date"] == prediction_date] if not trades.empty else trades
+        if match.empty:
+            raise HTTPException(status_code=404, detail=f"Position not found: {position_id}")
+        trade = match.iloc[0]
+
+        entry = trade["entry_price"]
+        has_entry = entry is not None and not (isinstance(entry, float) and math.isnan(entry))
+        closes = await ui_data.load_recent_closes(symbol, lookback_days=10)
+        if not closes.empty:
+            exit_price = float(closes["close"].astype(float).iloc[-1])
+        elif has_entry:
+            exit_price = float(entry)
+        else:
+            return {"status": "error", "id": position_id}
+
+        sign = 1 if int(trade["predicted_direction"]) >= 0 else -1
+        actual_return = ((exit_price - float(entry)) / float(entry)) * sign if has_entry else 0.0
+        await update_paper_trade_outcome(
+            symbol=symbol,
+            prediction_date=prediction_date,
+            exit_price=exit_price,
+            actual_return=actual_return,
+            is_correct=actual_return > 0,
+        )
+        return {"status": "closed", "id": position_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("paper_position_close_failed", id=position_id, error=str(e))
+        return {"status": "error", "id": position_id}
 
 
-@router.get("/public/track-record")
-async def public_track_record() -> dict[str, Any]:
+# ── public track record ───────────────────────────────────────────────────────
+
+
+def _demo_track_record() -> dict[str, Any]:
     import random as _r
 
     _r.seed(42)
@@ -1174,3 +2069,136 @@ async def public_track_record() -> dict[str, Any]:
         "signal_breakdown": {"up": 721, "down": 398, "hold": 128},
         "recent_predictions": recent_preds,
     }
+
+
+_EMPTY_TRACK_RECORD: dict[str, Any] = {
+    "total_predictions": 0,
+    "since": "",
+    "directional_accuracy": 0.0,
+    "precision_up": 0.0,
+    "precision_down": 0.0,
+    "avg_confidence": 0.0,
+    "overall_accuracy": 0.0,
+    "accuracy_30d": 0.0,
+    "sharpe": 0.0,
+    "alpha_pp": 0.0,
+    "accuracy_over_time": [],
+    "by_confidence": [],
+    "signal_breakdown": {"up": 0, "down": 0, "hold": 0},
+    "recent_predictions": [],
+}
+
+
+async def _real_track_record() -> dict[str, Any]:
+    from alphavedha.data.store import load_daily_pnl, load_paper_trades
+
+    trades = await load_paper_trades()
+    if trades.empty:
+        return dict(_EMPTY_TRACK_RECORD)
+
+    directions = trades["predicted_direction"].astype(int)
+    signal_breakdown = {
+        "up": int((directions == 1).sum()),
+        "down": int((directions == -1).sum()),
+        "hold": int((directions == 0).sum()),
+    }
+    since = str(trades["prediction_date"].min())
+
+    evaluated = trades[trades["is_correct"].notna()].copy()
+    if evaluated.empty:
+        return {**_EMPTY_TRACK_RECORD, "since": since, "signal_breakdown": signal_breakdown}
+
+    evaluated["is_correct"] = evaluated["is_correct"].astype(bool)
+    accuracy = round(float(evaluated["is_correct"].mean()), 3)
+
+    up_preds = evaluated[evaluated["predicted_direction"].astype(int) == 1]
+    down_preds = evaluated[evaluated["predicted_direction"].astype(int) == -1]
+    precision_up = round(float(up_preds["is_correct"].mean()), 3) if len(up_preds) else 0.0
+    precision_down = round(float(down_preds["is_correct"].mean()), 3) if len(down_preds) else 0.0
+
+    cutoff_30d = date.today() - timedelta(days=30)
+    recent_30 = evaluated[evaluated["prediction_date"] >= cutoff_30d]
+    accuracy_30d = round(float(recent_30["is_correct"].mean()), 3) if len(recent_30) else 0.0
+
+    sharpe = 0.0
+    alpha_pp = 0.0
+    try:
+        pnl = await load_daily_pnl()
+        if not pnl.empty:
+            returns = pnl["daily_return"].astype(float)
+            std = float(returns.std())
+            if len(returns) >= 2 and std > 0:
+                sharpe = round(float(returns.mean()) / std * math.sqrt(252), 2)
+            alpha_pp = round(
+                (
+                    float(pnl["cumulative_return"].astype(float).iloc[-1])
+                    - float(pnl["benchmark_return"].astype(float).sum())
+                )
+                * 100,
+                1,
+            )
+    except Exception as e:
+        logger.warning("track_record_pnl_failed", error=str(e))
+
+    daily_accuracy = evaluated.groupby("prediction_date")["is_correct"].mean()
+    accuracy_over_time = [{"y": round(float(v), 3)} for v in daily_accuracy.tail(60)]
+
+    confidence = evaluated["confidence"].astype(float)
+    by_confidence: list[dict[str, Any]] = []
+    for band, lo, hi in [
+        ("55-65%", 0.55, 0.65),
+        ("65-75%", 0.65, 0.75),
+        ("75-85%", 0.75, 0.85),
+        ("85-100%", 0.85, 1.01),
+    ]:
+        group = evaluated[(confidence >= lo) & (confidence < hi)]
+        by_confidence.append(
+            {
+                "band": band,
+                "accuracy": round(float(group["is_correct"].mean()), 3) if len(group) else 0.0,
+                "count": len(group),
+            }
+        )
+
+    recent = evaluated.sort_values("prediction_date", ascending=False).head(20)
+    recent_predictions = [
+        {
+            "date": str(row["prediction_date"]),
+            "symbol": str(row["symbol"]),
+            "predicted": _DIRECTION_LABELS.get(int(row["predicted_direction"]), "HOLD"),
+            "confidence": round(float(row["confidence"]), 2),
+            "actual_return": round(float(row["actual_return"]), 4)
+            if row["actual_return"] is not None
+            else 0.0,
+            "correct": bool(row["is_correct"]),
+        }
+        for _, row in recent.iterrows()
+    ]
+
+    return {
+        "total_predictions": len(evaluated),
+        "since": since,
+        "directional_accuracy": accuracy,
+        "precision_up": precision_up,
+        "precision_down": precision_down,
+        "avg_confidence": round(float(confidence.mean()), 3),
+        "overall_accuracy": accuracy,
+        "accuracy_30d": accuracy_30d,
+        "sharpe": sharpe,
+        "alpha_pp": alpha_pp,
+        "accuracy_over_time": accuracy_over_time,
+        "by_confidence": by_confidence,
+        "signal_breakdown": signal_breakdown,
+        "recent_predictions": recent_predictions,
+    }
+
+
+@router.get("/public/track-record")
+async def public_track_record() -> dict[str, Any]:
+    if _is_demo():
+        return _demo_track_record()
+    try:
+        return await _real_track_record()
+    except Exception as e:
+        logger.warning("real_track_record_failed", error=str(e))
+        return dict(_EMPTY_TRACK_RECORD)
