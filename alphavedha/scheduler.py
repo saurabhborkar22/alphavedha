@@ -10,12 +10,18 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import schedule
 import structlog
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from alphavedha.prediction.engine import StockPrediction
 
 logger = structlog.get_logger(__name__)
 
@@ -38,6 +44,13 @@ BSE_INGESTION_TIME = "21:00"
 TRENDS_INGESTION_TIME = "21:30"
 INTRADAY_POLL_INTERVAL_MINUTES = 2
 REBALANCE_MONTHS = {3, 9}
+
+# Paper trade evaluation: triple-barrier config uses a 15-trading-day max hold.
+# 21 calendar days ~ 15 trading days (weekends + the odd holiday).
+EVALUATION_HORIZON_TRADING_DAYS = 15
+EVALUATION_MIN_CALENDAR_DAYS = 21
+ENTRY_PRICE_LOOKBACK_DAYS = 10
+INITIAL_PORTFOLIO_VALUE = 1_000_000.0
 
 
 @dataclass
@@ -74,6 +87,186 @@ def _run_async(coro: object) -> object:
 
 def _now_ist() -> datetime:
     return datetime.now(IST)
+
+
+def _direction_sign(value: float) -> int:
+    """Collapse a direction/return into -1, 0, or +1."""
+    if value > 0:
+        return 1
+    if value < 0:
+        return -1
+    return 0
+
+
+@dataclass
+class EvaluationSummary:
+    """Outcome of evaluating matured paper trades for one day."""
+
+    n_evaluated: int = 0
+    n_correct: int = 0
+    directional_returns: list[float] = field(default_factory=list)
+
+
+async def _latest_close(symbol: str, as_of: date) -> float | None:
+    """Fetch the most recent close price for a symbol from the OHLCV store."""
+    from alphavedha.data.store import load_ohlcv
+
+    df = await load_ohlcv(symbol, as_of - timedelta(days=ENTRY_PRICE_LOOKBACK_DAYS), as_of)
+    if df.empty:
+        return None
+    return float(df["close"].iloc[-1])
+
+
+async def _persist_paper_trades(
+    predictions: Sequence[StockPrediction],
+    prediction_date: date,
+) -> int:
+    """Persist scan predictions as paper trades. Per-symbol failures are logged, not raised."""
+    from alphavedha.data.store import store_paper_trade
+
+    persisted = 0
+    for pred in predictions:
+        try:
+            entry_price: float | None = None
+            try:
+                entry_price = await _latest_close(pred.symbol, prediction_date)
+            except Exception as e:
+                logger.warning("entry_price_unavailable", symbol=pred.symbol, error=str(e))
+            if entry_price is None:
+                logger.warning("entry_price_missing", symbol=pred.symbol)
+
+            await store_paper_trade(
+                {
+                    "symbol": pred.symbol,
+                    "prediction_date": prediction_date,
+                    "predicted_direction": int(pred.direction),
+                    "predicted_magnitude": float(pred.magnitude),
+                    "confidence": float(pred.meta_confidence),
+                    "model_version": pred.model_version,
+                    "regime": pred.regime,
+                    "entry_price": entry_price,
+                }
+            )
+            persisted += 1
+        except Exception as e:
+            logger.error("paper_trade_persist_failed", symbol=pred.symbol, error=str(e))
+    return persisted
+
+
+async def _evaluate_open_paper_trades(as_of: date) -> EvaluationSummary:
+    """Evaluate open paper trades that are past the 15-trading-day hold horizon.
+
+    A trade is "open" when exit_price is null. Outcomes are computed against
+    the close EVALUATION_HORIZON_TRADING_DAYS trading days after prediction_date
+    (or the latest available close if fewer bars exist).
+    """
+    import pandas as pd
+
+    from alphavedha.data.store import load_ohlcv, load_paper_trades, update_paper_trade_outcome
+
+    summary = EvaluationSummary()
+    cutoff = as_of - timedelta(days=EVALUATION_MIN_CALENDAR_DAYS)
+    trades = await load_paper_trades(end=cutoff)
+    if trades.empty:
+        logger.info("evaluation_no_matured_trades", as_of=str(as_of))
+        return summary
+
+    open_trades = trades[trades["exit_price"].isna()]
+    for _, trade in open_trades.iterrows():
+        symbol = str(trade["symbol"])
+        prediction_date: date = trade["prediction_date"]
+        try:
+            entry_price = trade["entry_price"]
+            if entry_price is None or pd.isna(entry_price) or float(entry_price) <= 0:
+                logger.warning(
+                    "paper_trade_skipped_no_entry_price",
+                    symbol=symbol,
+                    prediction_date=str(prediction_date),
+                )
+                continue
+
+            df = await load_ohlcv(symbol, prediction_date, as_of)
+            if df.empty:
+                logger.warning("paper_trade_no_price_data", symbol=symbol)
+                continue
+
+            future = df[df.index.date > prediction_date]
+            if future.empty:
+                logger.warning("paper_trade_no_bars_after_entry", symbol=symbol)
+                continue
+
+            horizon_idx = min(EVALUATION_HORIZON_TRADING_DAYS, len(future)) - 1
+            exit_price = float(future["close"].iloc[horizon_idx])
+            actual_return = (exit_price - float(entry_price)) / float(entry_price)
+            direction = int(trade["predicted_direction"])
+            is_correct = _direction_sign(direction) == _direction_sign(actual_return)
+
+            await update_paper_trade_outcome(
+                symbol=symbol,
+                prediction_date=prediction_date,
+                exit_price=exit_price,
+                actual_return=actual_return,
+                is_correct=is_correct,
+            )
+
+            summary.n_evaluated += 1
+            if is_correct:
+                summary.n_correct += 1
+            summary.directional_returns.append(_direction_sign(direction) * actual_return)
+        except Exception as e:
+            logger.error(
+                "paper_trade_evaluation_failed",
+                symbol=symbol,
+                prediction_date=str(prediction_date),
+                error=str(e),
+            )
+
+    logger.info(
+        "paper_trades_evaluated",
+        as_of=str(as_of),
+        evaluated=summary.n_evaluated,
+        correct=summary.n_correct,
+    )
+    return summary
+
+
+async def _store_pnl_summary(as_of: date, summary: EvaluationSummary) -> None:
+    """Persist a DailyPnL row summarizing today's evaluated paper trade returns."""
+    from alphavedha.data.store import load_daily_pnl, store_daily_pnl
+
+    existing = await load_daily_pnl(start=as_of, end=as_of)
+    if not existing.empty:
+        logger.info("daily_pnl_already_recorded", date=str(as_of))
+        return
+
+    returns = summary.directional_returns
+    daily_return = sum(returns) / len(returns) if returns else 0.0
+
+    prior = await load_daily_pnl(end=as_of - timedelta(days=1))
+    prev_value = (
+        float(prior["portfolio_value"].iloc[-1]) if not prior.empty else INITIAL_PORTFOLIO_VALUE
+    )
+    portfolio_value = prev_value * (1.0 + daily_return)
+    cumulative_return = portfolio_value / INITIAL_PORTFOLIO_VALUE - 1.0
+
+    await store_daily_pnl(
+        {
+            "date": as_of,
+            "portfolio_value": portfolio_value,
+            "daily_return": daily_return,
+            "cumulative_return": cumulative_return,
+            "n_positions": summary.n_evaluated,
+            "n_correct": summary.n_correct,
+            "n_total_predictions": summary.n_evaluated,
+        }
+    )
+    logger.info(
+        "daily_pnl_stored",
+        date=str(as_of),
+        daily_return=daily_return,
+        portfolio_value=portfolio_value,
+        n_positions=summary.n_evaluated,
+    )
 
 
 class AlphaVedhaScheduler:
@@ -122,7 +315,15 @@ class AlphaVedhaScheduler:
 
             ranking = _run_async(service.scan_tier(self._tier, top_n=50))
 
-            result.symbols_processed = len(ranking.buy_candidates) + len(ranking.sell_candidates)
+            candidates = list(ranking.buy_candidates) + list(ranking.sell_candidates)
+            persisted = 0
+            if self._demo:
+                logger.info("paper_trade_persistence_skipped", reason="demo mode")
+            else:
+                prediction_date = _now_ist().date()
+                persisted = _run_async(_persist_paper_trades(candidates, prediction_date))
+
+            result.symbols_processed = len(candidates)
             result.success = True
             self._state.last_prediction_run = _now_ist()
 
@@ -131,6 +332,7 @@ class AlphaVedhaScheduler:
                 job="daily_predictions",
                 buys=len(ranking.buy_candidates),
                 sells=len(ranking.sell_candidates),
+                paper_trades_persisted=persisted,
             )
         except Exception as e:
             result.error = str(e)
@@ -141,20 +343,35 @@ class AlphaVedhaScheduler:
         return result
 
     def run_daily_evaluation(self) -> JobResult:
-        """Evaluate yesterday's predictions against actual market outcomes."""
+        """Evaluate matured paper trades (15-trading-day hold) against actual outcomes.
+
+        Loads open paper trades whose prediction_date is at least
+        EVALUATION_MIN_CALENDAR_DAYS old, fetches actual prices from the OHLCV
+        store, persists per-trade outcomes, and records a DailyPnL summary row.
+        """
         result = JobResult(job_name="daily_evaluation", started_at=_now_ist())
         logger.info("scheduler_job_start", job="daily_evaluation")
 
         try:
-            from alphavedha.config import get_config
-            from alphavedha.monitoring.performance import PerformanceMonitor
+            if self._demo:
+                logger.info("evaluation_skipped", reason="demo mode")
+            else:
+                as_of = _now_ist().date()
+                summary = _run_async(_evaluate_open_paper_trades(as_of))
+                result.symbols_processed = summary.n_evaluated
 
-            config = get_config()
-            PerformanceMonitor(config.monitoring.performance)
+                if summary.n_evaluated > 0:
+                    _run_async(_store_pnl_summary(as_of, summary))
+                else:
+                    logger.info("daily_pnl_skipped", reason="no trades evaluated")
 
             result.success = True
             self._state.last_evaluation_run = _now_ist()
-            logger.info("scheduler_job_complete", job="daily_evaluation")
+            logger.info(
+                "scheduler_job_complete",
+                job="daily_evaluation",
+                evaluated=result.symbols_processed,
+            )
         except Exception as e:
             result.error = str(e)
             logger.error("scheduler_job_failed", job="daily_evaluation", error=str(e))
