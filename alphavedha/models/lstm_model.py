@@ -134,6 +134,7 @@ class LSTMModel(BaseModel):
 
         for epoch in range(cfg.max_epochs):
             self._network.train()
+            train_losses: list[float] = []
             for X_seq, y_dir, y_mag, weights in train_loader:
                 X_seq = X_seq.to(self._device)
                 y_dir = y_dir.to(self._device)
@@ -146,6 +147,7 @@ class LSTMModel(BaseModel):
                 loss.backward()  # type: ignore[no-untyped-call]
                 nn.utils.clip_grad_norm_(self._network.parameters(), max_norm=1.0)
                 optimizer.step()
+                train_losses.append(loss.item())
 
             if val_loader is not None:
                 self._set_inference_mode()
@@ -161,8 +163,18 @@ class LSTMModel(BaseModel):
                         val_losses.append(vloss.item())
 
                 avg_val_loss = float(np.mean(val_losses))
+                avg_train_loss = float(np.mean(train_losses))
+                logger.info(
+                    "lstm_epoch",
+                    epoch=epoch + 1,
+                    max_epochs=cfg.max_epochs,
+                    train_loss=round(avg_train_loss, 4),
+                    val_loss=round(avg_val_loss, 4),
+                    best_val_loss=round(early_stop.best_loss, 4),
+                    elapsed_s=round(time.perf_counter() - start, 1),
+                )
                 if early_stop.step(avg_val_loss):
-                    logger.info("early_stopping", epoch=epoch, best_loss=early_stop.best_loss)
+                    logger.info("early_stopping", epoch=epoch + 1, best_loss=early_stop.best_loss)
                     break
                 if avg_val_loss <= early_stop.best_loss:
                     best_state = {k: v.cpu().clone() for k, v in self._network.state_dict().items()}
