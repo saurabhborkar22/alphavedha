@@ -125,6 +125,116 @@ class FastSequenceLoader:
             )
 
 
+class FastMultiHorizonLoader:
+    """Pre-materialized sliding-window batches with per-horizon labels for TFT.
+
+    Multi-horizon counterpart of FastSequenceLoader: per-horizon label/mask
+    arrays are vectorized once at construction, then each epoch slices whole
+    batches by index instead of building 7 tensors per sample in Python.
+    Yields the same 7-tuples as MultiHorizonSequenceDataset batches.
+    """
+
+    def __init__(
+        self,
+        X: np.ndarray,
+        y_direction: np.ndarray,
+        y_magnitude: np.ndarray,
+        sequence_length: int,
+        horizons: list[int],
+        batch_size: int = 64,
+        sample_weight: np.ndarray | None = None,
+        shuffle: bool = False,
+    ) -> None:
+        n_samples = X.shape[0]
+        if n_samples < sequence_length:
+            raise InsufficientDataError(f"Need at least {sequence_length} samples, got {n_samples}")
+
+        X_t = torch.from_numpy(np.ascontiguousarray(X, dtype=np.float32))
+        # (n_windows, n_features, seq_len) — view, no copy
+        self._windows = X_t.unfold(0, sequence_length, 1)
+        self._seq_len = sequence_length
+        self._batch_size = batch_size
+        self._shuffle = shuffle
+
+        sorted_h = sorted(horizons)
+        base_horizon = sorted_h[0]
+        offsets = np.array([h - base_horizon for h in sorted_h], dtype=np.int64)
+
+        y_dir_arr = np.asarray(y_direction, dtype=np.float64)
+        nan_mask = np.isnan(y_dir_arr)
+        mapped_dir = np.ones(len(y_dir_arr), dtype=np.int64)
+        valid = ~nan_mask
+        mapped_dir[valid] = np.clip(y_dir_arr[valid].astype(np.int64) + 1, 0, 2)
+        y_mag_arr = np.asarray(y_magnitude, dtype=np.float32)
+        weights = (
+            np.asarray(sample_weight, dtype=np.float32)
+            if sample_weight is not None
+            else np.ones(n_samples, dtype=np.float32)
+        )
+
+        n_windows = n_samples - sequence_length + 1
+        window_label_idx = np.arange(n_windows) + sequence_length - 1
+        valid_starts = np.nonzero(~nan_mask[window_label_idx])[0]
+        if len(valid_starts) == 0:
+            raise InsufficientDataError("No valid training samples after NaN filtering")
+        self._valid_starts = torch.from_numpy(valid_starts)
+
+        base_idx = valid_starts + sequence_length - 1
+        self._y_dir = torch.from_numpy(mapped_dir[base_idx])
+        self._y_mag = torch.from_numpy(y_mag_arr[base_idx])
+        self._weights = torch.from_numpy(weights[base_idx])
+
+        # Per-horizon labels: same bounds-only masking as MultiHorizonSequenceDataset
+        shifted = base_idx[:, None] + offsets[None, :]  # (n_valid, n_h)
+        in_range = (shifted >= 0) & (shifted < n_samples)
+        clipped = np.clip(shifted, 0, n_samples - 1)
+        self._h_dirs = torch.from_numpy(np.where(in_range, mapped_dir[clipped], 1))
+        self._h_mags = torch.from_numpy(
+            np.where(in_range, y_mag_arr[clipped], 0.0).astype(np.float32)
+        )
+        self._h_masks = torch.from_numpy(in_range)
+
+        logger.debug(
+            "fast_multihorizon_loader_created",
+            n_sequences=len(valid_starts),
+            sequence_length=sequence_length,
+            n_features=X.shape[1],
+            horizons=sorted_h,
+            batch_size=batch_size,
+        )
+
+    def __len__(self) -> int:
+        return (len(self._valid_starts) + self._batch_size - 1) // self._batch_size
+
+    def __iter__(
+        self,
+    ) -> Iterator[
+        tuple[
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+        ]
+    ]:
+        n = len(self._valid_starts)
+        order = torch.randperm(n) if self._shuffle else torch.arange(n)
+        for i in range(0, n, self._batch_size):
+            pos = order[i : i + self._batch_size]
+            X_seq = self._windows[self._valid_starts[pos]].transpose(1, 2).contiguous()
+            yield (
+                X_seq,
+                self._y_dir[pos],
+                self._y_mag[pos],
+                self._weights[pos],
+                self._h_dirs[pos],
+                self._h_mags[pos],
+                self._h_masks[pos],
+            )
+
+
 class SequenceDataset(Dataset):  # type: ignore[type-arg]
     """Creates fixed-length sliding windows from tabular data for single-horizon models."""
 
