@@ -31,6 +31,7 @@ class PredictionService:
         self._config = config
         self._engine = registry.get_prediction_engine()
         self._ranker = StockRanker()
+        self._inflight_scans: dict[str, asyncio.Task[RankingResult]] = {}
 
     async def _get_features(self, symbol: str) -> pd.DataFrame:
         if self._registry.is_demo:
@@ -161,6 +162,9 @@ class PredictionService:
     async def scan_tier(self, tier: str, top_n: int = 10) -> RankingResult:
         """Scan symbols in a tier and rank them into buy/sell candidates.
 
+        Concurrent requests for the same tier share a single in-flight scan
+        — a full-tier scan is expensive and UI retries would otherwise stack.
+
         Args:
             tier: Universe tier name (e.g. "large", "mid").
             top_n: Maximum number of buy/sell candidates to return.
@@ -168,6 +172,14 @@ class PredictionService:
         Returns:
             RankingResult with buy_candidates, sell_candidates, and excluded.
         """
+        key = f"{tier}:{top_n}"
+        task = self._inflight_scans.get(key)
+        if task is None or task.done():
+            task = asyncio.create_task(self._scan_tier_impl(tier, top_n))
+            self._inflight_scans[key] = task
+        return await task
+
+    async def _scan_tier_impl(self, tier: str, top_n: int) -> RankingResult:
         symbols = await self._get_symbols(tier)
         logger.info("scan_started", tier=tier, symbols=len(symbols))
 
