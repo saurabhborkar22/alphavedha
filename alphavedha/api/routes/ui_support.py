@@ -750,6 +750,18 @@ def _demo_models_status() -> ModelsStatusResponse:
     )
 
 
+# Each model family persists a different primary quality metric in its
+# metadata.json — try them in decreasing order of preference. Regime (HMM)
+# only stores AIC/log-likelihood, which has no percentage form, so it
+# intentionally falls through to 0.0.
+_PRIMARY_METRIC_KEYS: tuple[str, ...] = (
+    "val_accuracy",
+    "accuracy",
+    "train_accuracy",
+    "r2",
+)
+
+
 def _real_models_status() -> ModelsStatusResponse:
     models: list[ModelInfo] = []
     for name in ui_data.MODEL_ARTIFACT_NAMES:
@@ -757,7 +769,7 @@ def _real_models_status() -> ModelsStatusResponse:
         if metadata is None:
             continue
         metrics = metadata.get("metrics") or {}
-        raw_acc = metrics.get("val_accuracy", metrics.get("accuracy", 0.0))
+        raw_acc = next((metrics[k] for k in _PRIMARY_METRIC_KEYS if k in metrics), 0.0)
         try:
             acc = float(raw_acc)
         except (TypeError, ValueError):
