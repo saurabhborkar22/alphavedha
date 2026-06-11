@@ -301,8 +301,14 @@ class ModelRegistry:
                 "Train models first with `make train`, or use demo mode."
             )
 
+        # Training pipeline saves each model under {name}/latest/ — resolve that
+        # first, falling back to {name}/ for artifacts laid out flat.
+        def _resolve(name: str) -> Path:
+            latest = artifact_dir / name / "latest"
+            return latest if latest.exists() else artifact_dir / name
+
         required = ["xgboost", "lstm", "tft", "regime", "ensemble", "meta_labeling", "conformal"]
-        missing = [name for name in required if not (artifact_dir / name).exists()]
+        missing = [name for name in required if not (_resolve(name) / "metadata.json").exists()]
         if missing:
             raise ModelNotFoundError(
                 f"Missing model artifacts: {', '.join(missing)}. "
@@ -311,13 +317,13 @@ class ModelRegistry:
 
         logger.info("loading_real_models", artifact_dir=str(artifact_dir))
 
-        xgboost = XGBoostModel.load(artifact_dir / "xgboost")
-        lstm = LSTMModel.load(artifact_dir / "lstm")
-        tft = TemporalAttentionModel.load(artifact_dir / "tft")
-        regime = RegimeDetector.load(artifact_dir / "regime")
-        ensemble = StackingEnsemble.load(artifact_dir / "ensemble")
-        meta_model = MetaLabelingModel.load(artifact_dir / "meta_labeling")
-        conformal = ConformalPredictor.load(artifact_dir / "conformal")
+        xgboost = XGBoostModel.load(_resolve("xgboost"))
+        lstm = LSTMModel.load(_resolve("lstm"))
+        tft = TemporalAttentionModel.load(_resolve("tft"))
+        regime = RegimeDetector.load(_resolve("regime"))
+        ensemble = StackingEnsemble.load(_resolve("ensemble"))
+        meta_model = MetaLabelingModel.load(_resolve("meta_labeling"))
+        conformal = ConformalPredictor.load(_resolve("conformal"))
 
         version_file = artifact_dir / "version.json"
         if version_file.exists():
