@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -105,6 +106,8 @@ class LSTMModel(BaseModel):
         torch.manual_seed(42)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(42)
+        if self._device.type == "cpu":
+            torch.set_num_threads(os.cpu_count() or 1)
 
         if return_train is None:
             return_train = pd.Series(np.zeros(len(X_train)), index=X_train.index)
@@ -141,8 +144,19 @@ class LSTMModel(BaseModel):
         ).to(self._device)
 
         optimizer = torch.optim.Adam(self._network.parameters(), lr=cfg.learning_rate)
-        early_stop = EarlyStopping(patience=cfg.early_stopping_patience)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=3)
+        early_stop = EarlyStopping(patience=cfg.early_stopping_patience, min_delta=1e-4)
         best_state: dict[str, torch.Tensor] | None = None
+
+        # Inverse-frequency class weights — the neutral class (~15% of triple
+        # barrier labels) is otherwise drowned out by up/down.
+        y_arr = y_train.dropna().astype(int).to_numpy() + 1
+        counts = np.bincount(np.clip(y_arr, 0, 2), minlength=3).astype(np.float64)
+        class_weights = torch.tensor(
+            counts.sum() / (3.0 * np.maximum(counts, 1.0)),
+            dtype=torch.float32,
+            device=self._device,
+        )
 
         for epoch in range(cfg.max_epochs):
             self._network.train()
@@ -151,7 +165,7 @@ class LSTMModel(BaseModel):
                 X_seq = X_seq.to(self._device)
                 y_dir = y_dir.to(self._device)
                 y_mag = y_mag.to(self._device)
-                weights = weights.to(self._device)
+                weights = weights.to(self._device) * class_weights[y_dir]
 
                 optimizer.zero_grad()
                 cls_logits, reg_output = self._network(X_seq)
@@ -169,13 +183,14 @@ class LSTMModel(BaseModel):
                         X_seq = X_seq.to(self._device)
                         y_dir = y_dir.to(self._device)
                         y_mag = y_mag.to(self._device)
-                        weights = weights.to(self._device)
+                        weights = weights.to(self._device) * class_weights[y_dir]
                         cls_logits, reg_output = self._network(X_seq)
                         vloss = compute_combined_loss(cls_logits, reg_output, y_dir, y_mag, weights)
                         val_losses.append(vloss.item())
 
                 avg_val_loss = float(np.mean(val_losses))
                 avg_train_loss = float(np.mean(train_losses))
+                scheduler.step(avg_val_loss)
                 logger.info(
                     "lstm_epoch",
                     epoch=epoch + 1,
@@ -183,6 +198,7 @@ class LSTMModel(BaseModel):
                     train_loss=round(avg_train_loss, 4),
                     val_loss=round(avg_val_loss, 4),
                     best_val_loss=round(early_stop.best_loss, 4),
+                    lr=optimizer.param_groups[0]["lr"],
                     elapsed_s=round(time.perf_counter() - start, 1),
                 )
                 if early_stop.step(avg_val_loss):

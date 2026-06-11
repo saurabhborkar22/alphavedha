@@ -132,8 +132,8 @@ class LSTMConfig(BaseModel):
     num_layers: int = 2
     dropout: float = 0.3
     learning_rate: float = 0.001
-    batch_size: int = 64
-    max_epochs: int = 100
+    batch_size: int = 128
+    max_epochs: int = 60
     early_stopping_patience: int = 10
     top_n_features: int = 30
 

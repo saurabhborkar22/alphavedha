@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -230,6 +231,8 @@ class TemporalAttentionModel(BaseModel):
         torch.manual_seed(42)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(42)
+        if self._device.type == "cpu":
+            torch.set_num_threads(os.cpu_count() or 1)
 
         if return_train is None:
             return_train = pd.Series(np.zeros(len(X_train)), index=X_train.index)
@@ -277,7 +280,8 @@ class TemporalAttentionModel(BaseModel):
         ).to(self._device)
 
         optimizer = torch.optim.Adam(self._network.parameters(), lr=cfg.learning_rate)
-        early_stop = EarlyStopping(patience=cfg.early_stopping_patience)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=3)
+        early_stop = EarlyStopping(patience=cfg.early_stopping_patience, min_delta=1e-4)
         best_state: dict[str, torch.Tensor] | None = None
         horizons_sorted = sorted(cfg.horizons)
 
@@ -346,6 +350,16 @@ class TemporalAttentionModel(BaseModel):
                         val_losses.append(vloss.item())
 
                 avg_val_loss = float(np.mean(val_losses))
+                scheduler.step(avg_val_loss)
+                logger.info(
+                    "tft_epoch",
+                    epoch=epoch + 1,
+                    max_epochs=cfg.max_epochs,
+                    val_loss=round(avg_val_loss, 4),
+                    best_val_loss=round(early_stop.best_loss, 4),
+                    lr=optimizer.param_groups[0]["lr"],
+                    elapsed_s=round(time.perf_counter() - start, 1),
+                )
                 if early_stop.step(avg_val_loss):
                     logger.info(
                         "early_stopping",
