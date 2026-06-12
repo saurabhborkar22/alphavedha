@@ -72,7 +72,7 @@ def _fetch_fast_info(symbol: str) -> dict[str, float | int]:
         "high": float(info.day_high or 0),
         "low": float(info.day_low or 0),
         "last_price": float(info.last_price or 0),
-        "volume": int(info.day_volume or 0),
+        "volume": int(getattr(info, "last_volume", 0) or 0),
     }
 
 
