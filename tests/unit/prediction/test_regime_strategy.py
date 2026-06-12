@@ -14,21 +14,21 @@ class TestRegimeStrategySelector:
         result = selector.select("bull")
         assert result.regime == "bull"
         assert result.kelly_fraction == 1.0
-        assert result.meta_confidence_threshold == 0.55
+        assert result.meta_confidence_threshold == 0.40
 
     def test_bear_quarter_kelly(self) -> None:
         selector = RegimeStrategySelector()
         result = selector.select("bear")
         assert result.regime == "bear"
         assert result.kelly_fraction == 0.25
-        assert result.meta_confidence_threshold == 0.65
+        assert result.meta_confidence_threshold == 0.45
 
     def test_high_vol_requires_agreement(self) -> None:
         selector = RegimeStrategySelector()
         result = selector.select("high_volatility")
         assert result.require_all_models_agree is True
         assert result.kelly_fraction == 0.1
-        assert result.meta_confidence_threshold == 0.70
+        assert result.meta_confidence_threshold == 0.52
 
     def test_sideways_half_kelly(self) -> None:
         selector = RegimeStrategySelector()
