@@ -30,6 +30,7 @@ IST = ZoneInfo("Asia/Kolkata")
 PREDICTION_TIME = "08:30"
 EVALUATION_TIME = "15:45"
 DATA_REFRESH_TIME = "17:00"  # daily OHLCV ingestion after market close (15:30 IST)
+FII_DII_INGESTION_TIME = "18:30"  # NSE publishes FII/DII participation data by ~17:30 IST
 DRIFT_CHECK_DAY = "saturday"
 DRIFT_CHECK_TIME = "20:00"
 RETRAIN_DAY = "saturday"
@@ -80,6 +81,7 @@ class SchedulerState:
     last_bse_ingestion: datetime | None = None
     last_trends_ingestion: datetime | None = None
     last_intraday_poll: datetime | None = None
+    last_fii_dii_ingestion: datetime | None = None
 
 
 def _run_async(coro: object) -> object:
@@ -415,6 +417,47 @@ class AlphaVedhaScheduler:
         except Exception as e:
             result.error = str(e)
             logger.error("scheduler_job_failed", job="daily_data_refresh", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_fii_dii_ingestion(self) -> JobResult:
+        """Ingest today's FII/DII participation data from NSE (runs daily at 18:30 IST).
+
+        NSE publishes net buy/sell data for FII/FPI and DII by ~17:30 IST.
+        This feeds the macro_fii_net / macro_dii_net features used by every
+        model — without it those 4 features are always NaN.
+        """
+        result = JobResult(job_name="daily_fii_dii_ingestion", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="daily_fii_dii_ingestion")
+
+        try:
+            from alphavedha.data.ingestion import ingest_fii_dii
+
+            fii_result = _run_async(ingest_fii_dii())
+            result.symbols_processed = fii_result.rows_stored
+            result.success = fii_result.error is None
+
+            if fii_result.error:
+                result.error = fii_result.error
+                logger.warning(
+                    "scheduler_job_partial",
+                    job="daily_fii_dii_ingestion",
+                    error=fii_result.error,
+                )
+            else:
+                logger.info(
+                    "scheduler_job_complete",
+                    job="daily_fii_dii_ingestion",
+                    rows_stored=fii_result.rows_stored,
+                    categories=fii_result.categories,
+                )
+
+            self._state.last_fii_dii_ingestion = _now_ist()
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="daily_fii_dii_ingestion", error=str(e))
 
         result.finished_at = _now_ist()
         self._record_job(result)
@@ -757,6 +800,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
         schedule.every().day.at(DATA_REFRESH_TIME).do(self.run_data_refresh)
+        schedule.every().day.at(FII_DII_INGESTION_TIME).do(self.run_fii_dii_ingestion)
         schedule.every().day.at(XGBOOST_RETRAIN_TIME).do(self.run_daily_xgboost_retrain)
         schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
 
@@ -788,6 +832,7 @@ class AlphaVedhaScheduler:
             prediction_time=PREDICTION_TIME,
             evaluation_time=EVALUATION_TIME,
             data_refresh_time=DATA_REFRESH_TIME,
+            fii_dii_ingestion_time=FII_DII_INGESTION_TIME,
             xgboost_retrain_time=XGBOOST_RETRAIN_TIME,
             lstm_tft_retrain_day=LSTM_TFT_RETRAIN_DAY,
             drift_day=DRIFT_CHECK_DAY,

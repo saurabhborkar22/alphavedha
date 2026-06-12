@@ -15,6 +15,7 @@ from alphavedha.exceptions import ModelNotFoundError
 from alphavedha.models.base import PredictionResult
 from alphavedha.models.conformal import ConformalPredictor, ConformalResult
 from alphavedha.models.ensemble import EnsembleResult, StackingEnsemble
+from alphavedha.models.gnn_model import GNNModel
 from alphavedha.models.lstm_model import LSTMModel
 from alphavedha.models.meta_model import MetaLabelingModel, MetaLabelResult
 from alphavedha.models.regime import RegimeDetector, RegimeResult
@@ -325,6 +326,16 @@ class ModelRegistry:
         meta_model = MetaLabelingModel.load(_resolve("meta_labeling"))
         conformal = ConformalPredictor.load(_resolve("conformal"))
 
+        # GNN is optional — load if trained artifact exists
+        gnn: GNNModel | None = None
+        gnn_dir = _resolve("gnn")
+        if (gnn_dir / "metadata.json").exists():
+            try:
+                gnn = GNNModel.load(gnn_dir)
+                logger.info("gnn_loaded", path=str(gnn_dir))
+            except Exception as e:
+                logger.warning("gnn_load_failed", error=str(e))
+
         version_file = artifact_dir / "version.json"
         if version_file.exists():
             self._real_version = json.loads(version_file.read_text()).get("version", "v0.1.0")
@@ -338,12 +349,13 @@ class ModelRegistry:
             circuit_breaker_config=config.risk.circuit_breaker,
         )
 
-        logger.info("real_models_loaded", model_version=self._real_version)
+        logger.info("real_models_loaded", model_version=self._real_version, has_gnn=gnn is not None)
 
         return PredictionEngine(
             xgboost=xgboost,
             lstm=lstm,
             tft=tft,
+            gnn=gnn,
             regime=regime,
             ensemble=ensemble,
             meta_model=meta_model,

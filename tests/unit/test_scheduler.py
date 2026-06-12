@@ -160,7 +160,7 @@ class TestAlphaVedhaScheduler:
         schedule.clear()
         sched = AlphaVedhaScheduler(demo=True)
         sched.setup_schedule()
-        assert len(schedule.get_jobs()) == 12  # incl. daily data refresh
+        assert len(schedule.get_jobs()) == 13  # incl. daily data refresh + fii/dii
 
     def test_maybe_monthly_retrain_first_week(self) -> None:
         sched = AlphaVedhaScheduler(demo=True)
