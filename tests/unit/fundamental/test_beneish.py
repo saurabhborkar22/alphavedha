@@ -69,7 +69,7 @@ class TestComputeBeneish:
         for attr in ("dsri", "gmi", "aqi", "sgi", "depi", "sgai", "tata", "lvgi"):
             val = getattr(result, attr)
             assert isinstance(val, float), f"{attr} should be float"
-            assert not (val != val), f"{attr} should not be NaN"  # NaN check
+            assert val == val, f"{attr} should not be NaN"  # NaN check
 
     def test_indices_capped_to_range(self) -> None:
         # Even extreme values should be capped at 10.0

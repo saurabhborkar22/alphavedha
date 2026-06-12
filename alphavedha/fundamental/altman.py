@@ -84,12 +84,7 @@ def compute_altman(fs: FinancialStatements) -> AltmanResult:
     # X4 = Book Value of Equity / Book Value of Total Liabilities
     x4 = _safe_div(equity_c, total_liab_c if total_liab_c != 0 else 1.0)
 
-    z_score = (
-        _WEIGHTS["x1"] * x1
-        + _WEIGHTS["x2"] * x2
-        + _WEIGHTS["x3"] * x3
-        + _WEIGHTS["x4"] * x4
-    )
+    z_score = _WEIGHTS["x1"] * x1 + _WEIGHTS["x2"] * x2 + _WEIGHTS["x3"] * x3 + _WEIGHTS["x4"] * x4
     z_score = round(z_score, 4)
 
     if z_score > _SAFE_THRESHOLD:
@@ -101,7 +96,7 @@ def compute_altman(fs: FinancialStatements) -> AltmanResult:
     elif z_score > _DISTRESS_THRESHOLD:
         verdict = "grey_zone"
         interpretation = (
-            f"Z'-Score {z_score:.2f} in grey zone ({_DISTRESS_THRESHOLD}–{_SAFE_THRESHOLD}). "
+            f"Z'-Score {z_score:.2f} in grey zone ({_DISTRESS_THRESHOLD}-{_SAFE_THRESHOLD}). "
             "Some financial vulnerability — monitor debt levels and cash flow."
         )
     else:

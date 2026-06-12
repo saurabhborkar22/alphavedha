@@ -14,21 +14,33 @@ from alphavedha.fundamental.fetcher import FinancialStatements
 
 def _beneish(verdict: str, m_score: float) -> BeneishResult:
     return BeneishResult(
-        symbol="X", m_score=m_score, verdict=verdict,
-        dsri=1.0, gmi=1.0, aqi=1.0, sgi=1.0, depi=1.0,
-        sgai=1.0, tata=0.01, lvgi=1.0,
-        data_quality=1.0, interpretation=f"M={m_score}",
+        symbol="X",
+        m_score=m_score,
+        verdict=verdict,
+        dsri=1.0,
+        gmi=1.0,
+        aqi=1.0,
+        sgi=1.0,
+        depi=1.0,
+        sgai=1.0,
+        tata=0.01,
+        lvgi=1.0,
+        data_quality=1.0,
+        interpretation=f"M={m_score}",
     )
 
 
 def _altman(verdict: str, z_score: float) -> AltmanResult:
     return AltmanResult(
-        symbol="X", z_score=z_score, verdict=verdict,
+        symbol="X",
+        z_score=z_score,
+        verdict=verdict,
         x1_working_capital_ratio=0.2,
         x2_retained_earnings_ratio=0.3,
         x3_ebit_ratio=0.1,
         x4_equity_to_liabilities=2.0,
-        data_quality=1.0, interpretation=f"Z={z_score}",
+        data_quality=1.0,
+        interpretation=f"Z={z_score}",
     )
 
 
@@ -62,7 +74,7 @@ def _make_fs() -> FinancialStatements:
 
 class TestOverallVerdict:
     def test_both_none_returns_insufficient(self) -> None:
-        verdict, summary = _overall_verdict(None, None)
+        verdict, _summary = _overall_verdict(None, None)
         assert verdict == "insufficient_data"
 
     def test_both_healthy_returns_healthy(self) -> None:
@@ -82,7 +94,7 @@ class TestOverallVerdict:
     def test_distress_returns_red_flag(self) -> None:
         b = _beneish("non_manipulator", -2.80)
         a = _altman("distress", 0.80)
-        verdict, summary = _overall_verdict(b, a)
+        verdict, _summary = _overall_verdict(b, a)
         assert verdict == "red_flag"
 
     def test_grey_zone_returns_caution(self) -> None:

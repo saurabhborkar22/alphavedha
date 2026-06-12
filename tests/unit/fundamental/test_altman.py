@@ -73,10 +73,10 @@ class TestComputeAltman:
             total_assets=(1_000_000.0, 900_000.0),
             current_assets=(200_000.0, 180_000.0),
             current_liabilities=(160_000.0, 150_000.0),  # WC = 40_000 → X1=0.04
-            retained_earnings=(200_000.0, 180_000.0),    # X2=0.20
-            ebit=(80_000.0, 70_000.0),                   # X3=0.08
+            retained_earnings=(200_000.0, 180_000.0),  # X2=0.20
+            ebit=(80_000.0, 70_000.0),  # X3=0.08
             stockholders_equity=(400_000.0, 360_000.0),
-            total_liabilities=(600_000.0, 540_000.0),    # X4=0.667
+            total_liabilities=(600_000.0, 540_000.0),  # X4=0.667
         )
         result = compute_altman(fs)
         assert result.verdict == "grey_zone"
@@ -93,7 +93,7 @@ class TestComputeAltman:
         ):
             val = getattr(result, attr)
             assert isinstance(val, float), f"{attr} should be float"
-            assert not (val != val), f"{attr} should not be NaN"
+            assert val == val, f"{attr} should not be NaN"
 
     def test_zero_total_assets_no_crash(self) -> None:
         # X1/X2/X3 default to 0 when total_assets=0; X4 still computes from equity/liabilities

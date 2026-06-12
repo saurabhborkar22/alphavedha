@@ -63,7 +63,6 @@ def _safe_col(df: Any, *candidate_keys: str) -> tuple[float, float]:
     """Try each candidate row label; return (current, prior) or (0, 0) if not found."""
     if df is None or df.empty:
         return (0.0, 0.0)
-    cols = list(df.columns)
     for key in candidate_keys:
         # Exact match
         if key in df.index:
@@ -159,7 +158,9 @@ def _fetch_financials_sync(symbol: str) -> FinancialStatements | None:
         )
 
         # Cash flow
-        ocf = _safe_col(cf, "Operating Cash Flow", "Cash From Operations", "Net Cash From Operations")
+        ocf = _safe_col(
+            cf, "Operating Cash Flow", "Cash From Operations", "Net Cash From Operations"
+        )
         capex = _safe_col(
             cf,
             "Capital Expenditure",
@@ -169,9 +170,25 @@ def _fetch_financials_sync(symbol: str) -> FinancialStatements | None:
 
         # Count populated fields
         all_fields = [
-            revenue, gross_profit, cogs, op_income, ebit, net_income, dep,
-            total_assets, cur_assets, cash, recv, ppe, total_liab, cur_liab,
-            ltd, ret_earn, equity, ocf, capex,
+            revenue,
+            gross_profit,
+            cogs,
+            op_income,
+            ebit,
+            net_income,
+            dep,
+            total_assets,
+            cur_assets,
+            cash,
+            recv,
+            ppe,
+            total_liab,
+            cur_liab,
+            ltd,
+            ret_earn,
+            equity,
+            ocf,
+            capex,
         ]
         n_populated = sum(1 for f in all_fields if f != (0.0, 0.0))
         quality = n_populated / len(all_fields)

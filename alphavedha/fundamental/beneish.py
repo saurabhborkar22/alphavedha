@@ -29,14 +29,14 @@ class BeneishResult:
     m_score: float
     verdict: str  # "manipulator" | "grey_zone" | "non_manipulator"
     # individual indices
-    dsri: float   # Days Sales Receivable Index
-    gmi: float    # Gross Margin Index
-    aqi: float    # Asset Quality Index
-    sgi: float    # Sales Growth Index
-    depi: float   # Depreciation Index
-    sgai: float   # SG&A Expense Index
-    tata: float   # Total Accruals to Total Assets
-    lvgi: float   # Leverage Index
+    dsri: float  # Days Sales Receivable Index
+    gmi: float  # Gross Margin Index
+    aqi: float  # Asset Quality Index
+    sgi: float  # Sales Growth Index
+    depi: float  # Depreciation Index
+    sgai: float  # SG&A Expense Index
+    tata: float  # Total Accruals to Total Assets
+    lvgi: float  # Leverage Index
     data_quality: float
     interpretation: str
 
