@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,7 +12,7 @@ from alphavedha.sentiment.sources import SentimentPost
 
 
 def _post(text: str, source: str = "rss") -> SentimentPost:
-    return SentimentPost(text=text, source=source, published_at=datetime.now(timezone.utc))
+    return SentimentPost(text=text, source=source, published_at=datetime.now(UTC))
 
 
 class TestVerdict:

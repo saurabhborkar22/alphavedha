@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from alphavedha.sentiment.sources import (
-    RSSSource,
     RedditSource,
-    SentimentPost,
+    RSSSource,
     _item_matches,
     _symbol_variants,
 )
@@ -55,7 +53,11 @@ class TestRSSSource:
     @pytest.mark.asyncio
     async def test_rss_filters_by_symbol(self) -> None:
         items = [
-            ("TCS Q4 profit rises", "Tata Consultancy profits up", "Mon, 09 Jun 2026 10:00:00 +0000"),
+            (
+                "TCS Q4 profit rises",
+                "Tata Consultancy profits up",
+                "Mon, 09 Jun 2026 10:00:00 +0000",
+            ),
             ("Wipro acquires company", "Wipro deal closed", "Mon, 09 Jun 2026 10:00:00 +0000"),
         ]
         with patch("alphavedha.sentiment.sources._fetch_rss", new=AsyncMock(return_value=items)):
@@ -82,6 +84,7 @@ class TestRSSSource:
         items = [
             ("TCS results", "Quarterly earnings", "Mon, 09 Jun 2026 10:00:00 +0000"),
         ]
+
         # Patch only one feed returning data
         async def mock_fetch(source_name: str, url: str):
             if "moneycontrol" in url:
@@ -99,6 +102,7 @@ class TestRedditSource:
     async def test_reddit_returns_empty_without_credentials(self) -> None:
         with patch.dict("os.environ", {}, clear=False):
             import os
+
             os.environ.pop("REDDIT_CLIENT_ID", None)
             os.environ.pop("REDDIT_CLIENT_SECRET", None)
             src = RedditSource()

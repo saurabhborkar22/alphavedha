@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Protocol
 
@@ -27,10 +27,11 @@ logger = structlog.get_logger(__name__)
 # Common data model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SentimentPost:
-    text: str               # title + snippet suitable for FinBERT scoring
-    source: str             # e.g. "moneycontrol_rss", "reddit_india_investments"
+    text: str  # title + snippet suitable for FinBERT scoring
+    source: str  # e.g. "moneycontrol_rss", "reddit_india_investments"
     published_at: datetime
     url: str = ""
 
@@ -39,9 +40,9 @@ class SentimentPost:
 # Source protocol
 # ---------------------------------------------------------------------------
 
+
 class SocialSource(Protocol):
-    async def fetch(self, symbol: str, lookback_days: int) -> list[SentimentPost]:
-        ...
+    async def fetch(self, symbol: str, lookback_days: int) -> list[SentimentPost]: ...
 
 
 # ---------------------------------------------------------------------------
@@ -70,9 +71,9 @@ _HTTP_TIMEOUT = 8.0  # seconds
 def _parse_rfc2822(date_str: str) -> datetime:
     """Parse RFC-2822 date (RSS pubDate) to UTC-aware datetime."""
     try:
-        return parsedate_to_datetime(date_str).astimezone(timezone.utc)
+        return parsedate_to_datetime(date_str).astimezone(UTC)
     except Exception:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
 
 def _symbol_variants(symbol: str) -> list[str]:
@@ -115,7 +116,7 @@ class RSSSource:
 
     async def fetch(self, symbol: str, lookback_days: int = 7) -> list[SentimentPost]:
         terms = _symbol_variants(symbol)
-        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
         posts: list[SentimentPost] = []
 
         for source_name, url in _RSS_FEEDS:
@@ -123,11 +124,13 @@ class RSSSource:
             for title, summary, pubdate_str in items:
                 if not _item_matches(title, summary, terms):
                     continue
-                published_at = _parse_rfc2822(pubdate_str) if pubdate_str else datetime.now(timezone.utc)
+                published_at = _parse_rfc2822(pubdate_str) if pubdate_str else datetime.now(UTC)
                 if published_at < cutoff:
                     continue
                 text = f"{title}. {summary}"[:512]
-                posts.append(SentimentPost(text=text, source=source_name, published_at=published_at))
+                posts.append(
+                    SentimentPost(text=text, source=source_name, published_at=published_at)
+                )
 
         logger.debug("rss_posts_fetched", symbol=symbol, n=len(posts))
         return posts
@@ -158,6 +161,7 @@ class RedditSource:
 
     def _get_reddit(self) -> object | None:
         import os
+
         client_id = os.environ.get("REDDIT_CLIENT_ID", "")
         secret = os.environ.get("REDDIT_CLIENT_SECRET", "")
         user_agent = os.environ.get("REDDIT_USER_AGENT", "AlphaVedha/1.0")
@@ -165,6 +169,7 @@ class RedditSource:
             return None
         try:
             import praw
+
             return praw.Reddit(
                 client_id=client_id,
                 client_secret=secret,
@@ -180,12 +185,13 @@ class RedditSource:
 
     async def fetch(self, symbol: str, lookback_days: int = 7) -> list[SentimentPost]:
         import asyncio
+
         reddit = self._get_reddit()
         if reddit is None:
             return []
 
         terms = _symbol_variants(symbol)
-        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
 
         def _fetch_sync() -> list[SentimentPost]:
             posts: list[SentimentPost] = []
@@ -193,7 +199,7 @@ class RedditSource:
                 try:
                     sub = reddit.subreddit(sub_name)  # type: ignore[attr-defined]
                     for post in sub.search(symbol, limit=_REDDIT_POST_LIMIT, sort="new"):
-                        published_at = datetime.fromtimestamp(post.created_utc, tz=timezone.utc)
+                        published_at = datetime.fromtimestamp(post.created_utc, tz=UTC)
                         if published_at < cutoff:
                             continue
                         title = post.title or ""

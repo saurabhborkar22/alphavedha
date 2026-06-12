@@ -39,7 +39,9 @@ class SocialSentimentResult:
     # Per-source breakdown
     source_counts: dict[str, int] = field(default_factory=dict)
     # Verdict based on score + post_count thresholds
-    verdict: str = "neutral"  # "bullish" | "cautiously_bullish" | "neutral" | "cautiously_bearish" | "bearish"
+    verdict: str = (
+        "neutral"  # "bullish" | "cautiously_bullish" | "neutral" | "cautiously_bearish" | "bearish"
+    )
     data_quality: float = 1.0  # 0.0 when no posts found
     generated_at: str = ""
 
