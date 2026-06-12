@@ -41,14 +41,22 @@ class EnsembleResult:
 
 
 class StackingEnsemble:
-    """Combines base model OOF predictions + regime probs via RidgeClassifier."""
+    """Combines base model OOF predictions + regime probs via RidgeClassifier.
+
+    GNN is an optional 4th base learner: if "gnn" is present in the predictions
+    dict passed to fit(), it is incorporated into the meta-features (width 17
+    instead of 14). The flag is persisted in metadata.json so predict/load are
+    always consistent with the training configuration.
+    """
 
     EXPECTED_MODELS: ClassVar[list[str]] = ["xgboost", "lstm", "tft"]
+    _OPTIONAL_MODELS: ClassVar[frozenset[str]] = frozenset(["gnn"])
 
     def __init__(self, config: EnsembleConfig | None = None) -> None:
         self._config = config or EnsembleConfig()
         self._ridge: RidgeClassifier | None = None
         self._is_fitted = False
+        self._has_gnn: bool = False
         self._training_metrics: dict[str, float] = {}
 
     def fit(
@@ -57,6 +65,7 @@ class StackingEnsemble:
         regime_probs: np.ndarray,
         y_true: pd.Series,
     ) -> dict[str, float]:
+        self._has_gnn = "gnn" in base_oof_predictions
         self._validate_model_names(base_oof_predictions)
         self._validate_probabilities(base_oof_predictions)
         meta_X = self._build_meta_features(base_oof_predictions, regime_probs)
@@ -152,6 +161,7 @@ class StackingEnsemble:
             "config": self._config.model_dump(),
             "metrics": self._training_metrics,
             "expected_models": self.EXPECTED_MODELS,
+            "has_gnn": self._has_gnn,
         }
         (directory / "metadata.json").write_text(json.dumps(metadata, indent=2))
         logger.info("ensemble_saved", path=str(directory))
@@ -172,10 +182,18 @@ class StackingEnsemble:
         ensemble = cls(config=config)
         ensemble._ridge = joblib.load(ridge_path)
         ensemble._training_metrics = metadata.get("metrics", {})
+        ensemble._has_gnn = metadata.get("has_gnn", False)
         ensemble._is_fitted = True
 
         logger.info("ensemble_loaded", path=str(directory))
         return ensemble
+
+    def _active_models(self, base_predictions: dict[str, PredictionResult]) -> list[str]:
+        """Return the ordered list of models active in this instance (base + optional gnn)."""
+        models = list(self.EXPECTED_MODELS)
+        if self._has_gnn and "gnn" in base_predictions:
+            models.append("gnn")
+        return models
 
     def _build_meta_features(
         self,
@@ -184,9 +202,8 @@ class StackingEnsemble:
     ) -> np.ndarray:
         if regime_probs.ndim != 2 or regime_probs.shape[1] != 4:
             raise DataQualityError(f"regime_probs must have shape (n, 4), got {regime_probs.shape}")
-        # _validate_probabilities ensures no None values
         model_probs: list[np.ndarray] = []
-        for name in self.EXPECTED_MODELS:
+        for name in self._active_models(base_predictions):
             probs = base_predictions[name].probabilities
             assert probs is not None
             model_probs.append(probs)
@@ -195,7 +212,7 @@ class StackingEnsemble:
 
     def _compute_disagreement(self, base_predictions: dict[str, PredictionResult]) -> np.ndarray:
         probs_list: list[np.ndarray] = []
-        for m in self.EXPECTED_MODELS:
+        for m in self._active_models(base_predictions):
             probs = base_predictions[m].probabilities
             assert probs is not None
             probs_list.append(probs)
@@ -207,31 +224,30 @@ class StackingEnsemble:
         return np.std(probs_for_consensus, axis=0)  # type: ignore[no-any-return]
 
     def _aggregate_magnitude(self, base_predictions: dict[str, PredictionResult]) -> np.ndarray:
-        confs = np.stack(
-            [base_predictions[m].confidence for m in self.EXPECTED_MODELS],
-            axis=0,
-        )
-        mags = np.stack(
-            [base_predictions[m].magnitude for m in self.EXPECTED_MODELS],
-            axis=0,
-        )
+        active = self._active_models(base_predictions)
+        confs = np.stack([base_predictions[m].confidence for m in active], axis=0)
+        mags = np.stack([base_predictions[m].magnitude for m in active], axis=0)
         conf_sum = confs.sum(axis=0, keepdims=True)
         conf_sum = np.where(conf_sum == 0, 1.0, conf_sum)
         weights = confs / conf_sum
         return (weights * mags).sum(axis=0)  # type: ignore[no-any-return]
 
     def _validate_probabilities(self, base_predictions: dict[str, PredictionResult]) -> None:
-        for name in self.EXPECTED_MODELS:
+        for name in self._active_models(base_predictions):
             if base_predictions[name].probabilities is None:
                 raise DataQualityError(
                     f"Model '{name}' has None probabilities. All base models must provide probabilities."
                 )
 
     def _validate_model_names(self, base_predictions: dict[str, PredictionResult]) -> None:
-        expected = set(self.EXPECTED_MODELS)
+        required = set(self.EXPECTED_MODELS)
         actual = set(base_predictions.keys())
-        if actual != expected:
-            raise ValueError(f"Expected models {sorted(expected)}, got {sorted(actual)}")
+        missing = required - actual
+        if missing:
+            raise ValueError(f"Expected models {sorted(required)}, got {sorted(actual)}")
+        unexpected = actual - required - self._OPTIONAL_MODELS
+        if unexpected:
+            raise ValueError(f"Expected models {sorted(required)}, got {sorted(actual)}")
 
     def _validate_inputs(self, meta_X: np.ndarray) -> None:
         if np.any(~np.isfinite(meta_X)):

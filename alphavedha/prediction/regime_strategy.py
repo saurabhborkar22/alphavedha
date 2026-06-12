@@ -35,28 +35,28 @@ class RegimeStrategyConfig(BaseModel):
         default_factory=lambda: RegimeStrategyParams(
             model_weights={"xgboost": 0.45, "lstm": 0.25, "tft": 0.30},
             kelly_fraction=1.0,
-            meta_confidence_threshold=0.55,
+            meta_confidence_threshold=0.40,
         )
     )
     bear: RegimeStrategyParams = Field(
         default_factory=lambda: RegimeStrategyParams(
             model_weights={"xgboost": 0.30, "lstm": 0.40, "tft": 0.30},
             kelly_fraction=0.25,
-            meta_confidence_threshold=0.65,
+            meta_confidence_threshold=0.45,
         )
     )
     sideways: RegimeStrategyParams = Field(
         default_factory=lambda: RegimeStrategyParams(
             model_weights={"xgboost": 0.33, "lstm": 0.34, "tft": 0.33},
             kelly_fraction=0.5,
-            meta_confidence_threshold=0.60,
+            meta_confidence_threshold=0.42,
         )
     )
     high_volatility: RegimeStrategyParams = Field(
         default_factory=lambda: RegimeStrategyParams(
             model_weights={"xgboost": 0.33, "lstm": 0.34, "tft": 0.33},
             kelly_fraction=0.1,
-            meta_confidence_threshold=0.70,
+            meta_confidence_threshold=0.52,
             require_all_models_agree=True,
         )
     )

@@ -128,6 +128,21 @@ class TestStackingEnsembleFit:
         with pytest.raises(InsufficientDataError):
             ensemble.fit(preds, regime, y)
 
+    def test_gnn_as_optional_fourth_learner(self, ensemble_config: EnsembleConfig) -> None:
+        rng = np.random.default_rng(7)
+        n = 50
+        preds = {
+            name: _make_prediction_result(n, rng) for name in ["xgboost", "lstm", "tft", "gnn"]
+        }
+        regime = np.ones((n, 4)) / 4
+        y = pd.Series(rng.choice([-1, 0, 1], size=n))
+        ensemble = StackingEnsemble(config=ensemble_config)
+        metrics = ensemble.fit(preds, regime, y)
+        assert ensemble._has_gnn is True
+        assert "train_accuracy" in metrics
+        result = ensemble.predict(preds, regime)
+        assert len(result.direction) == n
+
 
 class TestStackingEnsemblePredict:
     @pytest.fixture(autouse=True)

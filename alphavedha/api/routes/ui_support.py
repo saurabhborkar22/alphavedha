@@ -762,7 +762,34 @@ _PRIMARY_METRIC_KEYS: tuple[str, ...] = (
 )
 
 
-def _real_models_status() -> ModelsStatusResponse:
+async def _live_ensemble_summary() -> tuple[float, str, int]:
+    """The ensemble's latest market call from persisted daily predictions.
+
+    Returns (mean confidence %, majority direction UP/DOWN/FLAT, count of
+    symbols agreeing with the majority). Zeros/empty until the first 08:30
+    IST prediction run has persisted paper trades.
+    """
+    from alphavedha.data.store import load_paper_trades
+
+    today = datetime.now().date()
+    try:
+        trades = await load_paper_trades(start=today - timedelta(days=7), end=today)
+    except Exception as e:
+        logger.warning("ensemble_summary_unavailable", error=str(e))
+        return 0.0, "", 0
+    if trades.empty:
+        return 0.0, "", 0
+
+    latest = trades[trades["prediction_date"] == trades["prediction_date"].max()]
+    confidence = round(float(latest["confidence"].mean()) * 100, 1)
+    net = float(latest["predicted_direction"].mean())
+    direction = "UP" if net > 0 else ("DOWN" if net < 0 else "FLAT")
+    majority_sign = 1 if net > 0 else -1
+    agreement = int((latest["predicted_direction"] == majority_sign).sum())
+    return confidence, direction, agreement
+
+
+async def _real_models_status() -> ModelsStatusResponse:
     models: list[ModelInfo] = []
     for name in ui_data.MODEL_ARTIFACT_NAMES:
         metadata = ui_data.read_model_metadata(name)
@@ -788,12 +815,21 @@ def _real_models_status() -> ModelsStatusResponse:
                 status="active",
             )
         )
+    ensemble_confidence, ensemble_direction, agreement_count = await _live_ensemble_summary()
+    if ensemble_confidence == 0.0:
+        # No persisted predictions yet — fall back to the stacking
+        # ensemble's training accuracy so the dashboard shows the model's
+        # measured quality instead of a dead 0%.
+        ensemble_confidence = next(
+            (m.accuracy for m in models if m.name == "Stacking Ensemble"), 0.0
+        )
+
     return ModelsStatusResponse(
         models=models,
-        agreement_count=0,
+        agreement_count=agreement_count,
         total_models=len(models),
-        ensemble_confidence=0.0,
-        ensemble_direction="",
+        ensemble_confidence=ensemble_confidence,
+        ensemble_direction=ensemble_direction,
         feature_drift=[],
         pipeline=None,
         system=ui_data.system_resources(),
@@ -805,7 +841,7 @@ async def models_status() -> ModelsStatusResponse:
     if _is_demo():
         return _demo_models_status()
     try:
-        return _real_models_status()
+        return await _real_models_status()
     except Exception as e:
         logger.warning("real_models_status_failed", error=str(e))
         return ModelsStatusResponse(
