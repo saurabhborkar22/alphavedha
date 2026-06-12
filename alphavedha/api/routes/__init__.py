@@ -3,7 +3,7 @@
 from alphavedha.api.routes import (
     dashboard,
     health,
-    live
+    live,
     paper_trading,
     predictions,
     public,
