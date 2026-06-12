@@ -582,21 +582,46 @@ def _train_regime_on_data(
     return metrics, artifact_dir
 
 
+def _train_gnn_on_data(data: TierData) -> tuple[TrainResult, Path]:
+    """Train GNN on pre-loaded data (no graph structure — falls back to MLP)."""
+    from alphavedha.models.gnn_model import GNNModel
+
+    X_train = _fill_nan_for_torch(data.X_train)
+    X_val = _fill_nan_for_torch(data.X_val)
+
+    model = GNNModel()
+    train_result = model.fit(
+        X_train,
+        data.y_train,
+        X_val=X_val,
+        y_val=data.y_val,
+    )
+
+    artifact_dir = ARTIFACTS_DIR / "gnn" / "latest"
+    model.save(artifact_dir)
+    return train_result, artifact_dir
+
+
 def _get_base_predictions(
     xgb_model: XGBoostModel,
     lstm_model: object,
     tft_model: object,
     X: pd.DataFrame,
     top_features: list[str],
+    gnn_model: object | None = None,
 ) -> dict[str, PredictionResult]:
-    """Get predictions from all 3 base models on the same dataset."""
+    """Get predictions from base models. GNN is an optional 4th learner."""
     xgb_pred = xgb_model.predict(X)
 
     X_clean = _fill_nan_for_torch(X[top_features])
     lstm_pred = lstm_model.predict(X_clean)  # type: ignore[union-attr]
     tft_pred = tft_model.predict(X_clean)  # type: ignore[union-attr]
 
-    return {"xgboost": xgb_pred, "lstm": lstm_pred, "tft": tft_pred}
+    preds: dict[str, PredictionResult] = {"xgboost": xgb_pred, "lstm": lstm_pred, "tft": tft_pred}
+    if gnn_model is not None:
+        X_gnn = _fill_nan_for_torch(X)
+        preds["gnn"] = gnn_model.predict(X_gnn)  # type: ignore[union-attr]
+    return preds
 
 
 def _get_regime_probs(
@@ -648,6 +673,7 @@ def _train_ensemble_on_data(
     tft_model: object,
     data: TierData,
     top_features: list[str],
+    gnn_model: object | None = None,
 ) -> tuple[dict[str, float], Path]:
     """Train stacking ensemble on OOF predictions from base models."""
     from alphavedha.models.ensemble import StackingEnsemble
@@ -664,6 +690,7 @@ def _train_ensemble_on_data(
         tft_model,
         data.X_oof,
         top_features,
+        gnn_model=gnn_model,
     )
     regime_probs = _get_regime_probs(data, len(data.X_oof))
 
@@ -682,6 +709,7 @@ def _train_meta_labeling_on_data(
     tft_model: object,
     data: TierData,
     top_features: list[str],
+    gnn_model: object | None = None,
 ) -> tuple[dict[str, float], Path]:
     """Train meta-labeling model on OOF data using ensemble predictions."""
     from alphavedha.models.ensemble import StackingEnsemble
@@ -704,6 +732,7 @@ def _train_meta_labeling_on_data(
         tft_model,
         data.X_oof,
         top_features,
+        gnn_model=gnn_model,
     )
     regime_probs = _get_regime_probs(data, len(data.X_oof))
     ensemble_result = ensemble.predict(base_preds, regime_probs)
@@ -1166,7 +1195,29 @@ async def train_all(
     _log_experiment(tracker, regime_result, data)
     results["regime"] = regime_result
 
-    # Step 7: Train Ensemble (needs all base models + regime)
+    # Step 6.5: Train GNN (optional 4th base learner — no graph, MLP fallback)
+    logger.info("train_all_step", step="gnn")
+    gnn_result = TrainingPipelineResult(model_name="gnn")
+    gnn_model_loaded: object | None = None
+    try:
+        from alphavedha.models.gnn_model import GNNModel
+
+        gnn_train, gnn_dir = _train_gnn_on_data(data)
+        gnn_result.train_result = gnn_train
+        gnn_result.artifact_path = gnn_dir
+        gnn_model_loaded = GNNModel.load(gnn_dir)
+        logger.info(
+            "train_all_gnn_done",
+            train_acc=gnn_train.train_metrics.get("accuracy"),
+            val_acc=gnn_train.val_metrics.get("accuracy"),
+        )
+    except Exception as e:
+        gnn_result.errors["gnn"] = str(e)
+        logger.error("train_all_gnn_failed", error=str(e))
+    _log_experiment(tracker, gnn_result, data)
+    results["gnn"] = gnn_result
+
+    # Step 7: Train Ensemble (needs all base models + regime + optional GNN)
     if all(
         results[m].train_result is not None or results[m].artifact_path is not None
         for m in ["xgboost", "lstm", "tft"]
@@ -1186,6 +1237,7 @@ async def train_all(
                 tft_model,
                 data,
                 top_features,
+                gnn_model=gnn_model_loaded,
             )
             ensemble_result.extra_metrics = ens_metrics
             if ens_dir != Path():
@@ -1208,6 +1260,7 @@ async def train_all(
                     tft_model,
                     data,
                     top_features,
+                    gnn_model=gnn_model_loaded,
                 )
                 meta_result.extra_metrics = meta_metrics
                 if meta_dir != Path():

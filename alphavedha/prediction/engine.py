@@ -66,12 +66,15 @@ class PredictionEngine:
         regime_strategy: RegimeStrategySelector | None = None,
         model_version: str = "v0.1.0",
         conformal_outputs_returns: bool = False,
+        gnn: BaseModelProtocol | None = None,
     ) -> None:
         self._models: dict[str, BaseModelProtocol] = {
             "xgboost": xgboost,
             "lstm": lstm,
             "tft": tft,
         }
+        if gnn is not None:
+            self._models["gnn"] = gnn
         self._regime = regime
         self._ensemble = ensemble
         self._meta_model = meta_model
