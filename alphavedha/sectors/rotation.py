@@ -20,9 +20,8 @@ analyzing relative strength and for portfolio management.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -65,15 +64,15 @@ _LOOKBACK_DAYS_HISTORY = 60
 
 @dataclass
 class SectorSignal:
-    sector: str             # e.g. "NIFTY_IT"
-    ticker: str             # e.g. "^CNXIT"
-    rs_ratio: float         # relative strength vs Nifty; 100 = parity
-    rs_momentum: float      # rate of change of RS-Ratio; 100 = flat
-    phase: str              # "leading" | "weakening" | "lagging" | "improving"
-    rank: int               # 1 = strongest rotation momentum (leading phase, highest rs_ratio)
-    ret_1m: float           # 1-month absolute return (%)
-    ret_3m: float           # 3-month absolute return (%)
-    rel_ret_1m: float       # 1-month return relative to Nifty (%)
+    sector: str  # e.g. "NIFTY_IT"
+    ticker: str  # e.g. "^CNXIT"
+    rs_ratio: float  # relative strength vs Nifty; 100 = parity
+    rs_momentum: float  # rate of change of RS-Ratio; 100 = flat
+    phase: str  # "leading" | "weakening" | "lagging" | "improving"
+    rank: int  # 1 = strongest rotation momentum (leading phase, highest rs_ratio)
+    ret_1m: float  # 1-month absolute return (%)
+    ret_3m: float  # 3-month absolute return (%)
+    rel_ret_1m: float  # 1-month return relative to Nifty (%)
     interpretation: str
 
 
@@ -82,10 +81,10 @@ class SectorRotationReport:
     sectors: list[SectorSignal]
     benchmark_ret_1m: float
     benchmark_ret_3m: float
-    top_sectors: list[str]       # top 3 by phase + rs_ratio
-    avoid_sectors: list[str]     # lagging sectors
+    top_sectors: list[str]  # top 3 by phase + rs_ratio
+    avoid_sectors: list[str]  # lagging sectors
     rotation_message: str
-    data_quality: float          # fraction of sectors with valid data
+    data_quality: float  # fraction of sectors with valid data
     generated_at: str = ""
 
 
@@ -178,7 +177,7 @@ def _pct_ret(prices: pd.Series, n_days: int) -> float:
 
 async def compute_sector_rotation() -> SectorRotationReport:
     """Fetch sector index prices and compute RRG sector rotation signals."""
-    all_tickers = [BENCHMARK_TICKER] + list(SECTOR_TICKERS.values())
+    all_tickers = [BENCHMARK_TICKER, *list(SECTOR_TICKERS.values())]
     prices = await _fetch_prices(all_tickers)
 
     now_ist = datetime.now(IST).isoformat()

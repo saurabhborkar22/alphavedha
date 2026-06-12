@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from alphavedha.sectors.rotation import (
-    SECTOR_TICKERS,
     SectorRotationReport,
-    SectorSignal,
     _compute_rs_momentum,
     _compute_rs_ratio,
     _pct_ret,
@@ -20,10 +16,10 @@ from alphavedha.sectors.rotation import (
     compute_sector_rotation,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _price_series(values: list[float], start: str = "2026-01-01") -> pd.Series:
     idx = pd.date_range(start=start, periods=len(values), freq="B")
@@ -33,6 +29,7 @@ def _price_series(values: list[float], start: str = "2026-01-01") -> pd.Series:
 # ---------------------------------------------------------------------------
 # Unit tests for pure functions
 # ---------------------------------------------------------------------------
+
 
 class TestPhase:
     def test_leading(self) -> None:
@@ -111,8 +108,9 @@ class TestComputeRsMomentum:
 # Integration tests for compute_sector_rotation
 # ---------------------------------------------------------------------------
 
+
 def _make_prices(n: int = 30, start: float = 100.0, growth: float = 1.005) -> pd.Series:
-    vals = [start * (growth ** i) for i in range(n)]
+    vals = [start * (growth**i) for i in range(n)]
     return _price_series(vals)
 
 
@@ -131,7 +129,7 @@ async def test_compute_sector_rotation_with_data() -> None:
     from alphavedha.sectors.rotation import BENCHMARK_TICKER
 
     bench = _make_prices(30, start=18000.0, growth=1.002)
-    it_sector = _make_prices(30, start=40000.0, growth=1.004)   # outperforming → leading
+    it_sector = _make_prices(30, start=40000.0, growth=1.004)  # outperforming → leading
 
     prices = {
         BENCHMARK_TICKER: bench,
@@ -155,7 +153,7 @@ async def test_top_sectors_are_leading_or_improving() -> None:
     from alphavedha.sectors.rotation import BENCHMARK_TICKER
 
     bench = _make_prices(30, start=18000.0, growth=1.002)
-    it_sector = _make_prices(30, start=40000.0, growth=1.006)   # strong outperformer
+    it_sector = _make_prices(30, start=40000.0, growth=1.006)  # strong outperformer
 
     prices = {BENCHMARK_TICKER: bench, "^CNXIT": it_sector}
     with patch("alphavedha.sectors.rotation._fetch_prices", new=AsyncMock(return_value=prices)):

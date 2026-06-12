@@ -16,7 +16,15 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from alphavedha.api.deps import set_service
-from alphavedha.api.routes import dashboard, health, paper_trading, predictions, public, sectors, ui_support
+from alphavedha.api.routes import (
+    dashboard,
+    health,
+    paper_trading,
+    predictions,
+    public,
+    sectors,
+    ui_support,
+)
 from alphavedha.config import get_config
 from alphavedha.exceptions import (
     ModelNotFoundError,
