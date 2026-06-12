@@ -28,6 +28,42 @@ logger = structlog.get_logger(__name__)
 
 ARTIFACTS_DIR = Path("models/artifacts")
 
+# Features that always produce constants or NaN because their data sources are not
+# wired up yet. Including them wastes XGBoost split budget on zero-variance columns.
+_STUB_FEATURES: frozenset[str] = frozenset(
+    [
+        # macro — hardcoded constants (no data source)
+        "macro_gsec_10y",
+        "macro_gsec_change_1d",
+        "macro_pmi",
+        "macro_pmi_staleness_days",
+        # macro — require universe_prices arg (not passed per-symbol)
+        "macro_breadth_200sma",
+        "macro_adv_dec_ratio",
+        # derivatives — participant OI not fetched (NSE bulk data not wired)
+        "deriv_fii_futures_oi",
+        "deriv_fii_options_oi",
+        "deriv_pro_futures_net",
+        "deriv_retail_futures_net",
+        "deriv_gex",
+        "deriv_delta_oi",
+        # returns — hardcoded constant (HMM not applied per-symbol at feature time)
+        "ret_regime",
+        # trends — Google Trends API not wired
+        "trends_sector_7d",
+        "trends_sector_change",
+    ]
+)
+
+
+def _drop_stub_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove known-stub (constant/NaN) columns before training."""
+    cols_to_drop = [c for c in df.columns if c in _STUB_FEATURES]
+    if cols_to_drop:
+        logger.info("train_drop_stub_features", dropped=cols_to_drop, n=len(cols_to_drop))
+        return df.drop(columns=cols_to_drop)
+    return df
+
 
 @dataclass
 class TrainingPipelineResult:
@@ -293,6 +329,12 @@ async def _load_tier_data(
     X_oof, y_oof, ret_oof = _concat(all_oof)
     X_val, y_val, ret_val = _concat(all_val)
 
+    if not X_train.empty:
+        X_train = _drop_stub_features(X_train)
+        live_cols = list(X_train.columns)
+        X_oof = X_oof[live_cols] if not X_oof.empty else X_oof
+        X_val = X_val[live_cols] if not X_val.empty else X_val
+
     logger.info(
         "train_data_ready",
         n_symbols=n_symbols,
@@ -431,6 +473,10 @@ async def train_xgboost(
     X_val = pd.concat(all_X_val, ignore_index=True)
     y_val = pd.concat(all_y_val, ignore_index=True)
     ret_val = pd.concat(all_ret_val, ignore_index=True)
+
+    X_train = _drop_stub_features(X_train)
+    live_cols = list(X_train.columns)
+    X_val = X_val[live_cols]
 
     result.n_train_rows = len(X_train)
     result.n_val_rows = len(X_val)
