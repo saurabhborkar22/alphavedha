@@ -13,8 +13,9 @@ stays live.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -190,17 +191,13 @@ async def ws_live(websocket: WebSocket, symbol: str) -> None:
         logger.info("ws_live_disconnected", symbol=symbol)
     except Exception as e:
         logger.error("ws_live_error", symbol=symbol, error=str(e))
-        try:
+        with contextlib.suppress(Exception):
             await websocket.send_text(
                 json.dumps({"type": "error", "message": str(e), "symbol": symbol})
             )
-        except Exception:
-            pass
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await websocket.close()
-        except Exception:
-            pass
 
 
 @router.websocket("/ws/market")
@@ -255,7 +252,5 @@ async def ws_market(websocket: WebSocket) -> None:
     except Exception as e:
         logger.error("ws_market_error", error=str(e))
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await websocket.close()
-        except Exception:
-            pass
