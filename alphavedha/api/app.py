@@ -24,9 +24,9 @@ from alphavedha.api.routes import (
     predictions,
     public,
     sectors,
+    sentiment,
     signals,
     ui_support,
-    sentiment,
 )
 from alphavedha.config import get_config
 from alphavedha.exceptions import (
