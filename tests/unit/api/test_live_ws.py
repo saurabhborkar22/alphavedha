@@ -45,11 +45,25 @@ class TestWebSocketLive:
 
     def test_ws_live_connects_and_sends_snapshot(self) -> None:
         mock_candles = [
-            {"time": "09:15", "timestamp": 0, "open": 100.0, "high": 102.0,
-             "low": 99.0, "close": 101.0, "volume": 50000}
+            {
+                "time": "09:15",
+                "timestamp": 0,
+                "open": 100.0,
+                "high": 102.0,
+                "low": 99.0,
+                "close": 101.0,
+                "volume": 50000,
+            }
         ]
-        mock_tick = {"price": 101.0, "open": 100.0, "high": 102.0, "low": 99.0,
-                     "prev_close": 99.5, "change_pct": 1.51, "volume": 50000}
+        mock_tick = {
+            "price": 101.0,
+            "open": 100.0,
+            "high": 102.0,
+            "low": 99.0,
+            "prev_close": 99.5,
+            "change_pct": 1.51,
+            "volume": 50000,
+        }
 
         with (
             patch(
@@ -64,21 +78,28 @@ class TestWebSocketLive:
                 "alphavedha.api.routes.live._is_market_open",
                 return_value=False,
             ),
+            self.client.websocket_connect("/ws/live/TCS") as ws,
         ):
-            with self.client.websocket_connect("/ws/live/TCS") as ws:
-                snapshot = json.loads(ws.receive_text())
-                assert snapshot["type"] == "snapshot"
-                assert snapshot["symbol"] == "TCS"
-                assert snapshot["candles"] == mock_candles
-                assert snapshot["tick"] == mock_tick
-                assert "generated_at" in snapshot
+            snapshot = json.loads(ws.receive_text())
+            assert snapshot["type"] == "snapshot"
+            assert snapshot["symbol"] == "TCS"
+            assert snapshot["candles"] == mock_candles
+            assert snapshot["tick"] == mock_tick
+            assert "generated_at" in snapshot
 
-                closed_msg = json.loads(ws.receive_text())
-                assert closed_msg["type"] == "market_closed"
+            closed_msg = json.loads(ws.receive_text())
+            assert closed_msg["type"] == "market_closed"
 
     def test_ws_market_connects_and_sends_summary(self) -> None:
-        mock_tick = {"price": 22500.0, "open": 22400.0, "high": 22600.0, "low": 22300.0,
-                     "prev_close": 22400.0, "change_pct": 0.45, "volume": 0}
+        mock_tick = {
+            "price": 22500.0,
+            "open": 22400.0,
+            "high": 22600.0,
+            "low": 22300.0,
+            "prev_close": 22400.0,
+            "change_pct": 0.45,
+            "volume": 0,
+        }
 
         with (
             patch(
@@ -89,10 +110,10 @@ class TestWebSocketLive:
                 "alphavedha.api.routes.live._is_market_open",
                 return_value=False,
             ),
+            self.client.websocket_connect("/ws/market") as ws,
         ):
-            with self.client.websocket_connect("/ws/market") as ws:
-                summary = json.loads(ws.receive_text())
-                assert summary["type"] == "market_summary"
-                assert "indices" in summary
-                assert len(summary["indices"]) == 3
-                assert "generated_at" in summary
+            summary = json.loads(ws.receive_text())
+            assert summary["type"] == "market_summary"
+            assert "indices" in summary
+            assert len(summary["indices"]) == 3
+            assert "generated_at" in summary
