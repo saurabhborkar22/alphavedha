@@ -9,6 +9,7 @@ from alphavedha.api.routes import (
     public,
     sectors,
     signals,
+    sentiment,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "public",
     "sectors",
     "signals",
+    "sentiment",
 ]
