@@ -76,7 +76,7 @@ labels:
     atr_period: 14
 
   meta_labeling:
-    min_confidence: 0.55
+    min_confidence: 0.40
     model: xgboost
 
   sample_weights:
@@ -154,7 +154,7 @@ risk:
   position_sizing:
     method: half_kelly
     max_single_stock_pct: 10.0
-    min_confidence: 0.55
+    min_confidence: 0.40
 
   portfolio:
     max_sector_pct: 25.0

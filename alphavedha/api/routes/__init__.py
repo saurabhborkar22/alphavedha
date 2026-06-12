@@ -1,5 +1,27 @@
 """API route modules."""
 
-from alphavedha.api.routes import dashboard, health, paper_trading, predictions, public
+from alphavedha.api.routes import (
+    dashboard,
+    fundamental,
+    health,
+    live,
+    paper_trading,
+    predictions,
+    public,
+    sectors,
+    sentiment,
+    signals,
+)
 
-__all__ = ["dashboard", "health", "paper_trading", "predictions", "public"]
+__all__ = [
+    "dashboard",
+    "fundamental",
+    "health",
+    "live",
+    "paper_trading",
+    "predictions",
+    "public",
+    "sectors",
+    "sentiment",
+    "signals",
+]

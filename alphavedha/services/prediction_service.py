@@ -108,8 +108,18 @@ class PredictionService:
             return pd.DataFrame()
 
         try:
+            from alphavedha.features.macro import fetch_macro_data
+
+            macro_df = await asyncio.to_thread(fetch_macro_data, str(start), str(today))
+        except Exception as e:
+            logger.warning("macro_fetch_failed", symbol=symbol, error=str(e))
+            macro_df = None
+
+        try:
             # CPU-heavy (~2-4s) — run off the event loop
-            result = await asyncio.to_thread(compute_all_features, symbol=symbol, ohlcv_df=ohlcv_df)
+            result = await asyncio.to_thread(
+                compute_all_features, symbol=symbol, ohlcv_df=ohlcv_df, macro_df=macro_df
+            )
         except Exception as e:
             logger.warning("feature_computation_failed", symbol=symbol, error=str(e))
             return pd.DataFrame()
