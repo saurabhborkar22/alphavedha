@@ -148,6 +148,7 @@ async def _persist_paper_trades(
                     "confidence": float(pred.meta_confidence),
                     "model_version": pred.model_version,
                     "regime": pred.regime,
+                    "is_tradeable": bool(pred.is_tradeable),
                     "entry_price": entry_price,
                 }
             )
@@ -304,6 +305,18 @@ class AlphaVedhaScheduler:
     def run_daily_predictions(self) -> JobResult:
         """Generate predictions for all stocks in the configured tier."""
         result = JobResult(job_name="daily_predictions", started_at=_now_ist())
+
+        # NSE is closed on weekends; running anyway would persist Sat+Sun
+        # cohorts at Friday's close — the same bet counted three times in the
+        # track record. Exchange holidays still slip through this guard.
+        if _now_ist().weekday() >= 5:
+            logger.info("daily_predictions_skipped", reason="weekend — market closed")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
         logger.info("scheduler_job_start", job="daily_predictions", tier=self._tier)
 
         try:

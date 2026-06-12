@@ -55,6 +55,12 @@ def _make_ohlcv(start: date, n_days: int, start_price: float = 100.0) -> pd.Data
     return pd.DataFrame({"close": closes}, index=idx)
 
 
+# The prediction job skips weekends, so tests that exercise it pin the clock
+# to a trading day (Thursday) to stay deterministic regardless of run date.
+_WEEKDAY = datetime(2026, 6, 11, 8, 30, tzinfo=IST)
+_SATURDAY = datetime(2026, 6, 13, 8, 30, tzinfo=IST)
+
+
 class TestJobResult:
     def test_defaults(self) -> None:
         r = JobResult(job_name="test", started_at=datetime.now(IST))
@@ -114,12 +120,28 @@ class TestAlphaVedhaScheduler:
 
     def test_run_daily_predictions_demo(self) -> None:
         sched = AlphaVedhaScheduler(demo=True)
-        result = sched.run_daily_predictions()
+        with patch("alphavedha.scheduler._now_ist", return_value=_WEEKDAY):
+            result = sched.run_daily_predictions()
         assert result.job_name == "daily_predictions"
         assert result.success is True
         assert result.symbols_processed > 0
         assert result.finished_at is not None
         assert sched.state.last_prediction_run is not None
+
+    def test_run_daily_predictions_skipped_on_weekend(self) -> None:
+        sched = AlphaVedhaScheduler(demo=False)
+        with (
+            patch("alphavedha.scheduler._now_ist", return_value=_SATURDAY),
+            patch(
+                "alphavedha.scheduler._persist_paper_trades",
+                new_callable=AsyncMock,
+            ) as mock_persist,
+        ):
+            result = sched.run_daily_predictions()
+        assert result.success is True
+        assert "weekend" in (result.error or "")
+        assert result.symbols_processed == 0
+        mock_persist.assert_not_awaited()
 
     def test_run_daily_evaluation(self) -> None:
         sched = AlphaVedhaScheduler(demo=True)
@@ -185,9 +207,12 @@ class TestAlphaVedhaScheduler:
 
     def test_failed_prediction_records_error(self) -> None:
         sched = AlphaVedhaScheduler(demo=False)
-        with patch(
-            "alphavedha.services.model_registry.ModelRegistry.get_prediction_engine",
-            side_effect=Exception("model not found"),
+        with (
+            patch("alphavedha.scheduler._now_ist", return_value=_WEEKDAY),
+            patch(
+                "alphavedha.services.model_registry.ModelRegistry.get_prediction_engine",
+                side_effect=Exception("model not found"),
+            ),
         ):
             result = sched.run_daily_predictions()
             assert result.success is False
@@ -284,6 +309,7 @@ class TestAlphaVedhaScheduler:
         mock_service = SimpleNamespace(predict_tier=AsyncMock(return_value=predictions))
 
         with (
+            patch("alphavedha.scheduler._now_ist", return_value=_WEEKDAY),
             patch(
                 "alphavedha.services.prediction_service.PredictionService",
                 return_value=mock_service,
@@ -308,10 +334,13 @@ class TestAlphaVedhaScheduler:
 
     def test_run_daily_predictions_demo_skips_persistence(self) -> None:
         sched = AlphaVedhaScheduler(demo=True)
-        with patch(
-            "alphavedha.scheduler._persist_paper_trades",
-            new_callable=AsyncMock,
-        ) as mock_persist:
+        with (
+            patch("alphavedha.scheduler._now_ist", return_value=_WEEKDAY),
+            patch(
+                "alphavedha.scheduler._persist_paper_trades",
+                new_callable=AsyncMock,
+            ) as mock_persist,
+        ):
             result = sched.run_daily_predictions()
         assert result.success is True
         mock_persist.assert_not_awaited()
@@ -400,6 +429,7 @@ class TestPersistPaperTrades:
         assert first_row["confidence"] == 0.71
         assert first_row["model_version"] == "v0.1.0"
         assert first_row["regime"] == "bull"
+        assert first_row["is_tradeable"] is True
         assert first_row["entry_price"] == float(ohlcv["close"].iloc[-1])
 
     async def test_continues_on_per_symbol_store_failure(self) -> None:
