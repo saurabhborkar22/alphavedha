@@ -16,7 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from alphavedha.api.deps import set_service
-from alphavedha.api.routes import dashboard, health, paper_trading, predictions, public, ui_support
+from alphavedha.api.routes import dashboard, health, paper_trading, predictions, public, signals, ui_support
 from alphavedha.config import get_config
 from alphavedha.exceptions import (
     ModelNotFoundError,
@@ -145,6 +145,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
         )
 
     app.include_router(health.router)
+    app.include_router(signals.router)
     app.include_router(ui_support.router)  # registered first so demo scan/intraday take precedence
     app.include_router(predictions.router)
     app.include_router(paper_trading.router)
