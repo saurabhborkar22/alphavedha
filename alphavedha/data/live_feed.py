@@ -50,9 +50,22 @@ class PollResult:
     error: str | None = None
 
 
+# Indices use Yahoo index tickers; equities need the NSE suffix
+_INDEX_TICKERS: dict[str, str] = {
+    "NIFTY50": "^NSEI",
+    "NIFTY": "^NSEI",
+    "BANKNIFTY": "^NSEBANK",
+    "SENSEX": "^BSESN",
+}
+
+
+def _yf_ticker(symbol: str) -> str:
+    return _INDEX_TICKERS.get(symbol.upper(), f"{symbol}.NS")
+
+
 def _fetch_fast_info(symbol: str) -> dict[str, float | int]:
     """Fetch yfinance fast_info fields synchronously (runs in thread pool)."""
-    ticker = yf.Ticker(symbol)
+    ticker = yf.Ticker(_yf_ticker(symbol))
     info = ticker.fast_info
     return {
         "open": float(info.open or 0),

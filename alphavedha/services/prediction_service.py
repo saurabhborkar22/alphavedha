@@ -127,6 +127,22 @@ class PredictionService:
         except Exception as e:
             logger.warning("feature_persist_failed", symbol=symbol, error=str(e))
 
+    async def _get_last_close(self, symbol: str) -> float | None:
+        """Latest close from the OHLCV store, for return→price conversion."""
+        if self._registry.is_demo:
+            return None
+        from alphavedha.data.store import load_ohlcv
+
+        today = date.today()
+        try:
+            ohlcv_df = await load_ohlcv(symbol, today - timedelta(days=10), today)
+        except Exception as e:
+            logger.warning("last_close_unavailable", symbol=symbol, error=str(e))
+            return None
+        if ohlcv_df.empty or "close" not in ohlcv_df.columns:
+            return None
+        return float(ohlcv_df["close"].iloc[-1])
+
     async def _get_market_features(self) -> pd.DataFrame | None:
         """Market-level returns/volatility for regime detection, cached per day.
 
@@ -222,8 +238,13 @@ class PredictionService:
 
         features = await self._get_features(symbol)
         market_features = await self._get_market_features()
+        last_close = await self._get_last_close(symbol)
         prediction = self._engine.predict(
-            symbol, features, sector=sector, market_features=market_features
+            symbol,
+            features,
+            sector=sector,
+            market_features=market_features,
+            last_close=last_close,
         )
 
         await self._cache.set(cache_key, prediction)
