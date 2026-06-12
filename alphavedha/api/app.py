@@ -18,6 +18,7 @@ from slowapi.util import get_remote_address
 from alphavedha.api.deps import set_service
 from alphavedha.api.routes import (
     dashboard,
+    fundamental,
     health,
     live,
     paper_trading,
@@ -27,7 +28,6 @@ from alphavedha.api.routes import (
     sentiment,
     signals,
     ui_support,
-    fundamental,
 )
 from alphavedha.config import get_config
 from alphavedha.exceptions import (
