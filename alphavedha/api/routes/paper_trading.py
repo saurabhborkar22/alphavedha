@@ -6,11 +6,16 @@ After market close, outcomes are recorded and P&L updated.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from alphavedha.monitoring.track_record import TrackStats
 
 logger = structlog.get_logger(__name__)
 
@@ -24,6 +29,7 @@ class PaperTradeRequest(BaseModel):
     confidence: float = Field(..., ge=0, le=1)
     model_version: str
     regime: str | None = None
+    is_tradeable: bool | None = None
     entry_price: float | None = None
 
 
@@ -44,16 +50,36 @@ class TradeOutcomeRequest(BaseModel):
     is_correct: bool
 
 
+class TrackStatsOut(BaseModel):
+    """Cost-adjusted performance of one selection rule (see monitoring/track_record.py)."""
+
+    name: str
+    n_selected: int
+    n_evaluated: int
+    n_wins_net: int
+    win_rate_net: float | None
+    avg_return_gross: float | None
+    avg_return_net: float | None
+    total_return_net: float
+    profit_factor_net: float | None
+    sharpe_net: float | None
+    max_drawdown_net: float
+
+
 class DashboardSummary(BaseModel):
     total_predictions: int
     correct_predictions: int
     accuracy_7d: float | None
     accuracy_30d: float | None
     accuracy_all: float | None
+    # Directional gross return summed over evaluated trades (a correct short
+    # counts as a gain). See `tracks` for cost-adjusted numbers.
     total_return: float
     sharpe_ratio: float | None
     max_drawdown: float
     days_tracked: int
+    round_trip_cost_pct: float | None = None
+    tracks: dict[str, TrackStatsOut] | None = None
 
 
 class PredictionRecord(BaseModel):
@@ -64,6 +90,7 @@ class PredictionRecord(BaseModel):
     confidence: float
     model_version: str
     regime: str | None
+    is_tradeable: bool | None = None
     entry_price: float | None
     exit_price: float | None
     actual_return: float | None
@@ -85,6 +112,7 @@ async def record_prediction(req: PaperTradeRequest) -> PaperTradeResponse:
         "confidence": req.confidence,
         "model_version": req.model_version,
         "regime": req.regime,
+        "is_tradeable": req.is_tradeable,
         "entry_price": req.entry_price,
     }
 
@@ -105,7 +133,7 @@ async def record_prediction(req: PaperTradeRequest) -> PaperTradeResponse:
 
 
 @router.post("/outcome")
-async def record_outcome(req: TradeOutcomeRequest) -> dict:
+async def record_outcome(req: TradeOutcomeRequest) -> dict[str, str]:
     """Record the actual outcome for a paper trade after market close."""
     from alphavedha.data.store import update_paper_trade_outcome
 
@@ -125,14 +153,25 @@ async def record_outcome(req: TradeOutcomeRequest) -> dict:
     return {"status": "updated", "symbol": req.symbol, "date": req.prediction_date}
 
 
+def _track_stats_out(stats: TrackStats) -> TrackStatsOut:
+    return TrackStatsOut(**asdict(stats))
+
+
 @router.get("/dashboard", response_model=DashboardSummary)
 async def get_dashboard() -> DashboardSummary:
-    """Get paper trading dashboard summary."""
-    import numpy as np
+    """Paper trading dashboard: accuracy plus the cost-adjusted track record.
 
+    Returns are directional (predicted_direction * actual_return), so a
+    correct short counts as a gain. `tracks` reports gross and net-of-cost
+    stats for all predictions, gate-passed trades, and top-5 daily picks.
+    """
+    from alphavedha.backtest.costs import compute_round_trip_cost_pct
+    from alphavedha.config import get_config
     from alphavedha.data.store import load_paper_trades
+    from alphavedha.monitoring.track_record import compute_track_record, compute_track_stats
 
     trades_df = await load_paper_trades()
+    cost_pct = compute_round_trip_cost_pct("large", get_config().backtest)
 
     if trades_df.empty:
         return DashboardSummary(
@@ -145,6 +184,8 @@ async def get_dashboard() -> DashboardSummary:
             sharpe_ratio=None,
             max_drawdown=0.0,
             days_tracked=0,
+            round_trip_cost_pct=cost_pct,
+            tracks=None,
         )
 
     total = len(trades_df)
@@ -169,23 +210,9 @@ async def get_dashboard() -> DashboardSummary:
     acc_30d = _accuracy_window(30)
     acc_all = float(evaluated["is_correct"].mean()) if not evaluated.empty else None
 
-    returns = evaluated["actual_return"].dropna()
-    total_ret = float(returns.sum()) if not returns.empty else 0.0
-
-    if len(returns) >= 2 and returns.std() > 0:
-        sharpe = float(returns.mean() / returns.std() * np.sqrt(252))
-    else:
-        sharpe = None
-
-    if not returns.empty:
-        equity = (1 + returns).cumprod()
-        peak = equity.cummax()
-        dd = (equity - peak) / peak
-        max_dd = float(dd.min())
-    else:
-        max_dd = 0.0
-
-    unique_dates = trades_df["prediction_date"].nunique()
+    # Legacy top-level fields stay gross; cost-adjusted numbers live in tracks.
+    gross_all = compute_track_stats("all_gross", trades_df, cost_pct=0.0)
+    record = compute_track_record(trades_df, round_trip_cost_pct=cost_pct)
 
     return DashboardSummary(
         total_predictions=total,
@@ -193,10 +220,16 @@ async def get_dashboard() -> DashboardSummary:
         accuracy_7d=acc_7d,
         accuracy_30d=acc_30d,
         accuracy_all=acc_all,
-        total_return=total_ret,
-        sharpe_ratio=sharpe,
-        max_drawdown=max_dd,
-        days_tracked=unique_dates,
+        total_return=gross_all.total_return_net,
+        sharpe_ratio=gross_all.sharpe_net,
+        max_drawdown=gross_all.max_drawdown_net,
+        days_tracked=int(trades_df["prediction_date"].nunique()),
+        round_trip_cost_pct=cost_pct,
+        tracks={
+            "all": _track_stats_out(record.all_predictions),
+            "gate_passed": _track_stats_out(record.gate_passed),
+            "top_k": _track_stats_out(record.top_k),
+        },
     )
 
 
@@ -224,6 +257,7 @@ async def list_trades(
             confidence=row["confidence"],
             model_version=row["model_version"],
             regime=row.get("regime"),
+            is_tradeable=row.get("is_tradeable"),
             entry_price=row.get("entry_price"),
             exit_price=row.get("exit_price"),
             actual_return=row.get("actual_return"),

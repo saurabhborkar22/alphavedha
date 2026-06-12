@@ -230,6 +230,10 @@ class PaperTrade(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     model_version: Mapped[str] = mapped_column(String(50), nullable=False)
     regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Meta-labeling gate decision at prediction time. Null on rows persisted
+    # before the column existed; the track record falls back to a confidence
+    # threshold for those.
+    is_tradeable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     actual_return: Mapped[float | None] = mapped_column(Float, nullable=True)

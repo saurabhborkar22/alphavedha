@@ -754,6 +754,7 @@ async def store_paper_trade(row: dict) -> int:
             "confidence": row["confidence"],
             "model_version": row["model_version"],
             "regime": row.get("regime"),
+            "is_tradeable": row.get("is_tradeable"),
             "entry_price": row.get("entry_price"),
         }
         stmt = (
@@ -833,6 +834,7 @@ async def load_paper_trades(
                 "confidence": r.confidence,
                 "model_version": r.model_version,
                 "regime": r.regime,
+                "is_tradeable": r.is_tradeable,
                 "entry_price": r.entry_price,
                 "exit_price": r.exit_price,
                 "actual_return": r.actual_return,
