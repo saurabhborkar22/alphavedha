@@ -243,9 +243,7 @@ async def _load_tier_data(
 
         from alphavedha.features.macro import fetch_macro_data
 
-        macro_df = await asyncio.to_thread(
-            fetch_macro_data, str(start_date), str(end_date)
-        )
+        macro_df = await asyncio.to_thread(fetch_macro_data, str(start_date), str(end_date))
         if macro_df is not None and not macro_df.empty:
             logger.info("train_macro_loaded", rows=len(macro_df), cols=list(macro_df.columns))
     except Exception as e:

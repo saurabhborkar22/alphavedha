@@ -110,9 +110,7 @@ class PredictionService:
         try:
             from alphavedha.features.macro import fetch_macro_data
 
-            macro_df = await asyncio.to_thread(
-                fetch_macro_data, str(start), str(today)
-            )
+            macro_df = await asyncio.to_thread(fetch_macro_data, str(start), str(today))
         except Exception as e:
             logger.warning("macro_fetch_failed", symbol=symbol, error=str(e))
             macro_df = None
