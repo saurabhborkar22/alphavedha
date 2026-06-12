@@ -18,6 +18,7 @@ from slowapi.util import get_remote_address
 from alphavedha.api.deps import set_service
 from alphavedha.api.routes import (
     dashboard,
+    fundamental,
     health,
     live,
     paper_trading,
@@ -160,6 +161,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
     app.include_router(live.router)
     app.include_router(signals.router)
     app.include_router(sentiment.router)
+    app.include_router(fundamental.router)
     app.include_router(ui_support.router)  # registered first so demo scan/intraday take precedence
     app.include_router(predictions.router)
     app.include_router(paper_trading.router)

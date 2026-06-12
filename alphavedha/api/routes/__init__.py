@@ -2,6 +2,7 @@
 
 from alphavedha.api.routes import (
     dashboard,
+    fundamental,
     health,
     live,
     paper_trading,
@@ -14,6 +15,7 @@ from alphavedha.api.routes import (
 
 __all__ = [
     "dashboard",
+    "fundamental",
     "health",
     "live",
     "paper_trading",
