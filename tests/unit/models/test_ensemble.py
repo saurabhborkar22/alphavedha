@@ -132,8 +132,7 @@ class TestStackingEnsembleFit:
         rng = np.random.default_rng(7)
         n = 50
         preds = {
-            name: _make_prediction_result(n, rng)
-            for name in ["xgboost", "lstm", "tft", "gnn"]
+            name: _make_prediction_result(n, rng) for name in ["xgboost", "lstm", "tft", "gnn"]
         }
         regime = np.ones((n, 4)) / 4
         y = pd.Series(rng.choice([-1, 0, 1], size=n))
