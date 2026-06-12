@@ -100,6 +100,7 @@ def _prepare_symbol_data(
     symbol: str,
     ohlcv_df: pd.DataFrame,
     fii_dii_df: pd.DataFrame | None = None,
+    macro_df: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.Series, pd.Series] | None:
     """Compute features and labels for a single symbol. Returns (X, y_direction, y_return) or None."""
     config = get_config()
@@ -112,6 +113,7 @@ def _prepare_symbol_data(
         symbol=symbol,
         ohlcv_df=ohlcv_df,
         fii_dii_df=fii_dii_df,
+        macro_df=macro_df,
     )
     features_df = feature_result.df
 
@@ -271,6 +273,18 @@ async def _load_tier_data(
     except Exception as e:
         logger.warning("train_fii_dii_load_failed", error=str(e))
 
+    macro_df: pd.DataFrame | None = None
+    try:
+        import asyncio
+
+        from alphavedha.features.macro import fetch_macro_data
+
+        macro_df = await asyncio.to_thread(fetch_macro_data, str(start_date), str(end_date))
+        if macro_df is not None and not macro_df.empty:
+            logger.info("train_macro_loaded", rows=len(macro_df), cols=list(macro_df.columns))
+    except Exception as e:
+        logger.warning("train_macro_load_failed", error=str(e))
+
     for symbol in symbols:
         try:
             ohlcv_df = await load_ohlcv(symbol, start_date, end_date)
@@ -279,7 +293,7 @@ async def _load_tier_data(
                 continue
 
             ohlcv_by_symbol[symbol] = ohlcv_df
-            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df)
+            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df, macro_df)
             if prepared is None:
                 continue
 
