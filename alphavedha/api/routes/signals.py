@@ -175,7 +175,9 @@ async def buy_sell_signal(
         "composite_score": round(prediction.composite_score, 2),
         "is_tradeable": prediction.is_tradeable,
         "execute_now": execute_now,
-        "execute_now_reason": timing_reason if not is_good_now else "Within optimal execution window",
+        "execute_now_reason": timing_reason
+        if not is_good_now
+        else "Within optimal execution window",
         "regime": prediction.regime,
         "price_targets": {
             "low": round(prediction.price_target_low, 2),

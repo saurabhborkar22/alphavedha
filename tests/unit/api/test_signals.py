@@ -35,7 +35,9 @@ class TestMarketTiming:
 
 class TestExecutionPlan:
     def test_execution_returns_plan(self, client: TestClient) -> None:
-        resp = client.get("/signals/execution/TCS?cap_tier=large&avg_daily_volume=1000000&order_size_shares=200")
+        resp = client.get(
+            "/signals/execution/TCS?cap_tier=large&avg_daily_volume=1000000&order_size_shares=200"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["symbol"] == "TCS"
