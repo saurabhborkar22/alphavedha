@@ -23,6 +23,7 @@ from alphavedha.api.routes import (
     paper_trading,
     predictions,
     public,
+    sectors,
     signals,
     ui_support,
 )
@@ -154,6 +155,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
         )
 
     app.include_router(health.router)
+    app.include_router(sectors.router)
     app.include_router(live.router)
     app.include_router(signals.router)
     app.include_router(ui_support.router)  # registered first so demo scan/intraday take precedence

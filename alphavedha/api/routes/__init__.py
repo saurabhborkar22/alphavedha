@@ -7,7 +7,17 @@ from alphavedha.api.routes import (
     paper_trading,
     predictions,
     public,
+    sectors,
     signals,
 )
 
-__all__ = ["dashboard", "health", "live", "paper_trading", "predictions", "public", "signals"]
+__all__ = [
+    "dashboard",
+    "health",
+    "live",
+    "paper_trading",
+    "predictions",
+    "public",
+    "sectors",
+    "signals",
+]
