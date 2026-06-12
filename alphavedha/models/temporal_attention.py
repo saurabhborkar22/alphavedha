@@ -201,6 +201,8 @@ class TemporalAttentionModel(BaseModel):
                 "num_layers": cfg.num_layers,
                 "dropout": cfg.dropout,
                 "learning_rate": cfg.learning_rate,
+                "weight_decay": cfg.weight_decay,
+                "label_smoothing": cfg.label_smoothing,
                 "sequence_length": cfg.sequence_length,
                 "batch_size": cfg.batch_size,
                 "max_epochs": cfg.max_epochs,
@@ -281,7 +283,11 @@ class TemporalAttentionModel(BaseModel):
             horizons=cfg.horizons,
         ).to(self._device)
 
-        optimizer = torch.optim.Adam(self._network.parameters(), lr=cfg.learning_rate)
+        optimizer = torch.optim.Adam(
+            self._network.parameters(),
+            lr=cfg.learning_rate,
+            weight_decay=cfg.weight_decay,
+        )
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=3)
         early_stop = EarlyStopping(patience=cfg.early_stopping_patience, min_delta=1e-4)
         best_state: dict[str, torch.Tensor] | None = None
@@ -319,7 +325,10 @@ class TemporalAttentionModel(BaseModel):
                     h_y_dir = h_dirs[:, j][mask]
                     h_y_mag = h_mags[:, j][mask]
                     h_w = weights[mask] * class_weights[h_y_dir]
-                    h_loss = compute_combined_loss(h_cls, h_reg, h_y_dir, h_y_mag, h_w)
+                    h_loss = compute_combined_loss(
+                        h_cls, h_reg, h_y_dir, h_y_mag, h_w,
+                        label_smoothing=cfg.label_smoothing,
+                    )
                     total_loss = total_loss + _HORIZON_LOSS_WEIGHTS[j] * h_loss
 
                 total_loss.backward()  # type: ignore[no-untyped-call]
@@ -357,7 +366,10 @@ class TemporalAttentionModel(BaseModel):
                             h_y_dir = h_dirs[:, j][mask]
                             h_y_mag = h_mags[:, j][mask]
                             h_w = weights[mask] * class_weights[h_y_dir]
-                            h_loss = compute_combined_loss(h_cls, h_reg, h_y_dir, h_y_mag, h_w)
+                            h_loss = compute_combined_loss(
+                                h_cls, h_reg, h_y_dir, h_y_mag, h_w,
+                                label_smoothing=cfg.label_smoothing,
+                            )
                             vloss = vloss + _HORIZON_LOSS_WEIGHTS[j] * h_loss
                         val_losses.append(vloss.item())
 

@@ -452,9 +452,12 @@ def compute_combined_loss(
     weights: torch.Tensor,
     cls_weight: float = 0.7,
     reg_weight: float = 0.3,
+    label_smoothing: float = 0.0,
 ) -> torch.Tensor:
     """Weighted combination of CrossEntropy (classification) and MSE (regression)."""
-    ce_loss = nn.functional.cross_entropy(cls_logits, y_dir, reduction="none")
+    ce_loss = nn.functional.cross_entropy(
+        cls_logits, y_dir, reduction="none", label_smoothing=label_smoothing
+    )
     mse_loss = nn.functional.mse_loss(reg_output, y_mag, reduction="none")
 
     weighted_ce = (ce_loss * weights).mean()

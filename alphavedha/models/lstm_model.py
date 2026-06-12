@@ -82,6 +82,8 @@ class LSTMModel(BaseModel):
                 "num_layers": cfg.num_layers,
                 "dropout": cfg.dropout,
                 "learning_rate": cfg.learning_rate,
+                "weight_decay": cfg.weight_decay,
+                "label_smoothing": cfg.label_smoothing,
                 "sequence_length": cfg.sequence_length,
                 "batch_size": cfg.batch_size,
                 "max_epochs": cfg.max_epochs,
@@ -143,7 +145,11 @@ class LSTMModel(BaseModel):
             dropout=cfg.dropout,
         ).to(self._device)
 
-        optimizer = torch.optim.Adam(self._network.parameters(), lr=cfg.learning_rate)
+        optimizer = torch.optim.Adam(
+            self._network.parameters(),
+            lr=cfg.learning_rate,
+            weight_decay=cfg.weight_decay,
+        )
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=3)
         early_stop = EarlyStopping(patience=cfg.early_stopping_patience, min_delta=1e-4)
         best_state: dict[str, torch.Tensor] | None = None
@@ -169,7 +175,10 @@ class LSTMModel(BaseModel):
 
                 optimizer.zero_grad()
                 cls_logits, reg_output = self._network(X_seq)
-                loss = compute_combined_loss(cls_logits, reg_output, y_dir, y_mag, weights)
+                loss = compute_combined_loss(
+                    cls_logits, reg_output, y_dir, y_mag, weights,
+                    label_smoothing=cfg.label_smoothing,
+                )
                 loss.backward()  # type: ignore[no-untyped-call]
                 nn.utils.clip_grad_norm_(self._network.parameters(), max_norm=1.0)
                 optimizer.step()
@@ -185,7 +194,10 @@ class LSTMModel(BaseModel):
                         y_mag = y_mag.to(self._device)
                         weights = weights.to(self._device) * class_weights[y_dir]
                         cls_logits, reg_output = self._network(X_seq)
-                        vloss = compute_combined_loss(cls_logits, reg_output, y_dir, y_mag, weights)
+                        vloss = compute_combined_loss(
+                            cls_logits, reg_output, y_dir, y_mag, weights,
+                            label_smoothing=cfg.label_smoothing,
+                        )
                         val_losses.append(vloss.item())
 
                 avg_val_loss = float(np.mean(val_losses))
