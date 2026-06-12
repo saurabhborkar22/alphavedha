@@ -326,7 +326,11 @@ class TemporalAttentionModel(BaseModel):
                     h_y_mag = h_mags[:, j][mask]
                     h_w = weights[mask] * class_weights[h_y_dir]
                     h_loss = compute_combined_loss(
-                        h_cls, h_reg, h_y_dir, h_y_mag, h_w,
+                        h_cls,
+                        h_reg,
+                        h_y_dir,
+                        h_y_mag,
+                        h_w,
                         label_smoothing=cfg.label_smoothing,
                     )
                     total_loss = total_loss + _HORIZON_LOSS_WEIGHTS[j] * h_loss
@@ -367,7 +371,11 @@ class TemporalAttentionModel(BaseModel):
                             h_y_mag = h_mags[:, j][mask]
                             h_w = weights[mask] * class_weights[h_y_dir]
                             h_loss = compute_combined_loss(
-                                h_cls, h_reg, h_y_dir, h_y_mag, h_w,
+                                h_cls,
+                                h_reg,
+                                h_y_dir,
+                                h_y_mag,
+                                h_w,
                                 label_smoothing=cfg.label_smoothing,
                             )
                             vloss = vloss + _HORIZON_LOSS_WEIGHTS[j] * h_loss

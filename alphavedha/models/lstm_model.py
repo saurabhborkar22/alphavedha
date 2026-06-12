@@ -176,7 +176,11 @@ class LSTMModel(BaseModel):
                 optimizer.zero_grad()
                 cls_logits, reg_output = self._network(X_seq)
                 loss = compute_combined_loss(
-                    cls_logits, reg_output, y_dir, y_mag, weights,
+                    cls_logits,
+                    reg_output,
+                    y_dir,
+                    y_mag,
+                    weights,
                     label_smoothing=cfg.label_smoothing,
                 )
                 loss.backward()  # type: ignore[no-untyped-call]
@@ -195,7 +199,11 @@ class LSTMModel(BaseModel):
                         weights = weights.to(self._device) * class_weights[y_dir]
                         cls_logits, reg_output = self._network(X_seq)
                         vloss = compute_combined_loss(
-                            cls_logits, reg_output, y_dir, y_mag, weights,
+                            cls_logits,
+                            reg_output,
+                            y_dir,
+                            y_mag,
+                            weights,
                             label_smoothing=cfg.label_smoothing,
                         )
                         val_losses.append(vloss.item())
