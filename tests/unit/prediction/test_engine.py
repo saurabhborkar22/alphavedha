@@ -350,15 +350,14 @@ class TestPredictionEngine:
             risk_manager=_mock_risk_manager(),
             conformal_outputs_returns=True,
         )
-        features_with_close = features.assign(close=200.0)
-        result = engine.predict("TCS", features_with_close)
+        result = engine.predict("TCS", features, last_close=200.0)
         assert result.price_target_low == pytest.approx(196.0)
         assert result.price_target_mid == pytest.approx(202.0)
         assert result.price_target_high == pytest.approx(208.0)
 
     def test_conformal_passthrough_without_flag(self, features: pd.DataFrame) -> None:
         """Default engine keeps conformal output untouched even when a
-        close column is present."""
+        last_close is provided."""
         engine = PredictionEngine(
             xgboost=_mock_base_model("xgboost"),
             lstm=_mock_base_model("lstm"),
@@ -370,5 +369,5 @@ class TestPredictionEngine:
             scorer=CompositeScorer(),
             risk_manager=_mock_risk_manager(),
         )
-        result = engine.predict("TCS", features.assign(close=200.0))
+        result = engine.predict("TCS", features, last_close=200.0)
         assert result.price_target_mid == pytest.approx(100.0)

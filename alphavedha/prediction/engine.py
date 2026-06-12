@@ -92,6 +92,7 @@ class PredictionEngine:
         sector: str = "",
         market_features: pd.DataFrame | None = None,
         current_portfolio: PortfolioState | None = None,
+        last_close: float | None = None,
     ) -> StockPrediction:
         warnings: list[str] = []
         now = datetime.now(UTC)
@@ -139,12 +140,15 @@ class PredictionEngine:
                 is_tradeable = False
 
         price_low, price_mid, price_high = self._run_conformal(features, warnings)
-        if self._conformal_outputs_returns and "close" in features.columns:
-            last_close = float(features["close"].iloc[-1])
-            if np.isfinite(last_close) and last_close > 0:
+        if self._conformal_outputs_returns:
+            # The feature matrix's close column is NaN in serving (raw prices
+            # are not features) — callers pass the latest close explicitly.
+            if last_close is not None and np.isfinite(last_close) and last_close > 0:
                 price_low = last_close * (1.0 + price_low)
                 price_mid = last_close * (1.0 + price_mid)
                 price_high = last_close * (1.0 + price_high)
+            else:
+                warnings.append("No last_close available; price targets are returns")
 
         regime_result = self._build_regime_result(regime_name, regime_probs)
         composite_score = self._scorer.score(ensemble_result, regime_result, features)

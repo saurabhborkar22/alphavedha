@@ -48,6 +48,10 @@ services:
         INSTALL_TARGET: vps
     container_name: alphavedha-scheduler
     env_file: .env.vps
+    environment:
+      # The `schedule` library fires on container-local time — without this
+      # every "IST" job time silently runs on UTC (5.5h late).
+      TZ: Asia/Kolkata
     command: ["python", "-m", "alphavedha.scheduler", "start"]
     depends_on:
       postgres:
