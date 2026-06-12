@@ -46,7 +46,7 @@ class TestConfig:
 
         cfg = get_config()
         assert cfg.models.xgboost.params.learning_rate == 0.05
-        assert cfg.models.lstm.hidden_size == 128
+        assert cfg.models.lstm.hidden_size == 64
         assert cfg.models.tft.horizons == [7, 15, 30]
 
     def test_config_risk(self):

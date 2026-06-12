@@ -128,10 +128,12 @@ class XGBoostConfig(BaseModel):
 
 class LSTMConfig(BaseModel):
     sequence_length: int = 60
-    hidden_size: int = 128
+    hidden_size: int = 64
     num_layers: int = 2
-    dropout: float = 0.3
+    dropout: float = 0.5
     learning_rate: float = 0.001
+    weight_decay: float = 1e-4
+    label_smoothing: float = 0.1
     batch_size: int = 128
     max_epochs: int = 60
     early_stopping_patience: int = 10
@@ -140,11 +142,13 @@ class LSTMConfig(BaseModel):
 
 class TFTConfig(BaseModel):
     sequence_length: int = 60
-    hidden_size: int = 64
+    hidden_size: int = 32
     attention_head_size: int = 4
     num_layers: int = 2
-    dropout: float = 0.1
+    dropout: float = 0.35
     learning_rate: float = 0.001
+    weight_decay: float = 1e-4
+    label_smoothing: float = 0.1
     batch_size: int = 128
     max_epochs: int = 50
     early_stopping_patience: int = 10
