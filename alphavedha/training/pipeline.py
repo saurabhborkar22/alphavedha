@@ -5,6 +5,7 @@ Orchestrates the full training workflow for a given model type and universe tier
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import date
@@ -26,7 +27,10 @@ from alphavedha.monitoring.experiment_tracker import ExperimentTracker
 
 logger = structlog.get_logger(__name__)
 
-ARTIFACTS_DIR = Path("models/artifacts")
+# Override via ALPHAVEDHA_ARTIFACTS_DIR so a one-off (e.g. the historical-sim
+# runner) can train a frozen as-of model into an isolated directory without
+# overwriting the live `latest` models or the live tier-data cache. Unset = live.
+ARTIFACTS_DIR = Path(os.environ.get("ALPHAVEDHA_ARTIFACTS_DIR", "models/artifacts"))
 
 # Features that always produce constants or NaN because their data sources are not
 # wired up yet. Including them wastes XGBoost split budget on zero-variance columns.
@@ -213,6 +217,7 @@ async def _load_tier_data(
     val_ratio: float = 0.15,
     embargo_days: int = 20,
     use_cache: bool = True,
+    end_date: date | None = None,
 ) -> TierData:
     """Load all symbol data for a tier with 3-way temporal split.
 
@@ -220,10 +225,14 @@ async def _load_tier_data(
     sequential model trainings on the same day skip the ~5 min feature
     recomputation. The cache is invalidated daily and on split-param changes.
     """
+    # None = today (live). A past cutoff trains an out-of-sample frozen model
+    # that never sees data after end_date; it also keys the cache so different
+    # cutoffs never collide and never clobber the live (today-keyed) cache.
+    end_date = end_date or date.today()
     cache_dir = ARTIFACTS_DIR / "tier_data_cache"
     cache_path = (
         cache_dir
-        / f"{tier}_{date.today().isoformat()}_{oof_ratio}_{val_ratio}_{embargo_days}.joblib"
+        / f"{tier}_{end_date.isoformat()}_{oof_ratio}_{val_ratio}_{embargo_days}.joblib"
     )
     if use_cache and cache_path.exists():
         try:
@@ -261,7 +270,6 @@ async def _load_tier_data(
     n_symbols = 0
 
     start_date = date(2020, 1, 1)
-    end_date = date.today()
 
     fii_dii_df: pd.DataFrame | None = None
     try:
@@ -407,6 +415,7 @@ async def train_xgboost(
     tier: str = "large",
     val_ratio: float = 0.2,
     embargo_days: int = 20,
+    end_date: date | None = None,
 ) -> TrainingPipelineResult:
     """Train XGBoost on all symbols in a tier (standalone, 2-way split)."""
     start_time = time.perf_counter()
@@ -428,7 +437,7 @@ async def train_xgboost(
     all_ret_val: list[pd.Series] = []
 
     start_date = date(2020, 1, 1)
-    end_date = date.today()
+    end_date = end_date or date.today()
 
     fii_dii_df: pd.DataFrame | None = None
     try:
@@ -1148,8 +1157,14 @@ async def train_conformal(
 
 async def train_all(
     tier: str = "large",
+    end_date: date | None = None,
 ) -> dict[str, TrainingPipelineResult]:
-    """Train all models in dependency order: base models → ensemble → meta-labeling → conformal."""
+    """Train all models in dependency order: base models → ensemble → meta-labeling → conformal.
+
+    ``end_date`` limits training data to bars on or before that date (None =
+    today). Combined with ``ALPHAVEDHA_ARTIFACTS_DIR``, this trains a frozen,
+    out-of-sample model for historical simulation without touching live models.
+    """
     start_time = time.perf_counter()
     config = get_config()
     results: dict[str, TrainingPipelineResult] = {}
@@ -1158,7 +1173,7 @@ async def train_all(
     logger.info("train_all_start", tier=tier)
 
     # Step 1: Load all data with 3-way split
-    data = await _load_tier_data(tier)
+    data = await _load_tier_data(tier, end_date=end_date)
     if data.X_train.empty:
         logger.error("train_all_no_data")
         return results

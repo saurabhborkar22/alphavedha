@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from fastapi import APIRouter, HTTPException
@@ -265,3 +265,25 @@ async def list_trades(
         )
         for _, row in trades_df.iterrows()
     ]
+
+
+@router.get("/simulation")
+async def get_simulation() -> dict[str, Any]:
+    """Out-of-sample historical-simulation track record (backfilled).
+
+    Distinct from /paper/dashboard, which reports live forward trades. Returns
+    the 3-track cost-adjusted record produced by the one-time sim job
+    (scripts/sim_paper_trading.py), or ``available: false`` when no simulation
+    artifact has been generated yet.
+    """
+    from alphavedha.api.sim_artifact import load_sim_artifact
+
+    art = load_sim_artifact()
+    if not art:
+        return {"available": False, "track_record": None, "meta": None, "generated_at": None}
+    return {
+        "available": True,
+        "track_record": art.get("track_record"),
+        "meta": art.get("meta"),
+        "generated_at": art.get("generated_at"),
+    }
