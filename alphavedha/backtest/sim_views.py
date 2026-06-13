@@ -28,8 +28,10 @@ import pandas as pd
 
 from alphavedha.monitoring.track_record import (
     DEFAULT_GATE_CONFIDENCE,
+    DEFAULT_TOP_K,
     HORIZON_TRADING_DAYS,
     _select_gate_passed,
+    _select_top_k,
     compute_track_record,
 )
 
@@ -273,16 +275,109 @@ def build_track_record_view(trades: pd.DataFrame, cost_pct: float) -> dict[str, 
     }
 
 
+def build_calibration(
+    trades: pd.DataFrame, cost_pct: float, n_bins: int = 10
+) -> list[dict[str, Any]]:
+    """Confidence-decile reliability curve over directional bets.
+
+    For each confidence bin, the realized win-rate. If win-rate does NOT rise
+    with ``conf_mean``, the model's confidence is mis-calibrated (flat) or
+    inverted (declining) out-of-sample — i.e. selecting by confidence hurts.
+    """
+    d = _directional_net(trades, cost_pct)
+    if len(d) < n_bins:
+        return []
+    # Rank-based bins → even sample sizes even when confidence has ties.
+    d = d.assign(_rank=d["confidence"].rank(method="first"))
+    d["_bin"] = pd.qcut(d["_rank"], n_bins, labels=False)
+    out: list[dict[str, Any]] = []
+    for b, grp in d.groupby("_bin"):
+        out.append(
+            {
+                "bin": int(b),
+                "n": len(grp),
+                "conf_mean": round(float(grp["confidence"].mean()), 4),
+                "conf_lo": round(float(grp["confidence"].min()), 4),
+                "conf_hi": round(float(grp["confidence"].max()), 4),
+                "win_rate": round(float((grp["gross"] > 0).mean()), 4),
+                "avg_gross": round(float(grp["gross"].mean()), 5),
+                "avg_net": round(float(grp["net"].mean()), 5),
+            }
+        )
+    return out
+
+
+def build_cost_sensitivity(
+    trades: pd.DataFrame,
+    base_cost: float,
+    multipliers: tuple[float, ...] = (0.0, 0.5, 1.0, 2.0),
+) -> list[dict[str, Any]]:
+    """Net P&L of the raw (all-prediction) signal at several cost levels.
+
+    At 0x the gross edge is visible; at 1x the live cost; at 2x a stress case.
+    Shows how much of the result is edge vs cost.
+    """
+    d = _directional_net(trades, cost_pct=0.0)
+    if d.empty:
+        return []
+    gross = d["gross"]
+    out: list[dict[str, Any]] = []
+    for m in multipliers:
+        net = gross - base_cost * m
+        out.append(
+            {
+                "cost_mult": m,
+                "cost_pct": round(base_cost * m, 5),
+                "avg_net": round(float(net.mean()), 5),
+                "total_net": round(float(net.sum()), 3),
+                "win_rate_net": round(float((net > 0).mean()), 4),
+            }
+        )
+    return out
+
+
+def _track_monthly(selected: pd.DataFrame, cost_pct: float) -> list[dict[str, Any]]:
+    d = _directional_net(selected, cost_pct)
+    if d.empty:
+        return []
+    return _monthly_returns(_cohort_mean(d["net"], d["prediction_date"]))
+
+
+def build_diagnostics(
+    trades: pd.DataFrame,
+    cost_pct: float,
+    gate_confidence: float = DEFAULT_GATE_CONFIDENCE,
+    top_k: int = DEFAULT_TOP_K,
+) -> dict[str, Any]:
+    """Calibration, cost-sensitivity, and per-track monthly breakdowns."""
+    if trades.empty:
+        return {
+            "calibration": [],
+            "cost_sensitivity": [],
+            "monthly_by_track": {"all": [], "gate_passed": [], "top_k": []},
+        }
+    return {
+        "calibration": build_calibration(trades, cost_pct),
+        "cost_sensitivity": build_cost_sensitivity(trades, cost_pct),
+        "monthly_by_track": {
+            "all": _track_monthly(trades, cost_pct),
+            "gate_passed": _track_monthly(_select_gate_passed(trades, gate_confidence), cost_pct),
+            "top_k": _track_monthly(_select_top_k(trades, top_k), cost_pct),
+        },
+    }
+
+
 def build_artifact(
     trades: pd.DataFrame,
     cost_pct: float,
     meta: dict[str, Any],
 ) -> dict[str, Any]:
-    """Assemble the full simulation artifact (track_record + backtest + meta)."""
+    """Assemble the full simulation artifact (track_record + backtest + diagnostics)."""
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now(UTC).isoformat(),
         "meta": meta,
         "track_record": build_track_record_view(trades, cost_pct),
         "backtest": build_backtest_views(trades, cost_pct),
+        "diagnostics": build_diagnostics(trades, cost_pct),
     }

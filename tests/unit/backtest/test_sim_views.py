@@ -4,10 +4,17 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from alphavedha.backtest.sim_views import build_artifact, build_backtest_views
+from alphavedha.backtest.sim_views import (
+    build_artifact,
+    build_backtest_views,
+    build_calibration,
+    build_cost_sensitivity,
+    build_diagnostics,
+)
 
 
 def _make_trades(n_days: int = 8, per_day: int = 5) -> pd.DataFrame:
@@ -51,7 +58,7 @@ def test_empty_trades_yield_zeroed_artifact() -> None:
 
 def test_artifact_structure_and_tracks() -> None:
     art = build_artifact(_make_trades(), cost_pct=0.0047, meta={"tier": "large", "cutoff": "x"})
-    assert art["schema_version"] == 1
+    assert art["schema_version"] == 2
     assert set(art["track_record"]["tracks"]) == {"all", "gate_passed", "top_k"}
     tr = art["track_record"]
     assert tr["total_predictions"] == 40
@@ -96,3 +103,62 @@ def test_higher_cost_lowers_net_return(cost: float) -> None:
     bt = build_backtest_views(trades, cost_pct=cost)
     # Profit factor must weakly decrease as costs rise (monotonic drag).
     assert bt["summary"]["total_trades"] == 40
+
+
+def _calibrated_trades(n: int = 200) -> pd.DataFrame:
+    """Trades where higher confidence is genuinely more likely to be correct."""
+    rng = np.random.default_rng(0)
+    base = date(2026, 1, 5)
+    rows: list[dict] = []
+    for i in range(n):
+        conf = float(rng.uniform(0.30, 0.90))
+        direction = int(rng.choice([-1, 1]))
+        correct = rng.random() < conf  # P(correct) rises with confidence
+        actual = (0.02 if correct else -0.02) * direction
+        rows.append(
+            {
+                "symbol": "SYM.NS",
+                "prediction_date": base + timedelta(days=i % 20),
+                "predicted_direction": direction,
+                "predicted_magnitude": 0.02,
+                "confidence": conf,
+                "model_version": "calib-test",
+                "regime": "bull",
+                "is_tradeable": conf >= 0.5,
+                "entry_price": 100.0,
+                "exit_price": 100.0 * (1 + actual),
+                "actual_return": actual,
+                "is_correct": direction == (1 if actual > 0 else -1),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def test_calibration_buckets_track_confidence() -> None:
+    cal = build_calibration(_calibrated_trades(), cost_pct=0.0047, n_bins=10)
+    assert len(cal) == 10
+    # Positively-calibrated fixture: top decile wins more than the bottom.
+    assert cal[-1]["conf_mean"] > cal[0]["conf_mean"]
+    assert cal[-1]["win_rate"] > cal[0]["win_rate"]
+
+
+def test_cost_sensitivity_monotonic() -> None:
+    cs = build_cost_sensitivity(_make_trades(), base_cost=0.0047)
+    assert [r["cost_mult"] for r in cs] == [0.0, 0.5, 1.0, 2.0]
+    nets = [r["avg_net"] for r in cs]
+    assert nets == sorted(nets, reverse=True)  # higher cost -> lower net
+    assert cs[0]["cost_pct"] == 0.0
+
+
+def test_diagnostics_in_artifact() -> None:
+    art = build_artifact(_make_trades(), cost_pct=0.0047, meta={"tier": "large"})
+    assert art["schema_version"] == 2
+    diag = art["diagnostics"]
+    assert set(diag) == {"calibration", "cost_sensitivity", "monthly_by_track"}
+    assert set(diag["monthly_by_track"]) == {"all", "gate_passed", "top_k"}
+
+
+def test_diagnostics_empty_safe() -> None:
+    diag = build_diagnostics(pd.DataFrame(), cost_pct=0.0047)
+    assert diag["calibration"] == []
+    assert diag["cost_sensitivity"] == []
