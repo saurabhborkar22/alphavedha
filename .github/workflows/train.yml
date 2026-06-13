@@ -117,7 +117,7 @@ jobs:
             set -euo pipefail
             cd /opt/alphavedha/alphavedha
             echo "Starting training: model=$TRAIN_MODEL tier=large"
-            docker compose -f docker-compose.vps.yml --profile training run --rm \
+            docker compose -f docker-compose.vps.yml --env-file .env.vps --profile training run --rm \
               -e ALPHAVEDHA_HEAVY_TRAINING=1 \
               trainer \
               python -m alphavedha.cli.main train "$TRAIN_MODEL" --tier large
