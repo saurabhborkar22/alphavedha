@@ -280,10 +280,17 @@ async def get_simulation() -> dict[str, Any]:
 
     art = load_sim_artifact()
     if not art:
-        return {"available": False, "track_record": None, "meta": None, "generated_at": None}
+        return {
+            "available": False,
+            "track_record": None,
+            "diagnostics": None,
+            "meta": None,
+            "generated_at": None,
+        }
     return {
         "available": True,
         "track_record": art.get("track_record"),
+        "diagnostics": art.get("diagnostics"),
         "meta": art.get("meta"),
         "generated_at": art.get("generated_at"),
     }
