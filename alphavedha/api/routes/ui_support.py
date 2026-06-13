@@ -19,6 +19,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from alphavedha.api.sim_artifact import load_sim_artifact
 from alphavedha.services import ui_data
 
 logger = structlog.get_logger(__name__)
@@ -874,6 +875,9 @@ async def backtest_summary() -> BacktestSummaryResponse:
             date_from="2019-01-01",
             date_to="2024-12-31",
         )
+    art = load_sim_artifact()
+    if art and art.get("backtest", {}).get("summary"):
+        return BacktestSummaryResponse(**art["backtest"]["summary"])
     return BacktestSummaryResponse(
         cagr=0.0,
         sharpe=0.0,
@@ -891,6 +895,9 @@ async def backtest_summary() -> BacktestSummaryResponse:
 @router.get("/backtest/equity")
 async def backtest_equity() -> dict[str, Any]:
     if not _is_demo():
+        art = load_sim_artifact()
+        if art and art.get("backtest", {}).get("equity"):
+            return art["backtest"]["equity"]
         return {"strategy": [], "benchmark": []}
 
     def gen(seed: int, annual: float) -> list[dict[str, Any]]:
@@ -912,6 +919,9 @@ async def backtest_equity() -> dict[str, Any]:
 @router.get("/backtest/monthly")
 async def backtest_monthly() -> list[dict[str, Any]]:
     if not _is_demo():
+        art = load_sim_artifact()
+        if art and art.get("backtest", {}).get("monthly"):
+            return art["backtest"]["monthly"]
         return []
     data = [
         (2019, [2.1, -0.8, 3.4, 1.2, -1.5, 4.2, 0.6, -2.1, 3.8, 1.9, -0.3, 2.7]),
@@ -931,6 +941,9 @@ async def backtest_monthly() -> list[dict[str, Any]]:
 @router.get("/backtest/distribution")
 async def backtest_distribution() -> list[dict[str, Any]]:
     if not _is_demo():
+        art = load_sim_artifact()
+        if art and art.get("backtest", {}).get("distribution"):
+            return art["backtest"]["distribution"]
         return []
     return [
         {"label": "< -5%", "count": 18},
@@ -947,6 +960,9 @@ async def backtest_distribution() -> list[dict[str, Any]]:
 @router.get("/backtest/rolling-sharpe")
 async def backtest_rolling_sharpe() -> list[dict[str, Any]]:
     if not _is_demo():
+        art = load_sim_artifact()
+        if art and art.get("backtest", {}).get("rolling_sharpe"):
+            return art["backtest"]["rolling_sharpe"]
         return []
     return [{"y": round(1.2 + (i / 51) * 0.64 + 0.1 * math.sin(i * 0.4), 3)} for i in range(52)]
 

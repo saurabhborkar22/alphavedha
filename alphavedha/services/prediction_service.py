@@ -26,6 +26,7 @@ class PredictionService:
         registry: ModelRegistry,
         cache: PredictionCache,
         config: AppConfig,
+        as_of: date | None = None,
     ) -> None:
         self._registry = registry
         self._cache = cache
@@ -34,6 +35,16 @@ class PredictionService:
         self._ranker = StockRanker()
         self._inflight_scans: dict[str, asyncio.Task[RankingResult]] = {}
         self._market_features_cache: tuple[date, pd.DataFrame | None] | None = None
+        # Prediction reference date. None = live serving (today). The
+        # historical-simulation runner injects a past date so the whole
+        # feature/price/regime path resolves as-of that day. Live callers pass
+        # nothing, so behaviour is unchanged.
+        self._as_of = as_of
+
+    @property
+    def _as_of_date(self) -> date:
+        """The date predictions are made 'as of' — today unless injected."""
+        return self._as_of or date.today()
 
     async def _get_features(self, symbol: str) -> pd.DataFrame:
         if self._registry.is_demo:
@@ -62,7 +73,7 @@ class PredictionService:
         from alphavedha.data.store import load_features
 
         n_rows = self._feature_window_rows
-        today = date.today()
+        today = self._as_of_date
         # Calendar buffer: ~250 trading days per 365 calendar days
         start = today - timedelta(days=max(2 * n_rows, 30))
 
@@ -90,7 +101,7 @@ class PredictionService:
         from alphavedha.data.store import load_ohlcv
         from alphavedha.features.pipeline import compute_all_features
 
-        today = date.today()
+        today = self._as_of_date
         start = today - timedelta(days=300)
 
         try:
@@ -143,7 +154,7 @@ class PredictionService:
             return None
         from alphavedha.data.store import load_ohlcv
 
-        today = date.today()
+        today = self._as_of_date
         try:
             ohlcv_df = await load_ohlcv(symbol, today - timedelta(days=10), today)
         except Exception as e:
@@ -162,7 +173,7 @@ class PredictionService:
         """
         if self._registry.is_demo:
             return None
-        today = date.today()
+        today = self._as_of_date
         if self._market_features_cache is not None and self._market_features_cache[0] == today:
             return self._market_features_cache[1]
         market_features = await self._build_market_features()
@@ -181,7 +192,7 @@ class PredictionService:
             logger.warning("market_features_symbols_failed", error=str(e))
             return None
 
-        today = date.today()
+        today = self._as_of_date
         start = today - timedelta(days=400)
         all_returns: list[pd.Series] = []
         for symbol in symbols:
