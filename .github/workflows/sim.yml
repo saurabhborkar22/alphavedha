@@ -1,0 +1,181 @@
+name: Historical Simulation on VPS
+
+# One-click, out-of-sample historical paper-trading + backtest:
+#   scale up (cx43) -> train a frozen model as-of cutoff + replay the window ->
+#   publish the artifact + redeploy UI -> ALWAYS scale back down (cx23).
+# The scale-down runs in an always() step, so the server returns to cx23 even
+# if the run fails, times out, or is cancelled — it can never be left on cx43.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cutoff:
+        description: "Train cutoff YYYY-MM-DD (model sees no data after this; ~6mo before data end)"
+        required: true
+        default: "2025-12-10"
+        type: string
+      end:
+        description: "Last simulated day YYYY-MM-DD (blank = latest OHLCV bar)"
+        required: false
+        default: ""
+        type: string
+      scale_server:
+        description: "Scale to cx43 for the full-ensemble frozen train (LSTM/TFT need 16GB)"
+        required: false
+        default: true
+        type: boolean
+      deploy_ui:
+        description: "Rebuild + redeploy the UI after publishing the artifact"
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: train-vps          # serialise with Train Models — both resize the same box
+  cancel-in-progress: false
+
+jobs:
+  simulate:
+    name: Historical simulation on VPS
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve parameters
+        env:
+          INPUT_CUTOFF: ${{ inputs.cutoff }}
+          INPUT_END: ${{ inputs.end }}
+          INPUT_SCALE: ${{ inputs.scale_server }}
+          INPUT_DEPLOY_UI: ${{ inputs.deploy_ui }}
+        run: |
+          echo "SIM_CUTOFF=$INPUT_CUTOFF" >> "$GITHUB_ENV"
+          echo "SIM_END=$INPUT_END" >> "$GITHUB_ENV"
+          echo "DEPLOY_UI=$INPUT_DEPLOY_UI" >> "$GITHUB_ENV"
+          if [ "$INPUT_SCALE" = "true" ]; then
+            echo "DO_SCALE=true"  >> "$GITHUB_ENV"
+          else
+            echo "DO_SCALE=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Scale up server (cx23 → cx43)
+        if: env.DO_SCALE == 'true'
+        run: |
+          echo "Scaling up to cx43 for the frozen full-ensemble train..."
+
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/poweroff" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweroff:', d.get('action',{}).get('status','?'))"
+
+          echo "Waiting 60s for server to power off..."
+          sleep 60
+
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"server_type":"cx43","upgrade_disk":false}' \
+            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/change_type" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('resize:', d.get('action',{}).get('status','?'))"
+
+          sleep 15
+
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/poweron" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweron:', d.get('action',{}).get('status','?'))"
+
+          echo "Waiting 90s for server to boot..."
+          sleep 90
+
+      - name: Verify VPS host key
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          EXPECTED: ${{ secrets.VPS_HOST_FINGERPRINT }}
+        run: |
+          ACTUAL=$(ssh-keyscan -t ed25519 "$VPS_HOST" 2>/dev/null | ssh-keygen -lf - | awk '{print $2}')
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "ERROR: Host key fingerprint mismatch"
+            echo "  Expected: $EXPECTED"
+            echo "  Got:      $ACTUAL"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          ssh-keyscan -t ed25519 "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Run simulation on VPS
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17  # v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 8h
+          envs: SIM_CUTOFF,SIM_END,DEPLOY_UI
+          script: |
+            set -euo pipefail
+            cd /opt/alphavedha/alphavedha
+
+            echo "=== 1/4 Generate artifact (train frozen model + replay window) ==="
+            END_ARG=""
+            [ -n "${SIM_END:-}" ] && END_ARG="--end ${SIM_END}"
+            docker compose -f docker-compose.vps.yml --env-file .env.vps --profile training run --rm \
+              -e ALPHAVEDHA_HEAVY_TRAINING=1 \
+              trainer \
+              python -m scripts.sim_paper_trading \
+                --cutoff "${SIM_CUTOFF}" ${END_ARG} \
+                --sim-dir /app/models/artifacts/sim \
+                --out /app/models/artifacts/sim_artifact.json
+
+            echo "=== 2/4 Point the API at the artifact (shared model-artifacts volume) ==="
+            grep -q '^ALPHAVEDHA_SIM_ARTIFACT=' .env.vps || \
+              echo 'ALPHAVEDHA_SIM_ARTIFACT=/app/models/artifacts/sim_artifact.json' >> .env.vps
+            docker compose -f docker-compose.vps.yml --env-file .env.vps up -d api
+
+            if [ "${DEPLOY_UI}" = "true" ]; then
+              echo "=== 3/4 Rebuild + redeploy the UI ==="
+              ( cd /opt/alphavedha/alphavedha-ui && git pull --ff-only )
+              docker compose -f docker-compose.vps.yml --env-file .env.vps build ui
+              docker compose -f docker-compose.vps.yml --env-file .env.vps up -d ui
+            else
+              echo "=== 3/4 UI redeploy skipped (deploy_ui=false) ==="
+            fi
+
+            echo "=== 4/4 Verify ==="
+            sleep 8
+            echo "backtest summary:"; docker exec alphavedha-api curl -sf localhost:8000/backtest/summary | head -c 400 || true
+            echo
+            echo "paper simulation:"; docker exec alphavedha-api curl -sf localhost:8000/paper/simulation | head -c 400 || true
+            echo
+            echo "Simulation published."
+
+      # always() — the server is returned to cx23 even if any step above failed,
+      # timed out, or the run was cancelled. The cost guardrail can't be skipped.
+      - name: Scale down server (cx43 → cx23)
+        if: always() && env.DO_SCALE == 'true'
+        run: |
+          echo "Scaling back down to cx23..."
+
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/poweroff" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweroff:', d.get('action',{}).get('status','?'))"
+
+          sleep 60
+
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"server_type":"cx23","upgrade_disk":false}' \
+            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/change_type" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('resize:', d.get('action',{}).get('status','?'))"
+
+          sleep 15
+
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/poweron" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweron:', d.get('action',{}).get('status','?'))"
+
+          echo "Server back to cx23 (€3.99/mo)."
