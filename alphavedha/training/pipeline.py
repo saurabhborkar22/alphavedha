@@ -231,8 +231,7 @@ async def _load_tier_data(
     end_date = end_date or date.today()
     cache_dir = ARTIFACTS_DIR / "tier_data_cache"
     cache_path = (
-        cache_dir
-        / f"{tier}_{end_date.isoformat()}_{oof_ratio}_{val_ratio}_{embargo_days}.joblib"
+        cache_dir / f"{tier}_{end_date.isoformat()}_{oof_ratio}_{val_ratio}_{embargo_days}.joblib"
     )
     if use_cache and cache_path.exists():
         try:
