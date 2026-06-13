@@ -37,6 +37,7 @@ RUN apt-get update && \
 
 COPY --from=builder /install /usr/local
 COPY alphavedha/ alphavedha/
+COPY scripts/ scripts/
 COPY configs/ configs/
 COPY alembic/ alembic/
 COPY alembic.ini .
