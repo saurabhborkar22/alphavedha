@@ -181,3 +181,41 @@ equity: strategy -26.0% vs benchmark -36.6% (alpha +10.6pp); max DD -41.2% @ 202
 - Cost model: `alphavedha/backtest/costs.py`
 - Regime input (returns+vol only): `alphavedha/services/prediction_service.py:_build_market_features`
 - Track-record math: `alphavedha/backtest/sim_views.py`, `alphavedha/monitoring/track_record.py`
+
+---
+
+## 8. Update (2026-06-14): three-window verdict — regime dependence
+
+After fixing a feature-alignment bug (XGBoost/GNN broke on cross-era frozen
+models; PR #78) the up-market window finally ran clean. With three windows —
+each verified 0 model failures, full 50×N coverage, 3,100–5,700 trades — the
+picture is decisive:
+
+| Window | Regime | Dir. accuracy | `all` net/trade | `all` PF | Verdict |
+|---|---|---|---|---|---|
+| 2023-06 → 2023-12 | **up** | **57.7%** | **+0.57%** | **1.34** | ✅ profitable |
+| 2025-06 → 2025-12 | down | 46.7% | −0.86% | 0.63 | ❌ loses |
+| 2025-12 → 2026-05 | crash | 51.9% | −0.16% | 0.95 | ❌ loses |
+
+### Finding 1 (new, dominant): the edge is regime-dependent — the model is long-biased
+The raw signal is **genuinely profitable in rising markets** (57.7% directional
+accuracy, +0.57%/trade net, PF 1.34) and **loses in falling markets**. The model
+captures upside but cannot handle downturns — exactly why the Dec-2025 crash
+blew up at full Kelly. This resolves the §4-A ambiguity in favour of
+**Hypothesis B (long/momentum bias)**, not a pure meta defect.
+
+### Finding 2 (still holds): confidence is mis-calibrated in every regime
+Confidence ranking never helps. In the up-market the inversion is *mild*
+(bottom-3 deciles 56.8% win vs top-3 54.0%; the highest-confidence `top_5` track
+is the only losing one at 44.8%); in the down-markets it is *severe* (≈55% vs
+45%). Selecting "high conviction" is flat-to-harmful across regimes — so
+recalibration is still needed, but it is now the **secondary** lever.
+
+### Revised priorities
+1. **Regime-aware sizing / exposure (now #1).** De-risk in falling markets —
+   cap Kelly, cut size, and suppress new longs in a downtrend — so the strategy
+   stops giving back its up-market gains. Prototyped behind
+   `ALPHAVEDHA_REGIME_OVERLAY` (`prediction/engine.py: apply_regime_overlay`);
+   A/B it with `scripts/sim_paper_trading.py --regime-overlay`.
+2. **Recalibrate the meta-model (#2).** So the gate / top-k concentrate on
+   winners instead of being flat-to-inverted.

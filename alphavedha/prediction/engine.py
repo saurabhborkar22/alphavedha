@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
@@ -51,6 +52,69 @@ class StockPrediction:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class RegimeOverlay:
+    """Regime-aware exposure overlay (prototype, env-gated).
+
+    Caps Kelly and, in a market downtrend, cuts position size and suppresses
+    new longs. Disabled unless ``ALPHAVEDHA_REGIME_OVERLAY`` is truthy, so live
+    serving is byte-identical; the historical sim flips it on
+    (``--regime-overlay``) to A/B test the regime-dependence finding
+    (see docs/prediction_audit.md §8).
+    """
+
+    trend_lookback: int = 50
+    kelly_cap: float = 0.5
+    downtrend_size_mult: float = 0.3
+    suppress_longs_in_downtrend: bool = True
+
+
+def _load_regime_overlay() -> RegimeOverlay | None:
+    """Build the overlay from env vars, or None when disabled (the default)."""
+    if os.environ.get("ALPHAVEDHA_REGIME_OVERLAY", "").lower() not in ("1", "true", "yes"):
+        return None
+    return RegimeOverlay(
+        trend_lookback=int(os.environ.get("ALPHAVEDHA_REGIME_OVERLAY_LOOKBACK", "50")),
+        kelly_cap=float(os.environ.get("ALPHAVEDHA_REGIME_OVERLAY_KELLY_CAP", "0.5")),
+        downtrend_size_mult=float(os.environ.get("ALPHAVEDHA_REGIME_OVERLAY_DOWN_MULT", "0.3")),
+        suppress_longs_in_downtrend=os.environ.get(
+            "ALPHAVEDHA_REGIME_OVERLAY_SUPPRESS_LONGS", "1"
+        ).lower()
+        in ("1", "true", "yes"),
+    )
+
+
+def apply_regime_overlay(
+    overlay: RegimeOverlay | None,
+    kelly: float,
+    direction: int,
+    is_tradeable: bool,
+    market_features: pd.DataFrame | None,
+) -> tuple[float, bool, str | None]:
+    """Apply the overlay → (effective_kelly, is_tradeable, warning).
+
+    No-op when the overlay is disabled or market features are unavailable, so
+    the live path (overlay None) is unchanged. In a downtrend (trailing mean
+    market return < 0) it scales Kelly down and, optionally, marks new longs
+    untradeable — the regime-dependence fix. Can only further restrict
+    ``is_tradeable`` (never enables a trade the gate rejected).
+    """
+    if (
+        overlay is None
+        or market_features is None
+        or len(market_features) == 0
+        or "returns" not in market_features
+    ):
+        return kelly, is_tradeable, None
+    kelly = min(kelly, overlay.kelly_cap)
+    trend = float(market_features["returns"].tail(overlay.trend_lookback).mean())
+    if trend < 0:
+        kelly *= overlay.downtrend_size_mult
+        if overlay.suppress_longs_in_downtrend and direction == 1:
+            return kelly, False, "regime_overlay_long_suppressed_downtrend"
+    return kelly, is_tradeable, None
+
+
 class PredictionEngine:
     def __init__(
         self,
@@ -87,6 +151,9 @@ class PredictionEngine:
         # prices — when set, its intervals are converted to price space
         # using the latest close.
         self._conformal_outputs_returns = conformal_outputs_returns
+        # Regime-aware exposure overlay (prototype) — None unless env-enabled,
+        # so this is a no-op for live serving.
+        self._regime_overlay = _load_regime_overlay()
 
     def predict(
         self,
@@ -164,7 +231,16 @@ class PredictionEngine:
             portfolio=current_portfolio,
         )
 
-        position_size = risk.position_size_pct * strategy.kelly_fraction
+        kelly, is_tradeable, overlay_warning = apply_regime_overlay(
+            self._regime_overlay,
+            strategy.kelly_fraction,
+            direction,
+            is_tradeable,
+            market_features,
+        )
+        if overlay_warning:
+            warnings.append(overlay_warning)
+        position_size = risk.position_size_pct * kelly
 
         return StockPrediction(
             symbol=symbol,
