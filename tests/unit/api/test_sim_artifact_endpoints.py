@@ -87,3 +87,56 @@ def test_demo_mode_unaffected_by_artifact(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("ALPHAVEDHA_DEMO", "1")
     summary = asyncio.run(ui_support.backtest_summary())
     assert summary.total_trades == 342  # the demo fixture value
+
+
+def _write_run(runs_dir, slug: str, meta: dict, generated_at: str) -> None:
+    art = build_artifact(_trades(), cost_pct=0.0047, meta=meta)
+    art["generated_at"] = generated_at
+    (runs_dir / f"{slug}.json").write_text(json.dumps(art))
+
+
+def test_list_and_load_archived_runs(tmp_path, monkeypatch) -> None:
+    runs_dir = tmp_path / "sim_runs"
+    runs_dir.mkdir()
+    _write_run(
+        runs_dir,
+        "large__2025-06-10__2025-12-10",
+        {
+            "tier": "large",
+            "cutoff": "2025-06-10",
+            "end": "2025-12-10",
+            "n_days": 10,
+            "n_trades": 50,
+        },
+        "2026-06-13T10:00:00+00:00",
+    )
+    _write_run(
+        runs_dir,
+        "large__2025-12-10__2026-05-19",
+        {"tier": "large", "cutoff": "2025-12-10", "end": "2026-05-19", "n_days": 8, "n_trades": 40},
+        "2026-06-14T10:00:00+00:00",
+    )
+    monkeypatch.setattr(sim_artifact, "SIM_RUNS_DIR", runs_dir)
+
+    listing = asyncio.run(paper_trading.list_simulations())
+    assert listing["count"] == 2
+    assert listing["runs"][0]["slug"] == "large__2025-12-10__2026-05-19"  # newest first
+    assert listing["runs"][0]["cutoff"] == "2025-12-10"
+
+    one = asyncio.run(paper_trading.get_simulation_run("large__2025-06-10__2025-12-10"))
+    assert one["available"] is True
+    assert one["meta"]["cutoff"] == "2025-06-10"
+    assert one["backtest"] is not None
+    assert set(one["track_record"]["tracks"]) == {"all", "gate_passed", "top_k"}
+
+
+def test_load_archived_run_missing_or_bad_slug(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(sim_artifact, "SIM_RUNS_DIR", tmp_path / "sim_runs")
+    assert asyncio.run(paper_trading.get_simulation_run("nope"))["available"] is False
+    # path-traversal / invalid slug rejected by the regex guard
+    assert asyncio.run(paper_trading.get_simulation_run("../secrets"))["available"] is False
+
+
+def test_list_simulations_empty_when_no_dir(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(sim_artifact, "SIM_RUNS_DIR", tmp_path / "absent")
+    assert asyncio.run(paper_trading.list_simulations()) == {"runs": [], "count": 0}

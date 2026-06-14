@@ -294,3 +294,39 @@ async def get_simulation() -> dict[str, Any]:
         "meta": art.get("meta"),
         "generated_at": art.get("generated_at"),
     }
+
+
+@router.get("/simulations")
+async def list_simulations() -> dict[str, Any]:
+    """All archived historical-simulation runs, newest first (for the run picker)."""
+    from alphavedha.api.sim_artifact import list_sim_runs
+
+    runs = list_sim_runs()
+    return {"runs": runs, "count": len(runs)}
+
+
+@router.get("/simulation/{slug}")
+async def get_simulation_run(slug: str) -> dict[str, Any]:
+    """One archived simulation run by slug — full artifact incl. backtest views."""
+    from alphavedha.api.sim_artifact import load_sim_run
+
+    art = load_sim_run(slug)
+    if not art:
+        return {
+            "available": False,
+            "slug": slug,
+            "track_record": None,
+            "diagnostics": None,
+            "backtest": None,
+            "meta": None,
+            "generated_at": None,
+        }
+    return {
+        "available": True,
+        "slug": slug,
+        "track_record": art.get("track_record"),
+        "diagnostics": art.get("diagnostics"),
+        "backtest": art.get("backtest"),
+        "meta": art.get("meta"),
+        "generated_at": art.get("generated_at"),
+    }
