@@ -1,4 +1,14 @@
-"""Half-Kelly position sizing — compute optimal position % from meta-confidence and magnitude."""
+"""Generalized half-Kelly position sizing.
+
+Formula: f* = p - q/b  (generalized Kelly)
+  p   = meta_confidence (P(direction correct))
+  q   = 1 - p
+  b   = magnitude / magnitude_loss_ref  (expected-win / expected-loss ratio)
+
+Symmetric Kelly (b=1) gives f* = 2p-1, which the old code used.  Wiring in
+magnitude means larger expected moves justify larger positions and vice-versa.
+Half-Kelly (f*/2) is applied for conservatism, then capped at max_single_stock_pct.
+"""
 
 from __future__ import annotations
 
@@ -20,15 +30,15 @@ def compute_position_size(
     if magnitude <= 0.0:
         return 0.0
 
-    # Symmetric Kelly (assumes avg_win ≈ avg_loss). TODO: upgrade to
-    # generalized Kelly f = (p·b - q) / b once we have calibrated
-    # win/loss ratio estimates per regime.
-    kelly_fraction = 2 * meta_confidence - 1
+    q = 1.0 - meta_confidence
+    b = magnitude / config.magnitude_loss_ref  # win/loss ratio
+
+    kelly_fraction = meta_confidence - q / b  # generalized Kelly: p - q/b
 
     if kelly_fraction <= 0.0:
         return 0.0
 
-    half_kelly_pct = kelly_fraction * 0.5 * 100
+    half_kelly_pct = kelly_fraction * 0.5 * 100.0
 
     position_pct = min(half_kelly_pct, config.max_single_stock_pct)
 
@@ -36,6 +46,7 @@ def compute_position_size(
         "position_size_computed",
         meta_confidence=round(meta_confidence, 4),
         magnitude=round(magnitude, 6),
+        win_loss_ratio=round(b, 4),
         kelly_fraction=round(kelly_fraction, 4),
         position_pct=round(position_pct, 4),
     )
