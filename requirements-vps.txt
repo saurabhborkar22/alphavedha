@@ -31,7 +31,10 @@ mapie>=0.9
 safetensors>=0.4
 
 # API
-fastapi>=0.111
+# Pin: starlette >=1.3 _IncludedRouter breaks prometheus-instrumentator route
+# iteration (AttributeError: no attribute 'path'). These versions are known-good.
+fastapi>=0.111,<0.137
+starlette<1.3
 uvicorn[standard]>=0.30
 slowapi>=0.1.9
 prometheus-fastapi-instrumentator>=7.0
