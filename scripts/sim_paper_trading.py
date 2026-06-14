@@ -256,7 +256,11 @@ async def _run(args: argparse.Namespace) -> None:
 
     # Archive this run alongside past runs (never overwritten by a later
     # window). The API serves these via /paper/simulations + /simulation/{slug}.
+    # Overlay runs get a distinct slug so a window's baseline and its overlay
+    # A/B coexist in the run-picker instead of overwriting each other.
     slug = f"{args.tier}__{cutoff.isoformat()}__{end.isoformat()}"
+    if args.regime_overlay:
+        slug += "__overlay"
     archive_dir = out_path.parent / "sim_runs"
     try:
         archive_dir.mkdir(parents=True, exist_ok=True)
