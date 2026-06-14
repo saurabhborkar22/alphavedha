@@ -266,6 +266,9 @@ class GNNModel(BaseModel):
         if not self._is_fitted or self._network is None:
             raise ModelTrainingError("GNNModel is not fitted. Call fit() first.")
 
+        # Align to trained columns (drop extras / fill missing) then NaN->0 for
+        # the tensor — handles cross-era frozen models in the historical sim.
+        X = self._align_features(X).fillna(0.0)
         self._set_inference_mode()
         edge_index = self._prepare_edge_index(graph)
 

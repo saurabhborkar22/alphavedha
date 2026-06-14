@@ -70,20 +70,29 @@ class BaseModel(ABC):
         return self._is_fitted
 
     def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
-        """Subset and reorder X to the features the model was trained on.
+        """Reindex X to the exact features the model was trained on.
 
-        Models trained on a feature subset (e.g. LSTM/TFT on top-30 by
-        importance) receive the full feature matrix at prediction time.
+        Models trained on a feature subset (LSTM/TFT on top-30 by importance)
+        — or on a different era's surviving feature set (historical-sim frozen
+        models, where stub-dropping keeps an era-dependent column set) —
+        receive a feature matrix whose columns don't line up. Drop extras, add
+        any missing columns as NaN (each model applies its own NaN policy:
+        XGBoost native-missing, torch models fill 0), and restore the
+        train-time order. Refuse a near-empty overlap so we never silently
+        predict on a wrong feature frame.
         """
         if not self._feature_names or list(X.columns) == self._feature_names:
             return X
-        missing = [f for f in self._feature_names if f not in X.columns]
-        if missing:
+        present = [f for f in self._feature_names if f in X.columns]
+        if len(present) * 2 < len(self._feature_names):
             raise PredictionError(
-                f"{self._name}: input is missing {len(missing)} trained "
-                f"feature(s), e.g. {missing[:5]}"
+                f"{self._name}: only {len(present)}/{len(self._feature_names)} trained "
+                "features present — refusing to predict on a near-empty frame"
             )
-        return X[self._feature_names]
+        n_missing = len(self._feature_names) - len(present)
+        if n_missing:
+            logger.warning("feature_align_filled", model=self._name, n_missing=n_missing)
+        return X.reindex(columns=self._feature_names)
 
     @abstractmethod
     def fit(

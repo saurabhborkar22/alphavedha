@@ -152,6 +152,7 @@ class XGBoostModel(BaseModel):
         if not self._is_fitted or self._classifier is None:
             raise ModelTrainingError("XGBoostModel is not fitted. Call fit() first.")
 
+        X = self._align_features(X)
         proba = self._classifier.predict_proba(X)
         cls_pred = np.argmax(proba, axis=1)
         direction = np.array([_LABEL_REVERSE[c] for c in cls_pred])
