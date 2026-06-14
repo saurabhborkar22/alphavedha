@@ -241,6 +241,18 @@ async def _run(args: argparse.Namespace) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(artifact, indent=2))
     logger.info("sim_artifact_written", path=str(out_path), bytes=out_path.stat().st_size)
+
+    # Archive this run alongside past runs (never overwritten by a later
+    # window). The API serves these via /paper/simulations + /simulation/{slug}.
+    slug = f"{args.tier}__{cutoff.isoformat()}__{end.isoformat()}"
+    archive_dir = out_path.parent / "sim_runs"
+    try:
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        (archive_dir / f"{slug}.json").write_text(json.dumps(artifact, indent=2))
+        logger.info("sim_run_archived", slug=slug, dir=str(archive_dir))
+    except Exception as exc:
+        logger.warning("sim_run_archive_failed", slug=slug, error=str(exc))
+
     print(f"\n✅ Wrote {out_path}")
     print(
         f"   trades={meta['n_trades']} days={meta['n_days']} cutoff={meta['cutoff']} end={meta['end']}"
