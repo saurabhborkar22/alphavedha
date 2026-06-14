@@ -32,6 +32,10 @@ class BaseModelProtocol(Protocol):
     def predict(self, X: pd.DataFrame) -> PredictionResult: ...
 
 
+_ATR_STOP_MULT: float = 1.5  # mirrors triple_barrier config.multiplier_down
+_ATR_TARGET_MULT: float = 2.0  # mirrors triple_barrier config.multiplier_up
+
+
 @dataclass
 class StockPrediction:
     symbol: str
@@ -49,6 +53,9 @@ class StockPrediction:
     model_disagreement: float
     position_size_pct: float
     model_version: str
+    entry_price: float | None = None
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
     warnings: list[str] = field(default_factory=list)
 
 
@@ -242,6 +249,10 @@ class PredictionEngine:
             warnings.append(overlay_warning)
         position_size = risk.position_size_pct * kelly
 
+        entry_price, stop_loss_price, take_profit_price = self._compute_atr_levels(
+            features, last_close, direction
+        )
+
         return StockPrediction(
             symbol=symbol,
             timestamp=now,
@@ -258,8 +269,39 @@ class PredictionEngine:
             model_disagreement=disagreement,
             position_size_pct=position_size,
             model_version=self._model_version,
+            entry_price=entry_price,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
             warnings=warnings,
         )
+
+    def _compute_atr_levels(
+        self,
+        features: pd.DataFrame,
+        last_close: float | None,
+        direction: int,
+    ) -> tuple[float | None, float | None, float | None]:
+        """Return (entry_price, stop_loss_price, take_profit_price) using ATR14.
+
+        Multipliers match the triple-barrier training labels so the model's
+        sense of a "good trade" is consistent with what we show the user.
+        Returns (None, None, None) when ATR or last_close is unavailable.
+        """
+        entry = last_close
+        if entry is None or not np.isfinite(entry) or entry <= 0 or direction == 0:
+            return entry, None, None
+        if "atr_14" not in features.columns:
+            return entry, None, None
+        atr = float(features["atr_14"].iloc[-1])
+        if not np.isfinite(atr) or atr <= 0:
+            return entry, None, None
+        if direction == 1:
+            stop = entry - _ATR_STOP_MULT * atr
+            target = entry + _ATR_TARGET_MULT * atr
+        else:
+            stop = entry + _ATR_STOP_MULT * atr
+            target = entry - _ATR_TARGET_MULT * atr
+        return entry, round(stop, 2), round(target, 2)
 
     def _run_regime(
         self,

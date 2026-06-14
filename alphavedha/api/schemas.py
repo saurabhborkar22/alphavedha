@@ -23,6 +23,12 @@ class RiskInfo(BaseModel):
     model_disagreement: float
 
 
+class TradeSetup(BaseModel):
+    entry_price: float | None = None
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
+
+
 class PredictionResponse(BaseModel):
     symbol: str
     direction: int
@@ -34,6 +40,7 @@ class PredictionResponse(BaseModel):
     regime: str
     price_targets: PriceTargets
     risk: RiskInfo
+    trade_setup: TradeSetup
     model_version: str
     generated_at: datetime
     warnings: list[str] = Field(default_factory=list)
@@ -57,6 +64,11 @@ class PredictionResponse(BaseModel):
             risk=RiskInfo(
                 position_size_pct=pred.position_size_pct,
                 model_disagreement=pred.model_disagreement,
+            ),
+            trade_setup=TradeSetup(
+                entry_price=pred.entry_price,
+                stop_loss_price=pred.stop_loss_price,
+                take_profit_price=pred.take_profit_price,
             ),
             model_version=pred.model_version,
             generated_at=pred.timestamp,
