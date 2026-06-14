@@ -215,6 +215,9 @@ class PositionSizingConfig(BaseModel):
     method: str = "half_kelly"
     max_single_stock_pct: float = 10.0
     min_confidence: float = 0.55
+    # Reference adverse move used as the denominator in generalized Kelly (b = magnitude / loss_ref).
+    # 2% matches the median 15-day loss on Nifty large-caps when the direction call is wrong.
+    magnitude_loss_ref: float = 0.02
 
 
 class PortfolioConfig(BaseModel):
