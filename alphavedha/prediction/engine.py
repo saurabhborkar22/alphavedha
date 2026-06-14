@@ -32,7 +32,7 @@ class BaseModelProtocol(Protocol):
     def predict(self, X: pd.DataFrame) -> PredictionResult: ...
 
 
-_ATR_STOP_MULT: float = 1.5   # mirrors triple_barrier config.multiplier_down
+_ATR_STOP_MULT: float = 1.5  # mirrors triple_barrier config.multiplier_down
 _ATR_TARGET_MULT: float = 2.0  # mirrors triple_barrier config.multiplier_up
 
 
