@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -65,6 +66,11 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--max-symbols", type=int, default=0, help="Limit symbols (smoke test; 0 = all)."
+    )
+    p.add_argument(
+        "--regime-overlay",
+        action="store_true",
+        help="Enable the regime-aware exposure overlay (sets ALPHAVEDHA_REGIME_OVERLAY=1).",
     )
     return p.parse_args()
 
@@ -217,6 +223,11 @@ async def _run(args: argparse.Namespace) -> None:
     end = date.fromisoformat(args.end) if args.end else date.today()
     sim_dir = Path(args.sim_dir)
 
+    # Engine reads this in its constructor, so set it before the service is built.
+    if args.regime_overlay:
+        os.environ["ALPHAVEDHA_REGIME_OVERLAY"] = "1"
+        logger.info("regime_overlay_enabled")
+
     if not args.no_train:
         await _train_frozen(args.tier, cutoff, sim_dir)
 
@@ -233,6 +244,7 @@ async def _run(args: argparse.Namespace) -> None:
         "model_version": (str(trades["model_version"].iloc[0]) if not trades.empty else "unknown"),
         "horizon_trading_days": HORIZON_TRADING_DAYS,
         "out_of_sample": True,
+        "regime_overlay": bool(args.regime_overlay),
         "generated_by": "scripts/sim_paper_trading.py",
     }
     artifact = build_artifact(trades, cost_pct, meta)
