@@ -68,6 +68,56 @@ class TestXGBoostModel:
         pred = model.predict(X[160:])
         assert isinstance(pred, PredictionResult)
 
+    def test_predict_aligns_mismatched_columns(
+        self,
+        synthetic_data: tuple[pd.DataFrame, pd.Series, pd.Series],
+        xgb_config: XGBoostConfig,
+    ) -> None:
+        """Regression: predict tolerates a cross-era feature frame.
+
+        A frozen historical-sim model can be served a frame that drops some
+        trained columns, adds extras, and reorders them. It must align and
+        predict, not raise a feature_names mismatch (the bug that broke the
+        2023-cutoff sim run).
+        """
+        X, labels, returns = synthetic_data
+        model = XGBoostModel(config=xgb_config)
+        model.fit(
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
+        )
+        served = X[160:].drop(columns=["f0"]).assign(unexpected=1.0)
+        served = served[list(reversed(served.columns))]  # also shuffle order
+        pred = model.predict(served)  # must NOT raise
+        assert isinstance(pred, PredictionResult)
+        assert len(pred.direction) == len(served)
+
+    def test_predict_rejects_near_empty_frame(
+        self,
+        synthetic_data: tuple[pd.DataFrame, pd.Series, pd.Series],
+        xgb_config: XGBoostConfig,
+    ) -> None:
+        """The alignment guard refuses a frame with almost no trained features."""
+        from alphavedha.exceptions import PredictionError
+
+        X, labels, returns = synthetic_data
+        model = XGBoostModel(config=xgb_config)
+        model.fit(
+            X_train=X[:160],
+            y_train=labels[:160],
+            X_val=X[160:],
+            y_val=labels[160:],
+            return_train=returns[:160],
+            return_val=returns[160:],
+        )
+        garbage = pd.DataFrame({"f0": [0.1, 0.2], "junk": [1.0, 2.0]})  # 1 of 10 trained
+        with pytest.raises(PredictionError):
+            model.predict(garbage)
+
     def test_direction_values(
         self,
         synthetic_data: tuple[pd.DataFrame, pd.Series, pd.Series],
