@@ -29,6 +29,11 @@ on:
         required: false
         default: true
         type: boolean
+      regime_overlay:
+        description: "Enable the regime-aware exposure overlay (de-risk longs in downtrends)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: train-vps          # serialise with Train Models — both resize the same box
@@ -46,10 +51,12 @@ jobs:
           INPUT_END: ${{ inputs.end }}
           INPUT_SCALE: ${{ inputs.scale_server }}
           INPUT_DEPLOY_UI: ${{ inputs.deploy_ui }}
+          INPUT_REGIME_OVERLAY: ${{ inputs.regime_overlay }}
         run: |
           echo "SIM_CUTOFF=$INPUT_CUTOFF" >> "$GITHUB_ENV"
           echo "SIM_END=$INPUT_END" >> "$GITHUB_ENV"
           echo "DEPLOY_UI=$INPUT_DEPLOY_UI" >> "$GITHUB_ENV"
+          echo "REGIME_OVERLAY=$INPUT_REGIME_OVERLAY" >> "$GITHUB_ENV"
           if [ "$INPUT_SCALE" = "true" ]; then
             echo "DO_SCALE=true"  >> "$GITHUB_ENV"
           else
@@ -110,7 +117,7 @@ jobs:
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 8h
-          envs: SIM_CUTOFF,SIM_END,DEPLOY_UI
+          envs: SIM_CUTOFF,SIM_END,DEPLOY_UI,REGIME_OVERLAY
           script: |
             set -euo pipefail
             cd /opt/alphavedha/alphavedha
@@ -118,11 +125,13 @@ jobs:
             echo "=== 1/4 Generate artifact (train frozen model + replay window) ==="
             END_ARG=""
             [ -n "${SIM_END:-}" ] && END_ARG="--end ${SIM_END}"
+            OVERLAY_ARG=""
+            [ "${REGIME_OVERLAY:-false}" = "true" ] && OVERLAY_ARG="--regime-overlay"
             docker compose -f docker-compose.vps.yml --env-file .env.vps --profile training run --rm \
               -e ALPHAVEDHA_HEAVY_TRAINING=1 \
               trainer \
               python -m scripts.sim_paper_trading \
-                --cutoff "${SIM_CUTOFF}" ${END_ARG} \
+                --cutoff "${SIM_CUTOFF}" ${END_ARG} ${OVERLAY_ARG} \
                 --sim-dir /app/models/artifacts/sim \
                 --out /app/models/artifacts/sim_artifact.json
 
