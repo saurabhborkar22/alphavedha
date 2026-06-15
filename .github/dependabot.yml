@@ -10,6 +10,11 @@ updates:
       - dependencies
     commit-message:
       prefix: "deps:"
+    ignore:
+      # fastapi>=0.137 ships starlette's _IncludedRouter, which breaks
+      # prometheus-fastapi-instrumentator route iteration. Keep pinned <0.137.
+      - dependency-name: "fastapi"
+        versions: [">=0.137"]
 
   - package-ecosystem: github-actions
     directory: /
