@@ -766,9 +766,9 @@ _PRIMARY_METRIC_KEYS: tuple[str, ...] = (
 async def _live_ensemble_summary() -> tuple[float, str, int]:
     """The ensemble's latest market call from persisted daily predictions.
 
-    Returns (mean confidence %, majority direction UP/DOWN/FLAT, count of
-    symbols agreeing with the majority). Zeros/empty until the first 08:30
-    IST prediction run has persisted paper trades.
+    Returns (mean confidence % over tradeable signals, majority direction
+    UP/DOWN/FLAT, count of symbols agreeing with the majority). Zeros/empty
+    until the first 08:30 IST prediction run has persisted paper trades.
     """
     from alphavedha.data.store import load_paper_trades
 
@@ -782,7 +782,16 @@ async def _live_ensemble_summary() -> tuple[float, str, int]:
         return 0.0, "", 0
 
     latest = trades[trades["prediction_date"] == trades["prediction_date"].max()]
-    confidence = round(float(latest["confidence"].mean()) * 100, 1)
+    # "Vedha Core" should reflect confidence in the trades we'd actually take:
+    # average meta-confidence over signals that passed the meta-labeling gate,
+    # not the whole 50-stock cohort (where dozens of rejected signals drag the
+    # mean down). On days the gate rejects everything, fall back to the full
+    # cohort so the figure is never blank.
+    tradeable_mask = latest["is_tradeable"].eq(True)  # null/False → not tradeable
+    basis = latest[tradeable_mask]
+    if basis.empty:
+        basis = latest
+    confidence = round(float(basis["confidence"].mean()) * 100, 1)
     net = float(latest["predicted_direction"].mean())
     direction = "UP" if net > 0 else ("DOWN" if net < 0 else "FLAT")
     majority_sign = 1 if net > 0 else -1
