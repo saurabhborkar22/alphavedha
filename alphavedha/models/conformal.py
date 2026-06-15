@@ -56,6 +56,7 @@ class ConformalPredictor:
         self._mapie: Any = None
         self._is_fitted = False
         self._training_metrics: dict[str, float] = {}
+        self._feature_names: list[str] | None = None
 
     def fit(self, X_train: pd.DataFrame, y_train: pd.Series) -> dict[str, float]:
         """Fit the predictor using cross-conformal (jackknife+) approach."""
@@ -67,6 +68,7 @@ class ConformalPredictor:
             method=self._config.method,
             random_state=42,
         )
+        self._feature_names = list(X_train.columns)
         mapie.fit_conformalize(X_train.values, y_train.values)
         self._mapie = mapie
         self._is_fitted = True
@@ -90,6 +92,13 @@ class ConformalPredictor:
             raise ModelTrainingError("ConformalPredictor is not fitted. Call fit() first.")
         if len(X) == 0:
             raise InsufficientDataError("Cannot predict with empty input")
+
+        # Select only the features this model was trained on (drops stubs added post-training)
+        if self._feature_names is not None and hasattr(X, "columns"):
+            missing = [f for f in self._feature_names if f not in X.columns]
+            if missing:
+                raise ValueError(f"Input missing {len(missing)} training features: {missing[:5]}")
+            X = X[self._feature_names]
 
         # Training data was NaN/Inf-filled with 0 (_fill_nan_for_torch) — match it
         X_arr = np.nan_to_num(X.values.astype(np.float64), nan=0.0, posinf=0.0, neginf=0.0)
@@ -149,6 +158,7 @@ class ConformalPredictor:
             "created_at": datetime.now(UTC).isoformat(),
             "config": self._config.model_dump(),
             "metrics": self._training_metrics,
+            "feature_names": self._feature_names,
         }
         (directory / "metadata.json").write_text(json.dumps(metadata, indent=2))
         logger.info("conformal_predictor_saved", path=str(directory))
@@ -170,6 +180,7 @@ class ConformalPredictor:
         predictor = cls(config=config)
         predictor._mapie = joblib.load(mapie_path)
         predictor._training_metrics = metadata.get("metrics", {})
+        predictor._feature_names = metadata.get("feature_names")
         predictor._is_fitted = True
 
         logger.info("conformal_predictor_loaded", path=str(directory))
