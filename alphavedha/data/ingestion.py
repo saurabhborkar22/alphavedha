@@ -161,7 +161,7 @@ async def refresh_latest(
 ) -> IngestionResult:
     """Refresh recent data for all symbols in a tier."""
     start_date = date.today() - timedelta(days=lookback_days)
-    end_date = date.today()
+    end_date = date.today() + timedelta(days=1)  # yfinance end is exclusive
 
     return await ingest_universe(tier, start_date, end_date)
 
