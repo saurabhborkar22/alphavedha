@@ -48,9 +48,10 @@ dependencies = [
     "tokenizers>=0.19",
 
     # API
-    # Pinned: starlette's newer _IncludedRouter breaks prometheus-instrumentator
-    # route iteration (AttributeError: no attribute 'path'); these versions work.
-    "fastapi>=0.111,<0.138",
+    # Pinned: fastapi>=0.137 ships starlette's _IncludedRouter, which breaks
+    # prometheus-instrumentator route iteration (AttributeError: no attribute
+    # 'path'). Do NOT bump to >=0.137 until the instrumentator handles it.
+    "fastapi>=0.111,<0.137",
     "starlette<1.4",
     "uvicorn[standard]>=0.30",
     "slowapi>=0.1.9",
