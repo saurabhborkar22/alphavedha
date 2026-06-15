@@ -826,6 +826,9 @@ def _train_meta_labeling_on_data(
     return metrics, artifact_dir
 
 
+_CONFORMAL_MAX_OOF_SAMPLES = 5_000  # caps MAPIE memory use on CX23 (4GB)
+
+
 def _train_conformal_on_data(
     data: TierData,
 ) -> tuple[dict[str, float], Path]:
@@ -836,10 +839,18 @@ def _train_conformal_on_data(
         logger.error("conformal_insufficient_data", rows=len(data.X_oof))
         return {}, Path()
 
-    X_oof_clean = _fill_nan_for_torch(data.X_oof)
+    X_oof = data.X_oof
+    ret_oof = data.ret_oof
+    if len(X_oof) > _CONFORMAL_MAX_OOF_SAMPLES:
+        # Take the most recent rows — preserves temporal ordering and avoids OOM
+        X_oof = X_oof.iloc[-_CONFORMAL_MAX_OOF_SAMPLES:]
+        ret_oof = ret_oof.iloc[-_CONFORMAL_MAX_OOF_SAMPLES:]
+        logger.info("conformal_oof_subsampled", original=len(data.X_oof), kept=len(X_oof))
+
+    X_oof_clean = _fill_nan_for_torch(X_oof)
 
     predictor = ConformalPredictor()
-    metrics = predictor.fit(X_oof_clean, data.ret_oof)
+    metrics = predictor.fit(X_oof_clean, ret_oof)
 
     artifact_dir = ARTIFACTS_DIR / "conformal" / "latest"
     predictor.save(artifact_dir)
