@@ -8,6 +8,7 @@ where a single process handles everything.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -832,9 +833,17 @@ class AlphaVedhaScheduler:
             self._maybe_monthly_retrain,
         )
 
-        getattr(schedule.every(), LSTM_TFT_RETRAIN_DAY).at(LSTM_TFT_RETRAIN_TIME).do(
-            self.run_weekly_lstm_tft_retrain,
-        )
+        # Heavy retrain (LSTM/TFT) needs ~16GB. On the autoscale deployment the
+        # `train.yml` GitHub Actions cron owns this — it scales cx23→cx43, trains,
+        # then scales back, and both fire Saturday 22:30 IST. Registering the
+        # in-process job unconditionally would wire two owners to the same slot.
+        # Only register it when this box is permanently large enough
+        # (ALPHAVEDHA_HEAVY_TRAINING=1); in that mode, drop train.yml's `schedule`
+        # cron so the scheduler is the single owner.
+        if os.environ.get("ALPHAVEDHA_HEAVY_TRAINING"):
+            getattr(schedule.every(), LSTM_TFT_RETRAIN_DAY).at(LSTM_TFT_RETRAIN_TIME).do(
+                self.run_weekly_lstm_tft_retrain,
+            )
 
         getattr(schedule.every(), REBALANCE_CHECK_DAY).at(REBALANCE_CHECK_TIME).do(
             self._maybe_quarterly_rebalance,
