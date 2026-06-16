@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, mock_open, patch
@@ -179,10 +180,19 @@ class TestAlphaVedhaScheduler:
         assert len(sched.state.job_history) <= 100
 
     def test_setup_schedule_registers_jobs(self) -> None:
+        # The in-process LSTM/TFT retrain is only registered when the
+        # heavy-training gate is set; otherwise train.yml owns it on the
+        # autoscale deployment (see scheduler.setup_schedule).
         schedule.clear()
-        sched = AlphaVedhaScheduler(demo=True)
-        sched.setup_schedule()
-        assert len(schedule.get_jobs()) == 13  # incl. daily data refresh + fii/dii
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ALPHAVEDHA_HEAVY_TRAINING", None)
+            AlphaVedhaScheduler(demo=True).setup_schedule()
+            assert len(schedule.get_jobs()) == 12  # heavy retrain gated off
+
+        schedule.clear()
+        with patch.dict(os.environ, {"ALPHAVEDHA_HEAVY_TRAINING": "1"}, clear=False):
+            AlphaVedhaScheduler(demo=True).setup_schedule()
+            assert len(schedule.get_jobs()) == 13  # incl. weekly LSTM/TFT retrain
 
     def test_maybe_monthly_retrain_first_week(self) -> None:
         sched = AlphaVedhaScheduler(demo=True)

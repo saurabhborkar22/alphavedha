@@ -825,14 +825,11 @@ async def _real_models_status() -> ModelsStatusResponse:
                 status="active",
             )
         )
+    # "Vedha Core" must reflect LIVE ensemble confidence (mean meta-confidence
+    # over tradeable signals). Do not substitute the ensemble's *training*
+    # accuracy when there are no live predictions yet — that dressed a training
+    # metric up as a live signal. 0.0 here honestly means "no live signal yet".
     ensemble_confidence, ensemble_direction, agreement_count = await _live_ensemble_summary()
-    if ensemble_confidence == 0.0:
-        # No persisted predictions yet — fall back to the stacking
-        # ensemble's training accuracy so the dashboard shows the model's
-        # measured quality instead of a dead 0%.
-        ensemble_confidence = next(
-            (m.accuracy for m in models if m.name == "Stacking Ensemble"), 0.0
-        )
 
     return ModelsStatusResponse(
         models=models,

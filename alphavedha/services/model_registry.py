@@ -236,6 +236,26 @@ class ModelRegistry:
             return "demo-v0.1.0"
         return self._real_version
 
+    def models_available(self) -> bool:
+        """Lightweight readiness check used by /ready.
+
+        True in demo mode; otherwise verifies all required real artifacts are
+        present on disk (metadata.json per model) WITHOUT loading them, so a
+        readiness probe stays cheap and never lies about model availability.
+        """
+        if self._demo:
+            return True
+        artifact_dir = self._artifact_dir
+        if not artifact_dir.exists():
+            return False
+
+        def _resolve(name: str) -> Path:
+            latest = artifact_dir / name / "latest"
+            return latest if latest.exists() else artifact_dir / name
+
+        required = ["xgboost", "lstm", "tft", "regime", "ensemble", "meta_labeling", "conformal"]
+        return all((_resolve(name) / "metadata.json").exists() for name in required)
+
     def get_prediction_engine(self) -> PredictionEngine:
         """Build and return a PredictionEngine with loaded models.
 
