@@ -1005,9 +1005,7 @@ async def backtest_range(
     from alphavedha.backtest.sim_views import build_range_view
 
     equity = await backtest_equity()  # demo-aware; {strategy: [...], benchmark: [...]}
-    return build_range_view(
-        equity.get("strategy", []), equity.get("benchmark", []), start, end
-    )
+    return build_range_view(equity.get("strategy", []), equity.get("benchmark", []), start, end)
 
 
 # ── stock search (static factual reference data — same in both modes) ─────────

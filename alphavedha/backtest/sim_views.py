@@ -335,8 +335,7 @@ def build_range_view(
                 {"date": d, "y": round(float(e), 2)} for d, e in zip(dates, eq, strict=True)
             ],
             "benchmark": [
-                {"date": d, "y": round(float(e), 2)}
-                for d, e in zip(dates, bench_eq, strict=True)
+                {"date": d, "y": round(float(e), 2)} for d, e in zip(dates, bench_eq, strict=True)
             ],
         },
         "available": avail,
