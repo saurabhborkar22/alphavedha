@@ -231,6 +231,118 @@ def build_backtest_views(
     }
 
 
+def build_range_view(
+    strategy_points: list[dict[str, Any]],
+    benchmark_points: list[dict[str, Any]],
+    start: str | None,
+    end: str | None,
+) -> dict[str, Any]:
+    """Per-day + date-range performance, re-sliced from the dated equity curve.
+
+    Reconstructs the per-cohort returns from the strategy equity curve (one
+    equal-weight ~15-trading-day bet placed each trading day), filters to the
+    inclusive [start, end] ISO-date window, and recomputes window metrics +
+    a per-day breakdown. Pure function over the artifact's ``equity`` points —
+    no trade-level data, DB, or model code required, so it works on the
+    existing committed simulation artifact with zero recomputation.
+
+    Returns fractions (total_return/cagr/max_drawdown/win_rate/benchmark) — the
+    same unit convention as the backtest summary; the UI multiplies by 100.
+    """
+    avail = {
+        "date_from": str(strategy_points[0]["date"]) if strategy_points else None,
+        "date_to": str(strategy_points[-1]["date"]) if strategy_points else None,
+    }
+    empty: dict[str, Any] = {
+        "summary": {
+            "date_from": "",
+            "date_to": "",
+            "n_days": 0,
+            "total_return": 0.0,
+            "cagr": 0.0,
+            "sharpe": 0.0,
+            "max_drawdown": 0.0,
+            "win_rate": 0.0,
+            "best_day": 0.0,
+            "worst_day": 0.0,
+            "benchmark_return": 0.0,
+            "excess_return": 0.0,
+        },
+        "per_day": [],
+        "equity": {"strategy": [], "benchmark": []},
+        "available": avail,
+    }
+    if not strategy_points:
+        return empty
+
+    def _returns(points: list[dict[str, Any]]) -> list[tuple[str, float]]:
+        out: list[tuple[str, float]] = []
+        prev = INITIAL_VALUE
+        for p in points:
+            y = float(p["y"])
+            if prev > 0:
+                out.append((str(p["date"]), y / prev - 1.0))
+            prev = y
+        return out
+
+    def _in_range(d: str) -> bool:
+        return (start is None or d >= start) and (end is None or d <= end)
+
+    window = [(d, r) for d, r in _returns(strategy_points) if _in_range(d)]
+    if not window:
+        return empty
+
+    dates = [d for d, _ in window]
+    rets = np.array([r for _, r in window], dtype=float)
+    eq = INITIAL_VALUE * np.cumprod(1.0 + rets)
+    eq_series = pd.Series(eq, index=pd.to_datetime(dates))
+
+    total_return = float(eq[-1] / INITIAL_VALUE - 1.0)
+    max_dd = _max_drawdown(eq_series)
+    sharpe = (
+        float(rets.mean() / rets.std() * _ANNUALIZATION)
+        if len(rets) >= 2 and float(rets.std()) > 0
+        else 0.0
+    )
+    win_rate = float((rets > 0).mean())
+
+    bench_map = {d: r for d, r in _returns(benchmark_points)}
+    bench_rets = np.array([bench_map.get(d, 0.0) for d in dates], dtype=float)
+    bench_total = float(np.prod(1.0 + bench_rets) - 1.0)
+    bench_eq = INITIAL_VALUE * np.cumprod(1.0 + bench_rets)
+
+    return {
+        "summary": {
+            "date_from": dates[0],
+            "date_to": dates[-1],
+            "n_days": len(rets),
+            "total_return": round(total_return, 4),
+            "cagr": round(_annualized_return(total_return, len(rets)), 4),
+            "sharpe": round(sharpe, 3),
+            "max_drawdown": round(max_dd, 4),
+            "win_rate": round(win_rate, 4),
+            "best_day": round(float(rets.max()), 4),
+            "worst_day": round(float(rets.min()), 4),
+            "benchmark_return": round(bench_total, 4),
+            "excess_return": round(total_return - bench_total, 4),
+        },
+        "per_day": [
+            {"date": d, "return_pct": round(r * 100, 3), "equity": round(float(e), 2)}
+            for (d, r), e in zip(window, eq, strict=True)
+        ],
+        "equity": {
+            "strategy": [
+                {"date": d, "y": round(float(e), 2)} for d, e in zip(dates, eq, strict=True)
+            ],
+            "benchmark": [
+                {"date": d, "y": round(float(e), 2)}
+                for d, e in zip(dates, bench_eq, strict=True)
+            ],
+        },
+        "available": avail,
+    }
+
+
 def _accuracy_window(evaluated: pd.DataFrame, days: int) -> float | None:
     if evaluated.empty:
         return None

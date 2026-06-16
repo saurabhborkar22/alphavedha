@@ -14,7 +14,38 @@ from alphavedha.backtest.sim_views import (
     build_calibration,
     build_cost_sensitivity,
     build_diagnostics,
+    build_range_view,
 )
+
+
+def test_build_range_view_slices_and_computes() -> None:
+    # 4 dated equity points (INITIAL_VALUE=1e6). Returns: +10%, -5%, +5%, +5%.
+    strat = [
+        {"date": "2025-06-02", "y": 1_100_000.0},
+        {"date": "2025-06-03", "y": 1_045_000.0},
+        {"date": "2025-06-04", "y": 1_097_250.0},
+        {"date": "2025-06-05", "y": 1_152_112.5},
+    ]
+    bench = [{"date": p["date"], "y": 1_000_000.0} for p in strat]  # flat benchmark
+
+    full = build_range_view(strat, bench, None, None)
+    assert full["summary"]["n_days"] == 4
+    assert len(full["per_day"]) == 4
+    assert full["per_day"][0]["date"] == "2025-06-02"
+    assert full["per_day"][0]["return_pct"] == pytest.approx(10.0, abs=1e-6)
+    assert full["summary"]["win_rate"] == pytest.approx(0.75)  # 3 of 4 positive
+    assert full["available"]["date_from"] == "2025-06-02"
+
+    sliced = build_range_view(strat, bench, "2025-06-03", "2025-06-04")
+    assert [d["date"] for d in sliced["per_day"]] == ["2025-06-03", "2025-06-04"]
+    assert sliced["summary"]["n_days"] == 2
+
+    one = build_range_view(strat, bench, "2025-06-02", "2025-06-02")
+    assert one["summary"]["n_days"] == 1
+    assert one["summary"]["total_return"] == pytest.approx(0.10, abs=1e-4)
+
+    assert build_range_view([], [], None, None)["summary"]["n_days"] == 0
+    assert build_range_view(strat, bench, "2030-01-01", "2030-12-31")["per_day"] == []
 
 
 def _make_trades(n_days: int = 8, per_day: int = 5) -> pd.DataFrame:
