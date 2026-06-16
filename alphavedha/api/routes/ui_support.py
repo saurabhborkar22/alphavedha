@@ -991,6 +991,23 @@ async def backtest_rolling_sharpe() -> list[dict[str, Any]]:
     return [{"y": round(1.2 + (i / 51) * 0.64 + 0.1 * math.sin(i * 0.4), 3)} for i in range(52)]
 
 
+@router.get("/backtest/range")
+async def backtest_range(
+    start: str | None = Query(default=None, description="Inclusive start date YYYY-MM-DD"),
+    end: str | None = Query(default=None, description="Inclusive end date YYYY-MM-DD"),
+) -> dict[str, Any]:
+    """Per-day + date-range backtest performance, re-sliced from the equity curve.
+
+    Pass start==end for a single day. Omit both for the full available window.
+    Reuses the existing backtest equity series (no recomputation), so it works
+    on whatever simulation/backtest data is already present.
+    """
+    from alphavedha.backtest.sim_views import build_range_view
+
+    equity = await backtest_equity()  # demo-aware; {strategy: [...], benchmark: [...]}
+    return build_range_view(equity.get("strategy", []), equity.get("benchmark", []), start, end)
+
+
 # ── stock search (static factual reference data — same in both modes) ─────────
 
 
