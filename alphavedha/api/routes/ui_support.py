@@ -217,6 +217,9 @@ class ScanResponseModel(BaseModel):
     buy_candidates: list[ScanStockItem]
     sell_candidates: list[ScanStockItem]
     excluded: list[str]
+    # Every scanned stock with full data, sorted by confidence desc — includes
+    # non-tradeable names so the dashboard can always show top-N cards.
+    all_candidates: list[ScanStockItem] = []
     total_scanned: int
 
 
@@ -396,6 +399,7 @@ def _demo_scan(tier: str, top_n: int) -> ScanResponseModel:
         buy_candidates=buy,
         sell_candidates=sell,
         excluded=[],
+        all_candidates=sorted(stocks, key=lambda x: x.confidence, reverse=True),
         total_scanned=len(stocks),
     )
 
@@ -458,16 +462,25 @@ async def _real_scan(tier: str, top_n: int) -> ScanResponseModel:
     from alphavedha.api.deps import get_service
 
     service = get_service()
-    result = await service.scan_tier(tier, top_n=top_n)
+    # Single prediction pass over the whole tier, then rank locally — this gives
+    # us full data for EVERY stock (including non-tradeable ones) for
+    # all_candidates, without a second predict pass.
+    predictions = await service.predict_tier(tier)
+    result = service._ranker.rank(predictions, top_n=top_n)
     cap = tier.capitalize()
-    buy = [await _scan_item_from_prediction(p, cap) for p in result.buy_candidates]
-    sell = [await _scan_item_from_prediction(p, cap) for p in result.sell_candidates]
+    items: dict[str, ScanStockItem] = {}
+    for p in predictions:
+        items[p.symbol] = await _scan_item_from_prediction(p, cap)
+    all_candidates = sorted(items.values(), key=lambda s: s.confidence, reverse=True)
+    buy = [items[p.symbol] for p in result.buy_candidates if p.symbol in items]
+    sell = [items[p.symbol] for p in result.sell_candidates if p.symbol in items]
     return ScanResponseModel(
         tier=tier,
         buy_candidates=buy,
         sell_candidates=sell,
         excluded=[sym for sym, _reason in result.excluded],
-        total_scanned=len(buy) + len(sell) + len(result.excluded),
+        all_candidates=all_candidates,
+        total_scanned=len(predictions),
     )
 
 
@@ -490,7 +503,12 @@ async def scan_stocks(
     except Exception as e:
         logger.warning("real_scan_failed", tier=tier, error=str(e))
         return ScanResponseModel(
-            tier=tier, buy_candidates=[], sell_candidates=[], excluded=[], total_scanned=0
+            tier=tier,
+            buy_candidates=[],
+            sell_candidates=[],
+            excluded=[],
+            all_candidates=[],
+            total_scanned=0,
         )
 
 
