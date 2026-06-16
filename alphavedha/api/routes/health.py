@@ -29,10 +29,12 @@ async def ready() -> dict[str, object]:
     except Exception:
         pass
 
-    all_ok = cache_ok and db_ok
+    models_loaded = service._registry.models_available()
+
+    all_ok = cache_ok and db_ok and models_loaded
     return {
         "ready": all_ok,
-        "models_loaded": True,
+        "models_loaded": models_loaded,
         "cache_available": cache_ok,
         "database_available": db_ok,
         "model_version": service._registry.model_version,
