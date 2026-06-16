@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,6 +13,11 @@ from alphavedha.sentiment.sources import (
     _item_matches,
     _symbol_variants,
 )
+
+
+def _recent_rfc822(days_ago: int = 2) -> str:
+    """Recent RFC-822 date so lookback-window tests don't expire as time passes."""
+    return (datetime.now(UTC) - timedelta(days=days_ago)).strftime("%a, %d %b %Y %H:%M:%S +0000")
 
 
 class TestSymbolVariants:
@@ -56,9 +62,9 @@ class TestRSSSource:
             (
                 "TCS Q4 profit rises",
                 "Tata Consultancy profits up",
-                "Mon, 09 Jun 2026 10:00:00 +0000",
+                _recent_rfc822(),
             ),
-            ("Wipro acquires company", "Wipro deal closed", "Mon, 09 Jun 2026 10:00:00 +0000"),
+            ("Wipro acquires company", "Wipro deal closed", _recent_rfc822()),
         ]
         with patch("alphavedha.sentiment.sources._fetch_rss", new=AsyncMock(return_value=items)):
             src = RSSSource()
@@ -82,7 +88,7 @@ class TestRSSSource:
     @pytest.mark.asyncio
     async def test_rss_post_has_correct_source(self) -> None:
         items = [
-            ("TCS results", "Quarterly earnings", "Mon, 09 Jun 2026 10:00:00 +0000"),
+            ("TCS results", "Quarterly earnings", _recent_rfc822()),
         ]
 
         # Patch only one feed returning data
