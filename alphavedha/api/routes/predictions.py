@@ -37,7 +37,7 @@ async def predict_single(
     """Predict direction, magnitude, and price targets for a single stock."""
     symbol = _validate_symbol(symbol)
     prediction = await service.predict_single(symbol)
-    return PredictionResponse.from_stock_prediction(prediction)
+    return PredictionResponse.from_stock_prediction(prediction, is_demo=service._registry.is_demo)
 
 
 @router.post("/predict/batch")
@@ -46,13 +46,14 @@ async def predict_batch(
     service: PredictionService = Depends(get_service),
 ) -> BatchResponse:
     """Predict multiple stocks in one request (max 20)."""
+    demo = service._registry.is_demo
     predictions: list[PredictionResponse] = []
     failed: list[dict[str, str]] = []
     for sym in body.symbols:
         try:
             validated = _validate_symbol(sym)
             pred = await service.predict_single(validated)
-            predictions.append(PredictionResponse.from_stock_prediction(pred))
+            predictions.append(PredictionResponse.from_stock_prediction(pred, is_demo=demo))
         except Exception as e:
             failed.append({"symbol": sym, "error": str(e)})
 
@@ -62,6 +63,7 @@ async def predict_batch(
         successful=len(predictions),
         failed=failed,
         model_version=predictions[0].model_version if predictions else "unknown",
+        is_demo=demo,
     )
 
 
@@ -75,16 +77,22 @@ async def scan_tier(
     tier = tier.lower().strip()
     if tier not in _VALID_TIERS:
         raise HTTPException(status_code=400, detail=f"Invalid tier: {tier}. Use: {_VALID_TIERS}")
+    demo = service._registry.is_demo
     result = await service.scan_tier(tier, top_n=top_n)
     return ScanResponse(
         tier=tier,
-        buy_candidates=[PredictionResponse.from_stock_prediction(p) for p in result.buy_candidates],
+        buy_candidates=[
+            PredictionResponse.from_stock_prediction(p, is_demo=demo)
+            for p in result.buy_candidates
+        ],
         sell_candidates=[
-            PredictionResponse.from_stock_prediction(p) for p in result.sell_candidates
+            PredictionResponse.from_stock_prediction(p, is_demo=demo)
+            for p in result.sell_candidates
         ],
         excluded=[ExcludedStock(symbol=sym, reason=reason) for sym, reason in result.excluded],
         total_scanned=len(result.buy_candidates)
         + len(result.sell_candidates)
         + len(result.excluded),
         model_version=service._registry.model_version,
+        is_demo=demo,
     )
