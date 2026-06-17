@@ -18,8 +18,8 @@ This is the single source of truth for the build. The workflow, every working da
 2. **One task = one sitting** (sized ~2–4 focused hours with Claude assistance).
    A task is done only when its **"Done when"** criterion passes — not before.
 3. **End the session**: check the box(es), append one line to the Progress Log
-   (§14), commit the doc update together with the code.
-4. **Friday**: do the Weekly Review ritual (§13) — 15 minutes, KPIs + gate check.
+   (§17), commit the doc update together with the code.
+4. **Friday**: do the Weekly Review ritual (§14) — 15 minutes, KPIs + gate check.
 
 **Where progress is monitored:** this file on GitHub (checkboxes + Progress Log),
 plus the live system itself (`/api/paper/dashboard` tracks every strategy's
@@ -48,12 +48,12 @@ phase status at a glance.
 2. **The provably honest track record.** Hash every morning's predictions before
    market open, timestamp the hash cryptographically (OpenTimestamps → Bitcoin-anchored).
    Mathematically impossible to backfill. Runs **privately from day one** — all
-   public-facing publication is deliberately the LAST phase (§11); the proofs are
+   public-facing publication is deliberately the LAST phase (§12); the proofs are
    independently verifiable whenever we choose to go public, with full history intact.
    No research shop in India has this; it converts into trust → capital → customers.
 3. **The factory discipline.** Everything (the existing ensemble, every new signal)
    flows through the SAME harness: paper trades → cost-adjusted 3-track record
-   (PR #72) → quantitative gates (§12) → only then real capital. Ideas are cheap;
+   (PR #72) → quantitative gates (§13) → only then real capital. Ideas are cheap;
    the honest tester is the moat.
 
 **What we explicitly do NOT build:** HFT/market-making, crypto bots, more
@@ -76,7 +76,262 @@ deep-learning accuracy chasing on OHLCV, unregistered paid signals.
 
 ---
 
-## 3. Target architecture
+## 3. Pre-requisite: prediction system fixes (before the edge factory)
+
+> **Source of truth:** `docs/prediction_audit.md` — OOS audit on 5,700 predictions
+> across 3 regime windows (2023-06 up, 2025-06 down, 2025-12 crash), frozen models.
+>
+> **Verdict:** the code is solid; the strategy is broken. The ensemble is
+> long-biased (profitable in bull, loses in bear/crash), the confidence signal is
+> **inverted** (higher confidence → worse outcomes), and round-trip cost (0.471%)
+> exceeds gross edge (0.314%). No point building an edge factory on top of a system
+> that actively destroys its own edge. Fix the foundation first.
+>
+> Each item below gets its own PR, reviewed by Saurabh, merged manually.
+> Items are ordered by impact ÷ effort so the system improves monotonically.
+
+### 3.1 Fix matrix — priority × action × evidence
+
+| ID | Priority | Action | Effort | Expected Impact | Evidence |
+|---|---|---|---|---|---|
+| FIX-01 | P0-1 | Cap Kelly at 0.25 everywhere, 0.5 max | 10 min | Max DD −41% → ~−15% | audit §3.3: bull regime used kelly=1.0, direct cause of Dec −44.65% month |
+| FIX-02 | P0-2 | Disable meta-gate (set threshold to 0.0 so all trades pass) | 10 min | Net/trade −1.60% → −0.16% (10× improvement) | audit §3.2: gate_passed 40.4% win vs all 49.5% — gate is anti-predictive |
+| FIX-03 | P0-3 | Enable regime overlay permanently (remove env gate) | 10 min | Suppress longs in downtrends, cap Kelly to 0.5 | audit §8: model profitable only in bull; overlay prototype already exists in engine.py |
+| FIX-04 | P0-4 | Add `is_demo` field to all API responses | 2 hours | End fake/real data confusion in UI | 12/16 API endpoints return synthetic data with no indicator |
+| FIX-05 | P1-1 | Label every UI number as "Predicted" vs "Live" vs "Paper" | 3 days | Honest, trustworthy UI | stock detail page shows "Live vs Predicted" with same styling for both |
+| FIX-06 | P1-2 | Wire India VIX + FII/DII to HMM regime detector | 1 day | Catch regime turns that pure returns+vol miss | audit §4-C: HMM sees only portfolio returns + 20d vol; missed Dec crash entirely |
+| FIX-07 | P1-3 | Add cost hurdle: only trade when expected_move > 1.5× cost | 2 hours | Filter low-edge trades, cut churn | audit §3.1: cost 150% of gross edge; most trades have negative expectancy |
+| FIX-08 | P1-4 | Implement ATR-based stop losses in paper trading | 2 days | Cut −5% tail losses (14 of 52 gate trades worse than −5%) | audit §3.4: 15-day fixed hold with no intra-trade stop; PF 0.50 |
+| FIX-09 | P2-1 | Drop LSTM/TFT from ensemble, XGBoost-only baseline | 1 day | Cleaner signal; TFT val-acc 0.39, LSTM 0.45 vs XGBoost 0.52 | audit §5 rec #9: weak deep models add noise, not signal |
+| FIX-10 | P2-2 | Recalibrate meta-model with OOS data + monotonicity test | 1 week | Fix confidence inversion — higher confidence should predict higher win rate | audit §3.2: monotonic win-rate decline with confidence across all 3 windows |
+| FIX-11 | P2-3 | Run 3-window historical sim to validate all changes | 2 days | Prove fixes actually work before deploying | audit §6: multi-cutoff walk-forward required to confirm regime-independence |
+| FIX-12 | P3+ | Execute Edge Factory plan (disclosure signals) | 2 months | The real edge — information advantage from unread disclosures | audit §4-D: model trades on technicals alone; no information edge |
+
+### 3.2 Detailed rationale per fix
+
+#### FIX-01: Cap Kelly fractions (P0-1)
+
+**Problem:** `regime_strategy.py:34-39` sets `kelly_fraction=1.0` for bull regime —
+full Kelly is known to be over-aggressive in practice. Academic Kelly assumes
+perfect edge estimates; real estimates are noisy, so practitioners use ½ Kelly or
+less. The Dec 2025 crash was labeled "bull" by the HMM → full-size trades →
+**−44.65% in one month, −41% max drawdown.**
+
+**Fix:** Change `RegimeStrategyConfig` defaults:
+- Bull: `kelly_fraction` 1.0 → **0.25**
+- Bear: 0.25 → **0.15**
+- Sideways: 0.5 → **0.25**
+- High volatility: 0.1 → **0.05**
+- Hard cap in `apply_regime_overlay`: `kelly_cap` 0.5 → **0.25**
+
+**File:** `alphavedha/prediction/regime_strategy.py`
+
+**Validation:** backtest the Dec window with old vs new Kelly — drawdown should
+drop from −41% to ~−15%.
+
+---
+
+#### FIX-02: Disable meta-gate (P0-2)
+
+**Problem:** The meta-labeling model (`meta_model.py`) was trained with OOF F1 of
+0.836 but **inverts OOS** — selecting by its confidence produces 40.4% win rate
+vs 49.5% for unfiltered predictions. The gate actively subtracts value.
+
+**Root cause:** circular dependency — the meta-model learns to predict confidence
+from features that include the ensemble's own confidence, creating a self-
+reinforcing loop that scores well in-sample but inverts out-of-sample.
+
+**Fix:** Set `meta_confidence_threshold=0.0` across all regimes so every prediction
+passes the gate. The meta-model still runs (its output is logged for future
+recalibration) but never blocks a trade.
+
+**File:** `alphavedha/prediction/regime_strategy.py`
+
+**Why not remove the meta-model entirely?** We need it to keep running so we can
+collect OOS calibration data for FIX-10. Setting threshold=0.0 is functionally
+equivalent to disabling it while preserving the data pipeline.
+
+---
+
+#### FIX-03: Enable regime overlay permanently (P0-3)
+
+**Problem:** The regime overlay prototype in `engine.py:62-122` is gated behind
+`ALPHAVEDHA_REGIME_OVERLAY` env var — meaning it's **disabled in production**.
+It caps Kelly at 0.5 and suppresses longs in downtrends, which directly addresses
+the two biggest loss mechanisms (full Kelly + long bias in crashes).
+
+**Fix:** Remove the env-gate. Make the overlay always-on with hardcoded safe
+defaults: `kelly_cap=0.25`, `downtrend_size_mult=0.3`,
+`suppress_longs_in_downtrend=True`. Keep the env vars for parameter tuning but
+the overlay itself is no longer optional.
+
+**File:** `alphavedha/prediction/engine.py`
+
+---
+
+#### FIX-04: Add `is_demo` to API responses (P0-4)
+
+**Problem:** 12 of 16 API endpoints return completely synthetic data when models
+aren't loaded (demo mode), with **no field indicating the data is fake**. The only
+hint is a `"demo_"` prefix in `model_version` — easy to miss, impossible to filter
+on in the UI.
+
+**Fix:** Add `is_demo: bool` to every prediction/scan/paper-trade API response
+schema. Set it from `ModelRegistry.is_demo`. The UI can then show a prominent
+banner and style predicted/demo numbers differently.
+
+**Files:** `alphavedha/api/schemas.py`, all route files in `alphavedha/api/routes/`
+
+---
+
+#### FIX-05: Label UI numbers (P1-1)
+
+**Problem:** The UI (`alphavedha-ui`) shows predicted prices, paper P&L, and live
+market data with identical styling. The stock detail page has a "Live vs Predicted"
+section but both sides look the same. Users cannot tell what's real vs generated.
+
+**Fix:** In the UI repo:
+1. Add visual tags: `[PREDICTED]`, `[LIVE]`, `[PAPER]` next to each number
+2. Use distinct colors: blue for predicted, green for live, orange for paper
+3. Show a prominent demo banner when `is_demo=true` (depends on FIX-04)
+4. Add tooltips explaining each number's source
+
+**Files:** `alphavedha-ui/` — dashboard, stock detail, signal cards
+
+---
+
+#### FIX-06: Wire VIX + FII/DII to regime detector (P1-2)
+
+**Problem:** `prediction_service._build_market_features()` (lines 183-219) computes
+only equal-weight portfolio returns + 20-day realized volatility for the HMM. It
+does NOT include India VIX, FII/DII flows, or any breadth indicator — all are dead
+features (100% NaN). The HMM therefore lags turning points and misclassified the
+Dec 2025 crash as "bull".
+
+**Fix:** Add India VIX (yfinance `^INDIAVIX`) and FII/DII net flows to
+`_build_market_features()`. These are cheap to fetch, already have infra (FII/DII
+table exists), and are the highest-value regime signals.
+
+**File:** `alphavedha/services/prediction_service.py`
+
+**Validation:** check if adding VIX+FII to HMM input would have flagged the
+Dec 2025 regime change — use the 3-window sim.
+
+---
+
+#### FIX-07: Cost hurdle filter (P1-3)
+
+**Problem:** Every prediction is treated as tradeable regardless of expected move
+size. With round-trip cost at 0.471%, trades with expected magnitude < 0.47% are
+guaranteed losers before they start. Most trades fall in this range.
+
+**Fix:** Add a cost hurdle to `engine.predict()`: only set `is_tradeable=True` when
+`abs(magnitude) > cost_hurdle_multiple × round_trip_cost`. Default
+`cost_hurdle_multiple=1.5` (i.e., only trade when expected move > 0.71%).
+
+**File:** `alphavedha/prediction/engine.py`, `alphavedha/backtest/costs.py`
+
+---
+
+#### FIX-08: ATR-based stop losses in paper trading (P1-4)
+
+**Problem:** Paper trades use a fixed 15-day hold with no intra-trade risk
+management. The ATR-based stop/target levels ARE computed in `engine.py` but
+never enforced — they're purely display values. 14 of 52 gate trades in the audit
+were worse than −5%.
+
+**Fix:** In the scheduler's paper trade evaluation loop, check if the stock hit
+the ATR stop loss on any day during the hold period. If so, mark the trade as
+stopped out at the stop price rather than holding to expiry.
+
+**Files:** `alphavedha/services/scheduler.py`, evaluation logic
+
+---
+
+#### FIX-09: XGBoost-only ensemble baseline (P2-1)
+
+**Problem:** The LSTM (val acc 0.45) and TFT (val acc 0.39) underperform XGBoost
+(val acc 0.52) and add noise to the ensemble. The RidgeClassifier meta-learner
+averages their weak, correlated signals, diluting XGBoost's edge.
+
+**Fix:** Make LSTM and TFT optional in the ensemble. When only XGBoost is available
+(or when explicitly configured), skip the stacking ensemble and use XGBoost
+probabilities directly. The ensemble machinery stays for future use when the
+deep models improve.
+
+**File:** `alphavedha/prediction/engine.py`, `alphavedha/models/ensemble.py`
+
+---
+
+#### FIX-10: Recalibrate meta-model (P2-2)
+
+**Problem:** The meta-model's confidence is anti-correlated with OOS outcomes. It
+needs to be retrained with:
+1. Proper OOS calibration (not OOF)
+2. Isotonic or Platt calibration of probabilities
+3. A monotonicity constraint: higher confidence must predict higher win rate
+4. Removal of ensemble_confidence from its input features (circular dependency)
+
+**Effort:** 1 week — this is model work, not a config change.
+
+**Files:** `alphavedha/models/meta_model.py`, `alphavedha/training/pipeline.py`
+
+---
+
+#### FIX-11: 3-window validation sim (P2-3)
+
+**Problem:** Any change could look good in one regime window and fail in another.
+The audit showed the model is profitable in bull (+0.57%/trade) but loses in
+bear/crash. Changes must be validated across all three windows.
+
+**Fix:** Automated validation script that runs the sim across 3 cutoffs
+(2023-06 up, 2025-06 down, 2025-12 crash) and reports net P&L, Sharpe, DD for
+each. A change is accepted only if it improves or holds in all 3 windows.
+
+**File:** `scripts/validate_3window.py`
+
+---
+
+#### FIX-12: Edge Factory execution (P3+)
+
+This is the rest of this document (§6 onwards). The fixes above make the
+foundation trustworthy so that edge factory signals land on a system that won't
+destroy their value through aggressive sizing, inverted confidence, or blind
+regime detection.
+
+### 3.3 Implementation sequence & dependencies
+
+```
+FIX-01 (Kelly cap) ──┐
+FIX-02 (meta-gate) ──┼── independent, can be one PR or three
+FIX-03 (overlay)   ──┘
+         │
+         ▼
+FIX-04 (is_demo)  ──── independent of the above, API-only
+         │
+         ▼
+FIX-05 (UI labels) ──── depends on FIX-04 (needs is_demo field)
+         │
+FIX-06 (VIX/FII)  ──── independent, prediction_service change
+FIX-07 (cost hurdle) ── independent, engine.py change
+         │
+         ▼
+FIX-08 (ATR stops) ──── depends on FIX-07 conceptually (cost hurdle filters,
+         │               stops manage survivors)
+         ▼
+FIX-09 (XGB-only) ──── independent model change, can run in parallel
+FIX-10 (meta recal) ── depends on FIX-02 data collection (needs OOS meta
+         │              predictions flowing for a few weeks)
+         ▼
+FIX-11 (3-window) ──── validates FIX-01 through FIX-09; should run after
+         │              each fix PR to confirm improvement
+         ▼
+FIX-12 (Edge Factory) ── the rest of this plan (§6 onwards)
+```
+
+---
+
+## 4. Target architecture
 
 ```
                         ┌─────────────────────────────────────────────┐
@@ -98,7 +353,7 @@ deep-learning accuracy chasing on OHLCV, unregistered paid signals.
                                        │                ▲
                               track_record (per-strategy)│
                                        │            ensemble (existing)
-                              decision gates (§12)
+                              decision gates (§13)
                                        │
                         ┌──────────────┴──────────────┐
                         ▼                             ▼
@@ -133,12 +388,13 @@ features. Every signal module gets a dedicated look-ahead unit test.
 
 ---
 
-## 4. Phase plan at a glance
+## 5. Phase plan at a glance
 
 | Phase | Calendar (approx) | Deliverable | Status |
 |---|---|---|---|
-| P0 Verifiable record (private) + hygiene | Jun 14–17 | Daily prediction hashes stamped privately; API key on | ☐ |
-| P1 Disclosure ingestion spine | Jun 18 – Jul 1 | All 8 sources landing in DB daily | ☐ |
+| **FIX** Prediction system fixes (§3) | Jun 18–30 | Kelly capped, meta-gate disabled, overlay on, UI honest | ☐ |
+| P0 Verifiable record (private) + hygiene | Jul 1–4 | Daily prediction hashes stamped privately; API key on | ☐ |
+| P1 Disclosure ingestion spine | Jul 5 – Jul 18 | All 8 sources landing in DB daily | ☐ |
 | P2 LLM extraction layer | Jul 2 – Jul 15 | Structured events, ≥85% precision on golden set | ☐ |
 | P3 Signals + multi-strategy harness | Jul 16 – Jul 29 | 3 intel strategies live in paper trading | ☐ |
 | P4 Execution engine (shadow) | Jul 30 – Aug 12 | OMS + kill switch + Telegram, shadow fills logging | ☐ |
@@ -150,7 +406,7 @@ Parallel passive track throughout: the ensemble's paper record accrues on its ow
 
 ---
 
-## 5. PHASE 0 — Verifiable record (PRIVATE) + hygiene (2–3 days)
+## 6. PHASE 0 — Verifiable record (PRIVATE) + hygiene (2–3 days)
 
 **Goal:** every prediction this system ever makes from now on is provably
 timestamped before market open. Plus close the open-API hole.
@@ -205,7 +461,7 @@ this phase exposes anything publicly.
 
 ---
 
-## 6. PHASE 1 — Disclosure ingestion spine (~2 weeks)
+## 7. PHASE 1 — Disclosure ingestion spine (~2 weeks)
 
 **Goal:** eight data sources land in normalized tables daily, whole-market EOD
 prices via bhavcopy, all idempotent and survivable on a 4 GB VPS.
@@ -215,7 +471,7 @@ retention; every collector is idempotent (upsert on natural key); per-source
 failure logs + continues (never crashes the job); all timestamps Asia/Kolkata.
 
 ### P1-D1 — Schema + scaffolding
-- [ ] `alphavedha/intel/` package skeleton; ORM models for the §3 tables;
+- [ ] `alphavedha/intel/` package skeleton; ORM models for the §4 tables;
   alembic migration; `store_disclosure` / `load_disclosures` with upsert.
 - **Done when:** migration applies cleanly to a fresh DB and to a copy of prod
   schema; unit tests for store/load round-trip.
@@ -282,7 +538,7 @@ failure logs + continues (never crashes the job); all timestamps Asia/Kolkata.
 
 ---
 
-## 7. PHASE 2 — LLM extraction layer (~2 weeks)
+## 8. PHASE 2 — LLM extraction layer (~2 weeks)
 
 **Goal:** every new disclosure becomes a structured, scored event within hours,
 at < ₹4k/month, with measured accuracy.
@@ -386,7 +642,7 @@ calls at ~300 docs/day. Revisit only if volume grows 50×.
 
 ---
 
-## 8. PHASE 3 — Signals + multi-strategy harness (~2 weeks)
+## 9. PHASE 3 — Signals + multi-strategy harness (~2 weeks)
 
 **Goal:** intel becomes strategies, measured by the same honest harness as the
 ensemble. Nothing trades; everything is paper.
@@ -448,10 +704,10 @@ ensemble. Nothing trades; everything is paper.
 
 ---
 
-## 9. PHASE 4 — Execution engine, shadow mode (~2 weeks)
+## 10. PHASE 4 — Execution engine, shadow mode (~2 weeks)
 
 **Goal:** the gun, built and zeroed while paper proves the ammo. No real orders
-until §12 gates pass — but every part exercised daily in shadow.
+until §13 gates pass — but every part exercised daily in shadow.
 
 ### P4-D1 — Broker decision + adapter interface
 - [ ] Decide broker API: **Kite Connect** (free for personal use since late
@@ -502,10 +758,10 @@ until §12 gates pass — but every part exercised daily in shadow.
 
 ---
 
-## 10. PHASE 5 — Gates & scale (ongoing from ~Aug 13)
+## 11. PHASE 5 — Gates & scale (ongoing from ~Aug 13)
 
 - [ ] **P5-D1** Gate review #1 (run as soon as any strategy hits 30 evaluated
-  cohorts — ensemble reaches this first, ~Jul 20): apply §12 criteria, write
+  cohorts — ensemble reaches this first, ~Jul 20): apply §13 criteria, write
   verdict per strategy into Progress Log.
 - [ ] **P5-D2** For the first gate-passing strategy: arm semi-auto live with
   ₹50,000 (Telegram-approved orders only, kill switch active, position cap
@@ -513,7 +769,7 @@ until §12 gates pass — but every part exercised daily in shadow.
 - [ ] **P5-D3** Live-vs-paper tracking report: live fills vs paper assumption;
   divergence > slippage budget → back to shadow, investigate.
 - [ ] **P5-D4** Scale decision ladder: ₹50k → ₹2L → ₹5L only on passing live
-  reviews (§12 G2). In parallel, pick the capital path: more own capital /
+  reviews (§13 G2). In parallel, pick the capital path: more own capital /
   family capital with a written mandate / SEBI RA registration (NISM-XV exam)
   if productizing research.
 - [ ] **P5-D5** Factory loop becomes routine: new hypothesis → research
@@ -522,7 +778,7 @@ until §12 gates pass — but every part exercised daily in shadow.
 
 ---
 
-## 11. PHASE 6 — Public launch (deliberately LAST)
+## 12. PHASE 6 — Public launch (deliberately LAST)
 
 **Entry condition:** at least one G1 gate review completed AND Saurabh decides
 the record is worth showing (typically ≥3 months of unbroken hashes). Until
@@ -552,7 +808,7 @@ then, everything stays private — the machine makes money first, talks later.
 
 ---
 
-## 12. Decision gates (quantitative, pre-committed)
+## 13. Decision gates (quantitative, pre-committed)
 
 Written BEFORE results exist so we can't move the goalposts.
 
@@ -576,7 +832,7 @@ Written BEFORE results exist so we can't move the goalposts.
 
 ---
 
-## 13. KPIs & weekly review (Fridays, 15 min)
+## 14. KPIs & weekly review (Fridays, 15 min)
 
 | KPI | Target | Source |
 |---|---|---|
@@ -588,19 +844,19 @@ Written BEFORE results exist so we can't move the goalposts.
 | LLM spend | < $50/mo hard cap | cost ledger |
 | Infra spend | < ₹6k/mo total | invoices |
 
-Ritual: update KPI row in Progress Log → check §12 gate eligibility → pick next
+Ritual: update KPI row in Progress Log → check §13 gate eligibility → pick next
 week's tasks → one sentence: "biggest risk right now is ___".
 
 ---
 
-## 14. Risk register
+## 15. Risk register
 
 | Risk | Mitigation |
 |---|---|
 | NSE scraping 403s (cookie fragility) | BSE as primary for dual-filed docs; backoff + skip; bhavcopy/ASM have stable endpoints |
 | LLM extraction errors poisoning signals | Golden-set CI gate, versioned prompts, materiality threshold, human review of weekly memo |
-| Look-ahead bias via text backfills | filed_at point-in-time rule + dedicated unit tests per signal (§3) |
-| Multiple-testing false positives | ≤5 concurrent strategies; pre-committed gates (§12); bootstrap CIs |
+| Look-ahead bias via text backfills | filed_at point-in-time rule + dedicated unit tests per signal (§4) |
+| Multiple-testing false positives | ≤5 concurrent strategies; pre-committed gates (§13); bootstrap CIs |
 | 4 GB VPS limits | Text-only DB storage, PDF retention 30d, nightly batches (not realtime), disk alerts; scale-up path exists (CX43 auto-scale already built) |
 | Broker/SEBI rule changes for retail algos | Verify at P4-D1; semi-auto (human tap) mode as the conservative default |
 | Key/credential leakage | All keys in `.env.vps` only; proofs repo uses a scoped deploy key; never in git |
@@ -609,7 +865,7 @@ week's tasks → one sentence: "biggest risk right now is ___".
 
 ---
 
-## 15. Budget
+## 16. Budget
 
 | Item | Monthly |
 |---|---|
@@ -622,8 +878,10 @@ week's tasks → one sentence: "biggest risk right now is ___".
 
 ---
 
-## 16. Progress Log
+## 17. Progress Log
 
 > Append one line per working session: `YYYY-MM-DD — did X; next Y; blocker Z`
 
 - 2026-06-13 — Plan created. Next: P0-D1 (hasher module). Blocker: none.
+- 2026-06-17 — OOS audit completed; prediction system structurally unprofitable.
+- 2026-06-18 — Added §3 (prediction system fixes, FIX-01 through FIX-12). Starting FIX-01.

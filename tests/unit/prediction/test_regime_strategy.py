@@ -9,32 +9,32 @@ from alphavedha.prediction.regime_strategy import (
 
 
 class TestRegimeStrategySelector:
-    def test_bull_full_kelly(self) -> None:
+    def test_bull_capped_kelly(self) -> None:
         selector = RegimeStrategySelector()
         result = selector.select("bull")
         assert result.regime == "bull"
-        assert result.kelly_fraction == 1.0
-        assert result.meta_confidence_threshold == 0.40
+        assert result.kelly_fraction == 0.25
+        assert result.meta_confidence_threshold == 0.0
 
-    def test_bear_quarter_kelly(self) -> None:
+    def test_bear_conservative_kelly(self) -> None:
         selector = RegimeStrategySelector()
         result = selector.select("bear")
         assert result.regime == "bear"
-        assert result.kelly_fraction == 0.25
-        assert result.meta_confidence_threshold == 0.45
+        assert result.kelly_fraction == 0.15
+        assert result.meta_confidence_threshold == 0.0
 
     def test_high_vol_requires_agreement(self) -> None:
         selector = RegimeStrategySelector()
         result = selector.select("high_volatility")
         assert result.require_all_models_agree is True
-        assert result.kelly_fraction == 0.1
-        assert result.meta_confidence_threshold == 0.52
+        assert result.kelly_fraction == 0.05
+        assert result.meta_confidence_threshold == 0.0
 
-    def test_sideways_half_kelly(self) -> None:
+    def test_sideways_quarter_kelly(self) -> None:
         selector = RegimeStrategySelector()
         result = selector.select("sideways")
         assert result.regime == "sideways"
-        assert result.kelly_fraction == 0.5
+        assert result.kelly_fraction == 0.25
 
     def test_unknown_regime_falls_back(self) -> None:
         selector = RegimeStrategySelector()
