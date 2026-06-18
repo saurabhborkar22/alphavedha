@@ -1,5 +1,4 @@
 {
-  "model": "claude-opus-4-6",
   "permissions": {
     "allow": [
       "Bash(python3 *)",
@@ -49,6 +48,7 @@
       "Bash(pip install* --break-system-packages*)"
     ]
   },
+  "model": "claude-opus-4-6",
   "hooks": {
     "PreToolUse": [
       {
@@ -72,5 +72,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "data@claude-plugins-official": true
   }
 }
