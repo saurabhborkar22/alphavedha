@@ -117,31 +117,31 @@ class PredictionEngine:
     def __init__(
         self,
         xgboost: BaseModelProtocol,
-        lstm: BaseModelProtocol,
-        tft: BaseModelProtocol,
-        regime: RegimeDetector,
-        ensemble: StackingEnsemble,
-        meta_model: MetaLabelingModel,
-        conformal: ConformalPredictor,
-        scorer: CompositeScorer,
-        risk_manager: RiskManager,
+        lstm: BaseModelProtocol | None = None,
+        tft: BaseModelProtocol | None = None,
+        regime: RegimeDetector | None = None,
+        ensemble: StackingEnsemble | None = None,
+        meta_model: MetaLabelingModel | None = None,
+        conformal: ConformalPredictor | None = None,
+        scorer: CompositeScorer | None = None,
+        risk_manager: RiskManager | None = None,
         regime_strategy: RegimeStrategySelector | None = None,
         model_version: str = "v0.1.0",
         conformal_outputs_returns: bool = False,
         gnn: BaseModelProtocol | None = None,
     ) -> None:
-        self._models: dict[str, BaseModelProtocol] = {
-            "xgboost": xgboost,
-            "lstm": lstm,
-            "tft": tft,
-        }
+        self._models: dict[str, BaseModelProtocol] = {"xgboost": xgboost}
+        if lstm is not None:
+            self._models["lstm"] = lstm
+        if tft is not None:
+            self._models["tft"] = tft
         if gnn is not None:
             self._models["gnn"] = gnn
         self._regime = regime
         self._ensemble = ensemble
         self._meta_model = meta_model
         self._conformal = conformal
-        self._scorer = scorer
+        self._scorer = scorer or CompositeScorer()
         self._risk_manager = risk_manager
         self._regime_strategy = regime_strategy or RegimeStrategySelector()
         self._model_version = model_version
@@ -183,10 +183,20 @@ class PredictionEngine:
                     f"High-vol regime: models disagree ({directions}), marking untradeable"
                 )
 
-        ensemble_result = self._ensemble.predict(
-            base_predictions,
-            np.tile(regime_probs.reshape(1, -1), (len(features), 1)),
-        )
+        if self._ensemble is not None:
+            ensemble_result = self._ensemble.predict(
+                base_predictions,
+                np.tile(regime_probs.reshape(1, -1), (len(features), 1)),
+            )
+        else:
+            xgb_pred = base_predictions["xgboost"]
+            ensemble_result = EnsembleResult(
+                direction=xgb_pred.direction,
+                magnitude=xgb_pred.magnitude,
+                probabilities=xgb_pred.probabilities,
+                confidence=xgb_pred.confidence,
+                model_disagreement=np.array([0.0]),
+            )
         direction = int(ensemble_result.direction[-1])
         magnitude = float(ensemble_result.magnitude[-1])
         disagreement = float(ensemble_result.model_disagreement[-1])
@@ -219,13 +229,25 @@ class PredictionEngine:
         regime_result = self._build_regime_result(regime_name, regime_probs)
         composite_score = self._scorer.score(ensemble_result, regime_result, features)
 
-        risk = self._risk_manager.assess(
-            meta_confidence=meta_confidence,
-            magnitude=magnitude,
-            symbol=symbol,
-            sector=sector,
-            portfolio=current_portfolio,
-        )
+        if self._risk_manager is not None:
+            risk = self._risk_manager.assess(
+                meta_confidence=meta_confidence,
+                magnitude=magnitude,
+                symbol=symbol,
+                sector=sector,
+                portfolio=current_portfolio,
+            )
+        else:
+            from alphavedha.risk.risk_manager import RiskAssessment
+
+            risk = RiskAssessment(
+                position_size_pct=5.0,
+                kelly_raw=0.5,
+                kelly_half=0.25,
+                constraint_violations=[],
+                circuit_breaker_level=0,
+                risk_adjusted=False,
+            )
 
         kelly, is_tradeable, overlay_warning = apply_regime_overlay(
             self._regime_overlay,
@@ -297,7 +319,7 @@ class PredictionEngine:
         market_features: pd.DataFrame | None,
         warnings: list[str],
     ) -> tuple[str, np.ndarray]:
-        if market_features is None:
+        if self._regime is None or market_features is None:
             warnings.append("No market_features provided; regime detection skipped")
             return "unknown", _UNIFORM_REGIME.copy()
         try:
@@ -331,9 +353,11 @@ class PredictionEngine:
                 failed.append(name)
 
         n_success = len(results)
-        if n_success < _MIN_SUCCESSFUL_MODELS:
+        min_required = min(_MIN_SUCCESSFUL_MODELS, len(self._models))
+        if n_success < min_required:
             raise PredictionError(
-                f"Only {n_success} base model(s) succeeded, fewer than 2 required. Failed: {failed}"
+                f"Only {n_success} base model(s) succeeded, fewer than {min_required} required. "
+                f"Failed: {failed}"
             )
 
         n = features.shape[0]
@@ -353,6 +377,8 @@ class PredictionEngine:
         ensemble_result: EnsembleResult,
         warnings: list[str],
     ) -> tuple[float, bool]:
+        if self._meta_model is None:
+            return float(ensemble_result.confidence[-1]), True
         try:
             meta_result = self._meta_model.predict(
                 features,
@@ -370,6 +396,8 @@ class PredictionEngine:
         features: pd.DataFrame,
         warnings: list[str],
     ) -> tuple[float, float, float]:
+        if self._conformal is None:
+            return float("nan"), float("nan"), float("nan")
         try:
             result = self._conformal.predict(features)
             return (
