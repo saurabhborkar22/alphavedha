@@ -221,6 +221,7 @@ class ScanResponseModel(BaseModel):
     # non-tradeable names so the dashboard can always show top-N cards.
     all_candidates: list[ScanStockItem] = []
     total_scanned: int
+    is_demo: bool = False
 
 
 class StockSearchResult(BaseModel):
@@ -401,6 +402,7 @@ def _demo_scan(tier: str, top_n: int) -> ScanResponseModel:
         excluded=[],
         all_candidates=sorted(stocks, key=lambda x: x.confidence, reverse=True),
         total_scanned=len(stocks),
+        is_demo=True,
     )
 
 

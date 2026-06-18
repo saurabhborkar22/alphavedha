@@ -50,6 +50,7 @@ class RegimeDetector:
         # Normalization params (fit on training data, applied at predict time)
         self._feature_mean: np.ndarray | None = None
         self._feature_std: np.ndarray | None = None
+        self._n_features: int = 2
 
     @property
     def state_mapping(self) -> dict[str, int]:
@@ -61,13 +62,20 @@ class RegimeDetector:
             raise ModelTrainingError("RegimeDetector is not fitted.")
         return self._hmm
 
-    def fit(self, returns: pd.Series, volatility: pd.Series) -> dict[str, float]:
-        X = self._prepare_input(returns, volatility)
+    def fit(
+        self,
+        returns: pd.Series,
+        volatility: pd.Series,
+        extra_features: pd.DataFrame | None = None,
+    ) -> dict[str, float]:
+        X = self._prepare_input(returns, volatility, extra_features)
         if np.any(~np.isfinite(X)):
             raise DataQualityError("Input contains NaN or Inf values")
         n_samples = X.shape[0]
         if n_samples < _MIN_SAMPLES:
             raise InsufficientDataError(f"Need at least {_MIN_SAMPLES} samples, got {n_samples}")
+
+        self._n_features = X.shape[1]
 
         # Standardize features for numerical stability with full covariance
         self._feature_mean = X.mean(axis=0)
@@ -97,15 +105,21 @@ class RegimeDetector:
         logger.info(
             "regime_detector_fitted",
             n_samples=n_samples,
+            n_features=self._n_features,
             metrics=self._training_metrics,
         )
         return dict(self._training_metrics)
 
-    def predict(self, returns: pd.Series, volatility: pd.Series) -> RegimeResult:
+    def predict(
+        self,
+        returns: pd.Series,
+        volatility: pd.Series,
+        extra_features: pd.DataFrame | None = None,
+    ) -> RegimeResult:
         if not self._is_fitted or self._hmm is None:
             raise ModelTrainingError("RegimeDetector is not fitted. Call fit() first.")
 
-        X = self._prepare_input(returns, volatility)
+        X = self._prepare_input(returns, volatility, extra_features)
         if X.shape[0] == 0:
             raise InsufficientDataError("Cannot predict with empty input")
         if np.any(~np.isfinite(X)):
@@ -166,6 +180,7 @@ class RegimeDetector:
             "metrics": self._training_metrics,
             "feature_mean": self._feature_mean.tolist() if self._feature_mean is not None else None,
             "feature_std": self._feature_std.tolist() if self._feature_std is not None else None,
+            "n_features": self._n_features,
         }
         (directory / "metadata.json").write_text(json.dumps(metadata, indent=2))
         logger.info("regime_detector_saved", path=str(directory))
@@ -188,6 +203,7 @@ class RegimeDetector:
         detector._state_mapping = {k: int(v) for k, v in metadata["state_mapping"].items()}
         detector._reverse_mapping = {v: k for k, v in detector._state_mapping.items()}
         detector._training_metrics = metadata.get("metrics", {})
+        detector._n_features = metadata.get("n_features", 2)
         if metadata.get("feature_mean") is not None:
             detector._feature_mean = np.array(metadata["feature_mean"])
         if metadata.get("feature_std") is not None:
@@ -197,10 +213,25 @@ class RegimeDetector:
         logger.info("regime_detector_loaded", path=str(directory))
         return detector
 
-    def _prepare_input(self, returns: pd.Series, volatility: pd.Series) -> np.ndarray:
-        return np.column_stack(
+    def _prepare_input(
+        self,
+        returns: pd.Series,
+        volatility: pd.Series,
+        extra_features: pd.DataFrame | None = None,
+    ) -> np.ndarray:
+        base = np.column_stack(
             [returns.values.astype(np.float64), volatility.values.astype(np.float64)]
         )
+        if extra_features is not None and not extra_features.empty:
+            extra = extra_features.values.astype(np.float64)
+            if extra.shape[0] == base.shape[0]:
+                return np.column_stack([base, extra])
+            logger.warning(
+                "regime_extra_features_length_mismatch",
+                base=base.shape[0],
+                extra=extra.shape[0],
+            )
+        return base
 
     def _label_states(self) -> None:
         if self._hmm is None:
@@ -267,7 +298,7 @@ class RegimeDetector:
 
     def _count_params(self) -> int:
         n = self._config.n_states
-        n_features = 2
+        n_features = self._n_features
         start_probs = n - 1
         transition = n * (n - 1)
         means = n * n_features

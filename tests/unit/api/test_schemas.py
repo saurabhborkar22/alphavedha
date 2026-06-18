@@ -49,6 +49,14 @@ class TestPredictionResponse:
         assert resp.risk.position_size_pct == 5.0
         assert resp.model_version == "v0.1.0"
         assert resp.warnings == ["test warning"]
+        assert resp.is_demo is False
+
+    def test_is_demo_flag_propagates(self) -> None:
+        pred = _make_prediction("TCS")
+        resp_real = PredictionResponse.from_stock_prediction(pred, is_demo=False)
+        resp_demo = PredictionResponse.from_stock_prediction(pred, is_demo=True)
+        assert resp_real.is_demo is False
+        assert resp_demo.is_demo is True
 
     def test_direction_labels(self) -> None:
         buy = PredictionResponse.from_stock_prediction(_make_prediction(direction=1))

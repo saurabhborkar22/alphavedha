@@ -43,10 +43,13 @@ class PredictionResponse(BaseModel):
     trade_setup: TradeSetup
     model_version: str
     generated_at: datetime
+    is_demo: bool = False
     warnings: list[str] = Field(default_factory=list)
 
     @classmethod
-    def from_stock_prediction(cls, pred: StockPrediction) -> PredictionResponse:
+    def from_stock_prediction(
+        cls, pred: StockPrediction, *, is_demo: bool = False
+    ) -> PredictionResponse:
         return cls(
             symbol=pred.symbol,
             direction=pred.direction,
@@ -72,6 +75,7 @@ class PredictionResponse(BaseModel):
             ),
             model_version=pred.model_version,
             generated_at=pred.timestamp,
+            is_demo=is_demo,
             warnings=pred.warnings,
         )
 
@@ -89,6 +93,7 @@ class ScanResponse(BaseModel):
     total_scanned: int
     model_version: str
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    is_demo: bool = False
 
 
 class BatchRequest(BaseModel):
@@ -102,6 +107,7 @@ class BatchResponse(BaseModel):
     failed: list[dict[str, str]] = Field(default_factory=list)
     model_version: str
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    is_demo: bool = False
 
 
 class ErrorDetail(BaseModel):
