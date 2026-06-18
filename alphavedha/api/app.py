@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from alphavedha.api.deps import set_service
 from alphavedha.api.routes import (
@@ -57,6 +60,33 @@ def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRespons
         },
         headers={"Retry-After": str(getattr(exc, "retry_after", 60))},
     )
+
+
+class _IsDemoMiddleware(BaseHTTPMiddleware):
+    """Inject ``is_demo`` into every JSON response body."""
+
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
+        response = await call_next(request)
+        if response.headers.get("content-type", "").startswith("application/json") and hasattr(
+            request.app.state, "is_demo"
+        ):
+            body = b""
+            async for chunk in response.body_iterator:
+                body += chunk if isinstance(chunk, bytes) else chunk.encode()
+            try:
+                data = json.loads(body)
+                if isinstance(data, dict) and "is_demo" not in data:
+                    data["is_demo"] = request.app.state.is_demo
+                body = json.dumps(data).encode()
+            except (json.JSONDecodeError, TypeError):
+                pass
+            return Response(
+                content=body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type,
+            )
+        return response
 
 
 def create_app(demo: bool | None = None) -> FastAPI:
@@ -114,6 +144,8 @@ def create_app(demo: bool | None = None) -> FastAPI:
         )
 
     app.state.limiter = limiter
+    app.state.is_demo = demo
+    app.add_middleware(_IsDemoMiddleware)
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
     @app.exception_handler(SymbolNotFoundError)
