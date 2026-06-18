@@ -215,7 +215,6 @@ async def evaluate_stops(evaluation_date: str | None = None) -> dict[str, Any]:
 
         day_low = float(day_row["low"].iloc[-1])
         day_high = float(day_row["high"].iloc[-1])
-        day_close = float(day_row["close"].iloc[-1])
 
         exit_price: float | None = None
         exit_reason: str | None = None
