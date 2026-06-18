@@ -187,10 +187,12 @@ class TestRegimeDetectorExtraFeatures:
     ) -> None:
         returns, volatility = synthetic_regime_data
         rng = np.random.default_rng(99)
-        extra = pd.DataFrame({
-            "india_vix": rng.normal(18.0, 5.0, size=len(returns)).clip(8.0),
-            "fii_net": rng.normal(0.0, 1000.0, size=len(returns)),
-        })
+        extra = pd.DataFrame(
+            {
+                "india_vix": rng.normal(18.0, 5.0, size=len(returns)).clip(8.0),
+                "fii_net": rng.normal(0.0, 1000.0, size=len(returns)),
+            }
+        )
         detector = RegimeDetector(config=regime_config)
         metrics = detector.fit(returns, volatility, extra_features=extra)
         assert "log_likelihood" in metrics
@@ -208,10 +210,12 @@ class TestRegimeDetectorExtraFeatures:
     ) -> None:
         returns, volatility = synthetic_regime_data
         rng = np.random.default_rng(99)
-        extra = pd.DataFrame({
-            "india_vix": rng.normal(18.0, 5.0, size=len(returns)).clip(8.0),
-            "fii_net": rng.normal(0.0, 1000.0, size=len(returns)),
-        })
+        extra = pd.DataFrame(
+            {
+                "india_vix": rng.normal(18.0, 5.0, size=len(returns)).clip(8.0),
+                "fii_net": rng.normal(0.0, 1000.0, size=len(returns)),
+            }
+        )
         detector = RegimeDetector(config=regime_config)
         detector.fit(returns, volatility, extra_features=extra)
         result_before = detector.predict(returns, volatility, extra_features=extra)

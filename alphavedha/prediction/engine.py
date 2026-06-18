@@ -312,9 +312,7 @@ class PredictionEngine:
             warnings.append("No market_features provided; regime detection skipped")
             return "unknown", _UNIFORM_REGIME.copy()
         try:
-            extra_cols = [
-                c for c in market_features.columns if c not in ("returns", "volatility")
-            ]
+            extra_cols = [c for c in market_features.columns if c not in ("returns", "volatility")]
             extra = market_features[extra_cols] if extra_cols else None
             result = self._regime.predict(
                 returns=market_features["returns"],
