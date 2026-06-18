@@ -103,11 +103,7 @@ def apply_regime_overlay(
     restrict ``is_tradeable`` (never enables a trade the gate rejected).
     """
     kelly = min(kelly, overlay.kelly_cap)
-    if (
-        market_features is None
-        or len(market_features) == 0
-        or "returns" not in market_features
-    ):
+    if market_features is None or len(market_features) == 0 or "returns" not in market_features:
         return kelly, is_tradeable, None
     trend = float(market_features["returns"].tail(overlay.trend_lookback).mean())
     if trend < 0:
