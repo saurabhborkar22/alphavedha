@@ -885,3 +885,4 @@ week's tasks → one sentence: "biggest risk right now is ___".
 - 2026-06-13 — Plan created. Next: P0-D1 (hasher module). Blocker: none.
 - 2026-06-17 — OOS audit completed; prediction system structurally unprofitable.
 - 2026-06-18 — Added §3 (prediction system fixes, FIX-01 through FIX-12). Starting FIX-01.
+- 2026-06-18 — FIX-01/02/03 (PR #99), FIX-04 (PR #100), FIX-06 (PR #102), FIX-07 (PR #101), FIX-08 (PR #103), FIX-09 (PR #104), FIX-10 (PR #105) all merged. FIX-05 deferred (UI repo). FIX-11 script created. Next: P0-D1 (hasher module).
