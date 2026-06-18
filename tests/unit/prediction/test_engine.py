@@ -371,3 +371,22 @@ class TestPredictionEngine:
         )
         result = engine.predict("TCS", features, last_close=200.0)
         assert result.price_target_mid == pytest.approx(100.0)
+
+    def test_xgboost_only_baseline(self, features: pd.DataFrame) -> None:
+        engine = PredictionEngine(
+            xgboost=_mock_base_model("xgboost"),
+        )
+        result = engine.predict("TCS", features)
+        assert isinstance(result, StockPrediction)
+        assert result.direction == 1
+        assert result.magnitude == pytest.approx(0.03)
+        assert result.model_disagreement == 0.0
+        assert result.is_tradeable is True
+        assert np.isnan(result.price_target_mid)
+
+    def test_xgboost_only_fails_when_xgboost_fails(self, features: pd.DataFrame) -> None:
+        xgb = _mock_base_model("xgboost")
+        xgb.predict.side_effect = RuntimeError("XGB failed")
+        engine = PredictionEngine(xgboost=xgb)
+        with pytest.raises(PredictionError):
+            engine.predict("TCS", features)
