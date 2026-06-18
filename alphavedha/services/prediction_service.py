@@ -215,8 +215,50 @@ class PredictionService:
         if portfolio_returns.empty:
             return None
 
-        logger.info("market_features_built", rows=len(portfolio_returns))
-        return pd.DataFrame({"returns": portfolio_returns, "volatility": realized_vol})
+        result = pd.DataFrame({"returns": portfolio_returns, "volatility": realized_vol})
+
+        result = await self._enrich_market_features(result, start, today)
+
+        logger.info(
+            "market_features_built",
+            rows=len(result),
+            columns=list(result.columns),
+        )
+        return result
+
+    async def _enrich_market_features(
+        self,
+        mf: pd.DataFrame,
+        start: date,
+        end: date,
+    ) -> pd.DataFrame:
+        """Add India VIX and FII/DII net flow to market features."""
+        start_str = start.isoformat()
+        end_str = end.isoformat()
+
+        try:
+            from alphavedha.features.macro import fetch_macro_data
+
+            macro_df = await asyncio.to_thread(fetch_macro_data, start_str, end_str)
+            if macro_df is not None and not macro_df.empty and "vix" in macro_df.columns:
+                vix = macro_df["vix"].reindex(mf.index, method="ffill")
+                if vix.notna().sum() > 0:
+                    mf["india_vix"] = vix.ffill().fillna(vix.median())
+        except Exception as e:
+            logger.warning("market_features_vix_failed", error=str(e))
+
+        try:
+            from alphavedha.features.macro import load_fii_dii_for_features
+
+            fii_df = await load_fii_dii_for_features(start_str, end_str)
+            if not fii_df.empty and "fii_net" in fii_df.columns:
+                fii = fii_df["fii_net"].reindex(mf.index, method="ffill")
+                if fii.notna().sum() > 0:
+                    mf["fii_net"] = fii.fillna(0.0)
+        except Exception as e:
+            logger.warning("market_features_fii_failed", error=str(e))
+
+        return mf
 
     async def _get_symbols(self, tier: str) -> list[str]:
         if self._registry.is_demo:

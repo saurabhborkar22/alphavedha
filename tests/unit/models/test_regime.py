@@ -177,3 +177,60 @@ class TestRegimeDetectorPersistence:
 
         assert result_before.current_regime == result_after.current_regime
         np.testing.assert_array_equal(result_before.regime_history, result_after.regime_history)
+
+
+class TestRegimeDetectorExtraFeatures:
+    def test_fit_predict_with_extra_features(
+        self,
+        synthetic_regime_data: tuple[pd.Series, pd.Series],
+        regime_config: RegimeConfig,
+    ) -> None:
+        returns, volatility = synthetic_regime_data
+        rng = np.random.default_rng(99)
+        extra = pd.DataFrame({
+            "india_vix": rng.normal(18.0, 5.0, size=len(returns)).clip(8.0),
+            "fii_net": rng.normal(0.0, 1000.0, size=len(returns)),
+        })
+        detector = RegimeDetector(config=regime_config)
+        metrics = detector.fit(returns, volatility, extra_features=extra)
+        assert "log_likelihood" in metrics
+        assert detector._n_features == 4
+
+        result = detector.predict(returns, volatility, extra_features=extra)
+        assert isinstance(result, RegimeResult)
+        assert result.state_probabilities.shape == (4,)
+
+    def test_extra_features_save_load_roundtrip(
+        self,
+        synthetic_regime_data: tuple[pd.Series, pd.Series],
+        regime_config: RegimeConfig,
+        tmp_path: Path,
+    ) -> None:
+        returns, volatility = synthetic_regime_data
+        rng = np.random.default_rng(99)
+        extra = pd.DataFrame({
+            "india_vix": rng.normal(18.0, 5.0, size=len(returns)).clip(8.0),
+            "fii_net": rng.normal(0.0, 1000.0, size=len(returns)),
+        })
+        detector = RegimeDetector(config=regime_config)
+        detector.fit(returns, volatility, extra_features=extra)
+        result_before = detector.predict(returns, volatility, extra_features=extra)
+
+        save_dir = tmp_path / "regime_extra"
+        detector.save(save_dir)
+        loaded = RegimeDetector.load(save_dir)
+        assert loaded._n_features == 4
+
+        result_after = loaded.predict(returns, volatility, extra_features=extra)
+        assert result_before.current_regime == result_after.current_regime
+
+    def test_predict_without_extra_when_trained_with_two(
+        self,
+        synthetic_regime_data: tuple[pd.Series, pd.Series],
+        regime_config: RegimeConfig,
+    ) -> None:
+        returns, volatility = synthetic_regime_data
+        detector = RegimeDetector(config=regime_config)
+        detector.fit(returns, volatility)
+        result = detector.predict(returns, volatility, extra_features=None)
+        assert isinstance(result, RegimeResult)
