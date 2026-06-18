@@ -207,7 +207,9 @@ async def evaluate_stops(evaluation_date: str | None = None) -> dict[str, Any]:
         if ohlcv.empty:
             continue
 
-        day_row = ohlcv[ohlcv.index.date == eval_date] if hasattr(ohlcv.index, "date") else ohlcv.tail(1)
+        day_row = (
+            ohlcv[ohlcv.index.date == eval_date] if hasattr(ohlcv.index, "date") else ohlcv.tail(1)
+        )
         if day_row.empty:
             continue
 

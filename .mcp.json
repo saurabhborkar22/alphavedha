@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://alphavedha:password@localhost:5435/alphavedha"
+      ],
+      "env": {}
+    }
+  }
+}
