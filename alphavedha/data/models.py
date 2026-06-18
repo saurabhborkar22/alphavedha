@@ -10,9 +10,11 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -366,3 +368,161 @@ class IntradayOHLCV(Base):
     tick_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+
+# ---------------------------------------------------------------------------
+# Intel tables — disclosure ingestion + LLM extraction (Phase 1 & 2)
+# ---------------------------------------------------------------------------
+
+
+class Disclosure(Base):
+    """Raw normalized exchange filings — one row per filing."""
+
+    __tablename__ = "disclosures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    source: Mapped[str] = mapped_column(String(10), nullable=False)
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    headline: Mapped[str] = mapped_column(String(1000), nullable=False)
+    filed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "source", "filed_at", "headline", name="uq_disclosure"),
+        Index("ix_disclosures_symbol_filed", "symbol", "filed_at"),
+        Index("ix_disclosures_filed", "filed_at"),
+        Index("ix_disclosures_category", "category"),
+    )
+
+
+class DisclosureEvent(Base):
+    """LLM-structured events extracted from disclosures."""
+
+    __tablename__ = "disclosure_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    disclosure_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("disclosures.id", ondelete="CASCADE"), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    direction: Mapped[int] = mapped_column(Integer, nullable=False)
+    materiality: Mapped[int] = mapped_column(Integer, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    red_flags: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    llm_model: Mapped[str] = mapped_column(String(50), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    extracted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        Index("ix_disclosure_events_symbol", "symbol"),
+        Index("ix_disclosure_events_type", "event_type"),
+        Index("ix_disclosure_events_disclosure", "disclosure_id"),
+    )
+
+
+class Transcript(Base):
+    """Concall transcripts — Reg 30 LODR filings."""
+
+    __tablename__ = "transcripts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    fiscal_quarter: Mapped[str] = mapped_column(String(10), nullable=False)
+    filed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sections: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "fiscal_quarter", name="uq_transcript"),
+        Index("ix_transcripts_symbol", "symbol"),
+        Index("ix_transcripts_filed", "filed_at"),
+    )
+
+
+class RatingEvent(Base):
+    """Credit rating actions from CRISIL/ICRA/CARE/India Ratings."""
+
+    __tablename__ = "rating_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    agency: Mapped[str] = mapped_column(String(30), nullable=False)
+    action: Mapped[str] = mapped_column(String(30), nullable=False)
+    rating_from: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    rating_to: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    outlook: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    rationale_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "agency", "filed_at", name="uq_rating_event"),
+        Index("ix_rating_events_symbol", "symbol"),
+        Index("ix_rating_events_filed", "filed_at"),
+    )
+
+
+class PledgeSnapshot(Base):
+    """Promoter pledge history from SAST disclosures."""
+
+    __tablename__ = "pledge_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    promoter_pledge_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "as_of", name="uq_pledge_snapshot"),
+        Index("ix_pledge_snapshots_symbol", "symbol"),
+    )
+
+
+class SurveillanceFlag(Base):
+    """Exchange surveillance list membership (ASM/GSM)."""
+
+    __tablename__ = "surveillance_flags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    list_name: Mapped[str] = mapped_column(String(20), nullable=False)
+    added_on: Mapped[date] = mapped_column(Date, nullable=False)
+    removed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "list_name", "added_on", name="uq_surveillance_flag"),
+        Index("ix_surveillance_flags_symbol", "symbol"),
+    )
+
+
+class BulkBlockDeal(Base):
+    """Bulk and block deals from exchange daily reports."""
+
+    __tablename__ = "bulk_block_deals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    deal_date: Mapped[date] = mapped_column(Date, nullable=False)
+    deal_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    client_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    trade_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        Index("ix_bulk_block_deals_symbol", "symbol"),
+        Index("ix_bulk_block_deals_date", "deal_date"),
+    )
