@@ -154,6 +154,40 @@ class TestPaperTradingSchemas:
         )
         assert rec.regime == "bull"
 
+    def test_paper_trade_request_with_stop_levels(self) -> None:
+        req = PaperTradeRequest(
+            symbol="TCS.NS",
+            predicted_direction=1,
+            predicted_magnitude=0.02,
+            confidence=0.75,
+            model_version="v1.0",
+            entry_price=3450.0,
+            stop_loss_price=3380.0,
+            take_profit_price=3550.0,
+        )
+        assert req.stop_loss_price == 3380.0
+        assert req.take_profit_price == 3550.0
+
+    def test_prediction_record_with_exit_reason(self) -> None:
+        rec = PredictionRecord(
+            symbol="TCS.NS",
+            prediction_date="2024-03-15",
+            predicted_direction=1,
+            predicted_magnitude=0.02,
+            confidence=0.75,
+            model_version="v1.0",
+            regime="bull",
+            entry_price=3450.0,
+            stop_loss_price=3380.0,
+            take_profit_price=3550.0,
+            exit_price=3380.0,
+            exit_reason="stop_loss",
+            actual_return=-0.0203,
+            is_correct=False,
+        )
+        assert rec.exit_reason == "stop_loss"
+        assert rec.stop_loss_price == 3380.0
+
 
 class TestDashboardSchemas:
     def test_daily_pnl_record(self) -> None:

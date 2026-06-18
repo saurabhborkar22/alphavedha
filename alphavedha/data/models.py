@@ -235,7 +235,10 @@ class PaperTrade(Base):
     # threshold for those.
     is_tradeable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_loss_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    take_profit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
     actual_return: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
