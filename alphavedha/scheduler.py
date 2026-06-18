@@ -29,6 +29,7 @@ logger = structlog.get_logger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
 PREDICTION_TIME = "08:30"
+PREDICTION_HASH_TIME = "08:40"  # hash daily predictions after 08:30 persist, before 09:15 open
 EVALUATION_TIME = "15:45"
 DATA_REFRESH_TIME = "17:00"  # daily OHLCV ingestion after market close (15:30 IST)
 FII_DII_INGESTION_TIME = "18:30"  # NSE publishes FII/DII participation data by ~17:30 IST
@@ -360,6 +361,39 @@ class AlphaVedhaScheduler:
         except Exception as e:
             result.error = str(e)
             logger.error("scheduler_job_failed", job="daily_predictions", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_prediction_hash(self) -> JobResult:
+        """Hash today's paper trades and publish the proof."""
+        result = JobResult(job_name="prediction_hash", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("prediction_hash_skipped", reason="weekend")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="prediction_hash")
+
+        try:
+            if self._demo:
+                logger.info("prediction_hash_skipped", reason="demo mode")
+            else:
+                from alphavedha.verification.publisher import publish_daily_proof
+
+                proof = _run_async(publish_daily_proof())
+                result.symbols_processed = proof.get("n_predictions", 0)
+                logger.info("prediction_hash_complete", **proof)
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="prediction_hash", error=str(e))
 
         result.finished_at = _now_ist()
         self._record_job(result)
@@ -811,6 +845,7 @@ class AlphaVedhaScheduler:
     def setup_schedule(self) -> None:
         """Register all jobs with the schedule library."""
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
+        schedule.every().day.at(PREDICTION_HASH_TIME).do(self.run_prediction_hash)
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
         schedule.every().day.at(DATA_REFRESH_TIME).do(self.run_data_refresh)
@@ -852,6 +887,7 @@ class AlphaVedhaScheduler:
         logger.info(
             "scheduler_configured",
             prediction_time=PREDICTION_TIME,
+            prediction_hash_time=PREDICTION_HASH_TIME,
             evaluation_time=EVALUATION_TIME,
             data_refresh_time=DATA_REFRESH_TIME,
             fii_dii_ingestion_time=FII_DII_INGESTION_TIME,
