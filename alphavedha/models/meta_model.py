@@ -202,6 +202,70 @@ class MetaLabelingModel:
         X_aug["ensemble_confidence"] = ensemble_confidence
         return X_aug
 
+    def validate_monotonicity(
+        self,
+        X_features: pd.DataFrame,
+        ensemble_direction: np.ndarray,
+        ensemble_confidence: np.ndarray,
+        y_correct: np.ndarray,
+        n_bins: int = 5,
+    ) -> dict[str, Any]:
+        """Check that higher meta-confidence correlates with higher win rate.
+
+        Bins OOS predictions by meta-confidence and returns per-bin win rates.
+        A well-calibrated meta-model should show monotonically increasing
+        win rates. Anti-predictive (inverted) or flat win rates indicate the
+        model should be bypassed.
+
+        Returns dict with bins, is_monotonic flag, and rank correlation.
+        """
+        result = self.predict(X_features, ensemble_direction, ensemble_confidence)
+        confidences = result.meta_confidence
+        n = len(confidences)
+
+        bin_edges = np.quantile(confidences, np.linspace(0.0, 1.0, n_bins + 1))
+        bin_edges[0] = confidences.min() - 1e-9
+        bin_edges[-1] = confidences.max() + 1e-9
+        bins: list[dict[str, Any]] = []
+        win_rates: list[float] = []
+
+        for i in range(n_bins):
+            lo, hi = bin_edges[i], bin_edges[i + 1]
+            mask = (confidences >= lo) & (confidences < hi)
+            count = int(mask.sum())
+            if count > 0:
+                wr = float(y_correct[mask].mean())
+            else:
+                wr = float("nan")
+            bins.append({
+                "bin": f"{lo:.4f}-{hi:.4f}",
+                "count": count,
+                "win_rate": wr,
+            })
+            if count > 0:
+                win_rates.append(wr)
+
+        is_monotonic = all(
+            win_rates[i] <= win_rates[i + 1] for i in range(len(win_rates) - 1)
+        ) if len(win_rates) >= 2 else False
+
+        from scipy.stats import spearmanr
+
+        if len(win_rates) >= 3:
+            rho, p_value = spearmanr(range(len(win_rates)), win_rates)
+        else:
+            rho, p_value = float("nan"), float("nan")
+
+        return {
+            "n_samples": n,
+            "n_bins": n_bins,
+            "bins": bins,
+            "is_monotonic": is_monotonic,
+            "spearman_rho": float(rho),
+            "spearman_p": float(p_value),
+            "overall_win_rate": float(y_correct.mean()),
+        }
+
     @staticmethod
     def _validate_inputs(X: pd.DataFrame) -> None:
         if np.any(~np.isfinite(X.values)):

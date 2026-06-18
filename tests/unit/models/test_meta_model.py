@@ -159,3 +159,44 @@ class TestMetaLabelingModelPersistence:
             result_before.meta_confidence, result_after.meta_confidence, atol=1e-6
         )
         np.testing.assert_array_equal(result_before.is_tradeable, result_after.is_tradeable)
+
+
+class TestMetaLabelingMonotonicity:
+    def test_validate_monotonicity_returns_expected_keys(
+        self,
+        synthetic_meta_data: tuple[pd.DataFrame, np.ndarray, np.ndarray, pd.Series],
+        meta_config: MetaLabelingConfig,
+    ) -> None:
+        X, ens_dir, ens_conf, y_correct = synthetic_meta_data
+        model = MetaLabelingModel(config=meta_config)
+        model.fit(X, ens_dir, ens_conf, y_correct)
+
+        report = model.validate_monotonicity(
+            X, ens_dir, ens_conf, y_correct.values, n_bins=5
+        )
+        assert "n_samples" in report
+        assert "bins" in report
+        assert "is_monotonic" in report
+        assert "spearman_rho" in report
+        assert "overall_win_rate" in report
+        assert len(report["bins"]) == 5
+        assert report["n_samples"] == len(X)
+
+    def test_monotonic_model_has_positive_correlation(
+        self,
+        meta_config: MetaLabelingConfig,
+    ) -> None:
+        rng = np.random.default_rng(123)
+        n = 500
+        X = pd.DataFrame(rng.standard_normal((n, 5)), columns=[f"f{i}" for i in range(5)])
+        ens_dir = np.ones(n)
+        ens_conf = rng.uniform(0.3, 0.95, size=n)
+        y_correct = pd.Series((ens_conf > 0.6).astype(int), name="correct")
+
+        model = MetaLabelingModel(config=meta_config)
+        model.fit(X, ens_dir, ens_conf, y_correct)
+        report = model.validate_monotonicity(
+            X, ens_dir, ens_conf, y_correct.values, n_bins=3
+        )
+        assert not np.isnan(report["spearman_rho"])
+        assert report["spearman_rho"] > 0
