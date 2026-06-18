@@ -233,10 +233,7 @@ class MetaLabelingModel:
             lo, hi = bin_edges[i], bin_edges[i + 1]
             mask = (confidences >= lo) & (confidences < hi)
             count = int(mask.sum())
-            if count > 0:
-                wr = float(y_correct[mask].mean())
-            else:
-                wr = float("nan")
+            wr = float(y_correct[mask].mean()) if count > 0 else float("nan")
             bins.append(
                 {
                     "bin": f"{lo:.4f}-{hi:.4f}",
