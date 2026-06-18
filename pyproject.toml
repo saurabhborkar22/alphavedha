@@ -47,6 +47,9 @@ dependencies = [
     "transformers>=4.40",
     "tokenizers>=0.19",
 
+    # Document Processing
+    "PyMuPDF>=1.24",
+
     # API
     # Pinned: fastapi>=0.137 ships starlette's _IncludedRouter, which breaks
     # prometheus-instrumentator route iteration (AttributeError: no attribute
