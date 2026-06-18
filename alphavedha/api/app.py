@@ -67,9 +67,8 @@ class _IsDemoMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         response = await call_next(request)
-        if (
-            response.headers.get("content-type", "").startswith("application/json")
-            and hasattr(request.app.state, "is_demo")
+        if response.headers.get("content-type", "").startswith("application/json") and hasattr(
+            request.app.state, "is_demo"
         ):
             body = b""
             async for chunk in response.body_iterator:

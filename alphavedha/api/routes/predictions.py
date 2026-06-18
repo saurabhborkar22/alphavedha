@@ -82,8 +82,7 @@ async def scan_tier(
     return ScanResponse(
         tier=tier,
         buy_candidates=[
-            PredictionResponse.from_stock_prediction(p, is_demo=demo)
-            for p in result.buy_candidates
+            PredictionResponse.from_stock_prediction(p, is_demo=demo) for p in result.buy_candidates
         ],
         sell_candidates=[
             PredictionResponse.from_stock_prediction(p, is_demo=demo)
