@@ -756,6 +756,8 @@ async def store_paper_trade(row: dict) -> int:
             "regime": row.get("regime"),
             "is_tradeable": row.get("is_tradeable"),
             "entry_price": row.get("entry_price"),
+            "stop_loss_price": row.get("stop_loss_price"),
+            "take_profit_price": row.get("take_profit_price"),
         }
         stmt = (
             pg_insert(PaperTrade)
@@ -777,6 +779,7 @@ async def update_paper_trade_outcome(
     exit_price: float,
     actual_return: float,
     is_correct: bool,
+    exit_reason: str | None = None,
 ) -> None:
     """Update a paper trade with the actual outcome."""
     from sqlalchemy import update
@@ -784,17 +787,20 @@ async def update_paper_trade_outcome(
     session_factory = get_session_factory()
 
     async with session_factory() as session:
+        values: dict[str, float | bool | str | None] = {
+            "exit_price": exit_price,
+            "actual_return": actual_return,
+            "is_correct": is_correct,
+        }
+        if exit_reason is not None:
+            values["exit_reason"] = exit_reason
         stmt = (
             update(PaperTrade)
             .where(
                 PaperTrade.symbol == symbol,
                 PaperTrade.prediction_date == prediction_date,
             )
-            .values(
-                exit_price=exit_price,
-                actual_return=actual_return,
-                is_correct=is_correct,
-            )
+            .values(**values)
         )
         await session.execute(stmt)
         await session.commit()
@@ -836,7 +842,10 @@ async def load_paper_trades(
                 "regime": r.regime,
                 "is_tradeable": r.is_tradeable,
                 "entry_price": r.entry_price,
+                "stop_loss_price": r.stop_loss_price,
+                "take_profit_price": r.take_profit_price,
                 "exit_price": r.exit_price,
+                "exit_reason": r.exit_reason,
                 "actual_return": r.actual_return,
                 "is_correct": r.is_correct,
             }

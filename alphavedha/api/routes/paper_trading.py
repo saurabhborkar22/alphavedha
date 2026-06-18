@@ -31,6 +31,8 @@ class PaperTradeRequest(BaseModel):
     regime: str | None = None
     is_tradeable: bool | None = None
     entry_price: float | None = None
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
 
 
 class PaperTradeResponse(BaseModel):
@@ -48,6 +50,7 @@ class TradeOutcomeRequest(BaseModel):
     exit_price: float
     actual_return: float
     is_correct: bool
+    exit_reason: str | None = None
 
 
 class TrackStatsOut(BaseModel):
@@ -92,7 +95,10 @@ class PredictionRecord(BaseModel):
     regime: str | None
     is_tradeable: bool | None = None
     entry_price: float | None
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
     exit_price: float | None
+    exit_reason: str | None = None
     actual_return: float | None
     is_correct: bool | None
 
@@ -114,6 +120,8 @@ async def record_prediction(req: PaperTradeRequest) -> PaperTradeResponse:
         "regime": req.regime,
         "is_tradeable": req.is_tradeable,
         "entry_price": req.entry_price,
+        "stop_loss_price": req.stop_loss_price,
+        "take_profit_price": req.take_profit_price,
     }
 
     try:
@@ -145,12 +153,111 @@ async def record_outcome(req: TradeOutcomeRequest) -> dict[str, str]:
             exit_price=req.exit_price,
             actual_return=req.actual_return,
             is_correct=req.is_correct,
+            exit_reason=req.exit_reason,
         )
     except Exception as e:
         logger.error("paper_outcome_failed", error=str(e))
         raise HTTPException(status_code=500, detail="Failed to update outcome") from None
 
     return {"status": "updated", "symbol": req.symbol, "date": req.prediction_date}
+
+
+@router.post("/evaluate-stops")
+async def evaluate_stops(evaluation_date: str | None = None) -> dict[str, Any]:
+    """Check open paper trades for stop-loss or take-profit hits.
+
+    Compares each trade's stop_loss_price and take_profit_price against
+    the day's OHLCV high/low. For long trades, a low <= stop_loss triggers
+    a stop-out; for shorts, a high >= stop_loss triggers it. Similarly for
+    take-profit (high >= target for longs, low <= target for shorts).
+    """
+    from alphavedha.data.store import load_ohlcv, load_paper_trades, update_paper_trade_outcome
+
+    eval_date = date.fromisoformat(evaluation_date) if evaluation_date else date.today()
+    trades_df = await load_paper_trades()
+
+    if trades_df.empty:
+        return {"evaluated": 0, "stopped_out": 0, "target_hit": 0}
+
+    open_trades = trades_df[trades_df["exit_price"].isna()].copy()
+    if open_trades.empty:
+        return {"evaluated": 0, "stopped_out": 0, "target_hit": 0}
+
+    stopped = 0
+    target_hit = 0
+    evaluated = 0
+
+    for _, trade in open_trades.iterrows():
+        symbol = trade["symbol"]
+        entry = trade.get("entry_price")
+        sl = trade.get("stop_loss_price")
+        tp = trade.get("take_profit_price")
+        direction = trade["predicted_direction"]
+
+        if entry is None or (sl is None and tp is None):
+            continue
+
+        try:
+            from datetime import timedelta
+
+            ohlcv = await load_ohlcv(symbol, eval_date - timedelta(days=5), eval_date)
+        except Exception:
+            continue
+
+        if ohlcv.empty:
+            continue
+
+        day_row = ohlcv[ohlcv.index.date == eval_date] if hasattr(ohlcv.index, "date") else ohlcv.tail(1)
+        if day_row.empty:
+            continue
+
+        day_low = float(day_row["low"].iloc[-1])
+        day_high = float(day_row["high"].iloc[-1])
+        day_close = float(day_row["close"].iloc[-1])
+
+        exit_price: float | None = None
+        exit_reason: str | None = None
+
+        if direction == 1:
+            if sl is not None and day_low <= sl:
+                exit_price = sl
+                exit_reason = "stop_loss"
+                stopped += 1
+            elif tp is not None and day_high >= tp:
+                exit_price = tp
+                exit_reason = "take_profit"
+                target_hit += 1
+        elif direction == -1:
+            if sl is not None and day_high >= sl:
+                exit_price = sl
+                exit_reason = "stop_loss"
+                stopped += 1
+            elif tp is not None and day_low <= tp:
+                exit_price = tp
+                exit_reason = "take_profit"
+                target_hit += 1
+
+        if exit_price is not None:
+            actual_return = (exit_price - entry) / entry * direction
+            is_correct = actual_return > 0
+            pred_date = trade["prediction_date"]
+            if not isinstance(pred_date, date):
+                pred_date = date.fromisoformat(str(pred_date))
+
+            try:
+                await update_paper_trade_outcome(
+                    symbol=symbol,
+                    prediction_date=pred_date,
+                    exit_price=exit_price,
+                    actual_return=actual_return,
+                    is_correct=is_correct,
+                    exit_reason=exit_reason,
+                )
+                evaluated += 1
+            except Exception as e:
+                logger.error("stop_eval_update_failed", symbol=symbol, error=str(e))
+
+    return {"evaluated": evaluated, "stopped_out": stopped, "target_hit": target_hit}
 
 
 def _track_stats_out(stats: TrackStats) -> TrackStatsOut:
@@ -259,7 +366,10 @@ async def list_trades(
             regime=row.get("regime"),
             is_tradeable=row.get("is_tradeable"),
             entry_price=row.get("entry_price"),
+            stop_loss_price=row.get("stop_loss_price"),
+            take_profit_price=row.get("take_profit_price"),
             exit_price=row.get("exit_price"),
+            exit_reason=row.get("exit_reason"),
             actual_return=row.get("actual_return"),
             is_correct=row.get("is_correct"),
         )
