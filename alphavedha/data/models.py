@@ -334,6 +334,23 @@ class CorporateAnnouncement(Base):
     )
 
 
+class PredictionProof(Base):
+    """Cryptographic proof that predictions existed before market open."""
+
+    __tablename__ = "prediction_proofs"
+
+    proof_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    n_predictions: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload_json: Mapped[str | None] = mapped_column(String, nullable=True)
+    ots_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    git_commit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    revealed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (Index("ix_prediction_proofs_date", "proof_date"),)
+
+
 class IntradayOHLCV(Base):
     """Live intraday OHLCV snapshot — one row per symbol per trading day, updated in-place by the polling loop."""
 
