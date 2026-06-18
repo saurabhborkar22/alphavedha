@@ -33,6 +33,7 @@ PREDICTION_HASH_TIME = "08:40"  # hash daily predictions after 08:30 persist, be
 EVALUATION_TIME = "15:45"
 DATA_REFRESH_TIME = "17:00"  # daily OHLCV ingestion after market close (15:30 IST)
 FII_DII_INGESTION_TIME = "18:30"  # NSE publishes FII/DII participation data by ~17:30 IST
+BHAVCOPY_INGESTION_TIME = "18:45"  # after FII/DII, before BSE weekly jobs
 DRIFT_CHECK_DAY = "saturday"
 DRIFT_CHECK_TIME = "20:00"
 RETRAIN_DAY = "saturday"
@@ -511,6 +512,44 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_bhavcopy_ingestion(self) -> JobResult:
+        """Ingest today's NSE bhavcopy — whole-market EOD OHLCV in one file."""
+        result = JobResult(job_name="daily_bhavcopy_ingestion", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("bhavcopy_ingestion_skipped", reason="weekend")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="daily_bhavcopy_ingestion")
+
+        try:
+            if self._demo:
+                logger.info("bhavcopy_ingestion_skipped", reason="demo mode")
+            else:
+                from alphavedha.intel.collectors.bhavcopy import ingest_bhavcopy
+
+                today = _now_ist().date()
+                rows = _run_async(ingest_bhavcopy(today))
+                result.symbols_processed = rows
+                logger.info(
+                    "scheduler_job_complete",
+                    job="daily_bhavcopy_ingestion",
+                    rows=rows,
+                )
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="daily_bhavcopy_ingestion", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def run_drift_check(self) -> JobResult:
         """Check feature distribution drift across all monitored features."""
         result = JobResult(job_name="weekly_drift_check", started_at=_now_ist())
@@ -850,6 +889,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
         schedule.every().day.at(DATA_REFRESH_TIME).do(self.run_data_refresh)
         schedule.every().day.at(FII_DII_INGESTION_TIME).do(self.run_fii_dii_ingestion)
+        schedule.every().day.at(BHAVCOPY_INGESTION_TIME).do(self.run_bhavcopy_ingestion)
         schedule.every().day.at(XGBOOST_RETRAIN_TIME).do(self.run_daily_xgboost_retrain)
         schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
 
@@ -891,6 +931,7 @@ class AlphaVedhaScheduler:
             evaluation_time=EVALUATION_TIME,
             data_refresh_time=DATA_REFRESH_TIME,
             fii_dii_ingestion_time=FII_DII_INGESTION_TIME,
+            bhavcopy_ingestion_time=BHAVCOPY_INGESTION_TIME,
             xgboost_retrain_time=XGBOOST_RETRAIN_TIME,
             lstm_tft_retrain_day=LSTM_TFT_RETRAIN_DAY,
             drift_day=DRIFT_CHECK_DAY,
