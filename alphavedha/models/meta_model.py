@@ -237,17 +237,21 @@ class MetaLabelingModel:
                 wr = float(y_correct[mask].mean())
             else:
                 wr = float("nan")
-            bins.append({
-                "bin": f"{lo:.4f}-{hi:.4f}",
-                "count": count,
-                "win_rate": wr,
-            })
+            bins.append(
+                {
+                    "bin": f"{lo:.4f}-{hi:.4f}",
+                    "count": count,
+                    "win_rate": wr,
+                }
+            )
             if count > 0:
                 win_rates.append(wr)
 
-        is_monotonic = all(
-            win_rates[i] <= win_rates[i + 1] for i in range(len(win_rates) - 1)
-        ) if len(win_rates) >= 2 else False
+        is_monotonic = (
+            all(win_rates[i] <= win_rates[i + 1] for i in range(len(win_rates) - 1))
+            if len(win_rates) >= 2
+            else False
+        )
 
         from scipy.stats import spearmanr
 

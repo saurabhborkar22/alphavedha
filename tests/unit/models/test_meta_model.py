@@ -171,9 +171,7 @@ class TestMetaLabelingMonotonicity:
         model = MetaLabelingModel(config=meta_config)
         model.fit(X, ens_dir, ens_conf, y_correct)
 
-        report = model.validate_monotonicity(
-            X, ens_dir, ens_conf, y_correct.values, n_bins=5
-        )
+        report = model.validate_monotonicity(X, ens_dir, ens_conf, y_correct.values, n_bins=5)
         assert "n_samples" in report
         assert "bins" in report
         assert "is_monotonic" in report
@@ -195,8 +193,6 @@ class TestMetaLabelingMonotonicity:
 
         model = MetaLabelingModel(config=meta_config)
         model.fit(X, ens_dir, ens_conf, y_correct)
-        report = model.validate_monotonicity(
-            X, ens_dir, ens_conf, y_correct.values, n_bins=3
-        )
+        report = model.validate_monotonicity(X, ens_dir, ens_conf, y_correct.values, n_bins=3)
         assert not np.isnan(report["spearman_rho"])
         assert report["spearman_rho"] > 0
