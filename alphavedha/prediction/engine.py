@@ -266,7 +266,7 @@ class PredictionEngine:
             is_tradeable = False
             warnings.append(
                 f"Expected move {abs(magnitude):.4f} below cost hurdle "
-                f"{cost_hurdle:.4f} (cost {_ROUND_TRIP_COST_PCT:.4f} × {_COST_HURDLE_MULTIPLE}x)"
+                f"{cost_hurdle:.4f} (cost {_ROUND_TRIP_COST_PCT:.4f} x {_COST_HURDLE_MULTIPLE}x)"
             )
 
         position_size = risk.position_size_pct * kelly
