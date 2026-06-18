@@ -371,3 +371,34 @@ class TestPredictionEngine:
         )
         result = engine.predict("TCS", features, last_close=200.0)
         assert result.price_target_mid == pytest.approx(100.0)
+
+    def test_cost_hurdle_blocks_small_magnitude(self, features: pd.DataFrame) -> None:
+        ens = _mock_ensemble()
+        ens.predict.return_value = EnsembleResult(
+            direction=np.array([1]),
+            magnitude=np.array([0.005]),
+            probabilities=np.array([[0.1, 0.2, 0.7]]),
+            confidence=np.array([0.75]),
+            model_disagreement=np.array([0.05]),
+        )
+        engine = PredictionEngine(
+            xgboost=_mock_base_model("xgboost"),
+            lstm=_mock_base_model("lstm"),
+            tft=_mock_base_model("tft"),
+            regime=_mock_regime(),
+            ensemble=ens,
+            meta_model=_mock_meta(),
+            conformal=_mock_conformal(),
+            scorer=CompositeScorer(),
+            risk_manager=_mock_risk_manager(),
+        )
+        result = engine.predict("TCS", features)
+        assert result.is_tradeable is False
+        assert any("cost hurdle" in w for w in result.warnings)
+
+    def test_cost_hurdle_allows_large_magnitude(
+        self, engine: PredictionEngine, features: pd.DataFrame
+    ) -> None:
+        result = engine.predict("TCS", features)
+        assert result.magnitude == pytest.approx(0.03)
+        assert not any("cost hurdle" in w for w in result.warnings)

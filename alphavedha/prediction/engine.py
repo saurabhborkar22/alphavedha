@@ -34,6 +34,8 @@ class BaseModelProtocol(Protocol):
 
 _ATR_STOP_MULT: float = 1.5  # mirrors triple_barrier config.multiplier_down
 _ATR_TARGET_MULT: float = 2.0  # mirrors triple_barrier config.multiplier_up
+_ROUND_TRIP_COST_PCT: float = 0.00471  # large-cap round-trip cost from backtest/costs.py
+_COST_HURDLE_MULTIPLE: float = 1.5  # only trade when expected_move > 1.5x cost
 
 
 @dataclass
@@ -247,6 +249,15 @@ class PredictionEngine:
         )
         if overlay_warning:
             warnings.append(overlay_warning)
+
+        cost_hurdle = _ROUND_TRIP_COST_PCT * _COST_HURDLE_MULTIPLE
+        if abs(magnitude) < cost_hurdle:
+            is_tradeable = False
+            warnings.append(
+                f"Expected move {abs(magnitude):.4f} below cost hurdle "
+                f"{cost_hurdle:.4f} (cost {_ROUND_TRIP_COST_PCT:.4f} × {_COST_HURDLE_MULTIPLE}x)"
+            )
+
         position_size = risk.position_size_pct * kelly
 
         entry_price, stop_loss_price, take_profit_price = self._compute_atr_levels(
