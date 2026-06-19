@@ -40,6 +40,7 @@ SURVEILLANCE_INGESTION_TIME = "19:30"  # ASM/GSM list snapshot
 DEALS_INGESTION_TIME = "19:45"  # bulk/block/short deals
 CREDIT_RATING_INGESTION_TIME = "19:50"  # credit rating actions from announcements
 TRANSCRIPT_INGESTION_TIME = "20:15"  # concall transcripts (heavier PDFs, runs after weekly drift)
+INTEL_QUALITY_CHECK_TIME = "20:30"  # intel row-count + disk checks after all collectors finish
 DRIFT_CHECK_DAY = "saturday"
 DRIFT_CHECK_TIME = "20:00"
 RETRAIN_DAY = "saturday"
@@ -310,6 +311,29 @@ class AlphaVedhaScheduler:
         self._state.job_history.append(result)
         if len(self._state.job_history) > 100:
             self._state.job_history = self._state.job_history[-50:]
+
+    def job_health_summary(self, last_n: int = 24) -> dict[str, list[dict[str, object]]]:
+        """Summarise recent job outcomes grouped by job name.
+
+        Returns ``{'jobs': [{'name': ..., 'last_run': ..., 'success': ..., 'error': ...}, ...]}``.
+        """
+        recent = self._state.job_history[-last_n:]
+        seen: dict[str, JobResult] = {}
+        for jr in recent:
+            seen[jr.job_name] = jr
+
+        rows: list[dict[str, object]] = []
+        for name, jr in sorted(seen.items()):
+            rows.append(
+                {
+                    "name": name,
+                    "last_run": jr.started_at.isoformat() if jr.started_at else None,
+                    "success": jr.success,
+                    "error": jr.error,
+                    "symbols_processed": jr.symbols_processed,
+                }
+            )
+        return {"jobs": rows}
 
     def run_daily_predictions(self) -> JobResult:
         """Generate predictions for all stocks in the configured tier."""
@@ -806,6 +830,64 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_intel_quality_check(self) -> JobResult:
+        """Check intel table row counts and disk usage after all collectors finish."""
+        result = JobResult(job_name="intel_quality_check", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="intel_quality_check")
+
+        try:
+            if self._demo:
+                logger.info("intel_quality_check_skipped", reason="demo mode")
+            else:
+                from alphavedha.intel.quality import check_disk_usage, check_intel_row_counts
+                from alphavedha.monitoring.alerts import EmailAlerter
+
+                async def _task() -> None:
+                    from alphavedha.data.database import get_session_factory
+
+                    factory = get_session_factory()
+                    async with factory() as session:
+                        intel_results = await check_intel_row_counts(session)
+                        failed = [r for r in intel_results if not r.passed]
+                        if failed:
+                            alerter = EmailAlerter()
+                            lines = [f"Intel quality failures ({len(failed)}):"]
+                            for f in failed:
+                                lines.append(f"  [{f.severity}] {f.detail}")
+                            alerter.send(
+                                subject=f"Intel quality: {len(failed)} check(s) failed",
+                                body="\n".join(lines),
+                            )
+
+                _run_async(_task())
+
+                disk = check_disk_usage()
+                if not disk.passed:
+                    alerter = EmailAlerter()
+                    alerter.send(
+                        subject=f"Disk usage {disk.severity}: {disk.detail}",
+                        body=disk.detail,
+                    )
+
+                logger.info(
+                    "scheduler_job_complete",
+                    job="intel_quality_check",
+                    disk=disk.detail,
+                )
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error(
+                "scheduler_job_failed",
+                job="intel_quality_check",
+                error=str(e),
+            )
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def run_drift_check(self) -> JobResult:
         """Check feature distribution drift across all monitored features."""
         result = JobResult(job_name="weekly_drift_check", started_at=_now_ist())
@@ -1152,6 +1234,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(DEALS_INGESTION_TIME).do(self.run_deals_ingestion)
         schedule.every().day.at(CREDIT_RATING_INGESTION_TIME).do(self.run_credit_rating_ingestion)
         schedule.every().day.at(TRANSCRIPT_INGESTION_TIME).do(self.run_transcript_ingestion)
+        schedule.every().day.at(INTEL_QUALITY_CHECK_TIME).do(self.run_intel_quality_check)
         schedule.every().day.at(XGBOOST_RETRAIN_TIME).do(self.run_daily_xgboost_retrain)
         schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
 
@@ -1200,6 +1283,7 @@ class AlphaVedhaScheduler:
             deals_ingestion_time=DEALS_INGESTION_TIME,
             credit_rating_ingestion_time=CREDIT_RATING_INGESTION_TIME,
             transcript_ingestion_time=TRANSCRIPT_INGESTION_TIME,
+            intel_quality_check_time=INTEL_QUALITY_CHECK_TIME,
             xgboost_retrain_time=XGBOOST_RETRAIN_TIME,
             lstm_tft_retrain_day=LSTM_TFT_RETRAIN_DAY,
             drift_day=DRIFT_CHECK_DAY,
