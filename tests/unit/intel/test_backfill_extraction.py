@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-import importlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 import scripts.backfill_extraction as backfill_mod
-
-
-def _reload() -> None:
-    importlib.reload(backfill_mod)
 
 
 def _mock_provider() -> MagicMock:
