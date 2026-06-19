@@ -893,7 +893,7 @@ class AlphaVedhaScheduler:
         """Run LLM extraction on unprocessed disclosures."""
         result = JobResult(job_name="intel_extraction", started_at=_now_ist())
 
-        if _is_weekend():
+        if _now_ist().weekday() >= 5:
             logger.info("intel_extraction_skipped", reason="weekend")
             result.success = True
             result.finished_at = _now_ist()
