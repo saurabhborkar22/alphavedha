@@ -413,6 +413,53 @@ async def store_transcripts(rows: list[dict[str, Any]]) -> int:
     return stored
 
 
+async def load_transcripts(
+    symbol: str | None = None,
+    limit: int = 100,
+) -> pd.DataFrame:
+    """Load transcripts, ordered by fiscal_quarter descending."""
+    session_factory = get_session_factory()
+
+    async with session_factory() as session:
+        stmt = select(Transcript).order_by(Transcript.fiscal_quarter.desc()).limit(limit)
+
+        if symbol is not None:
+            stmt = stmt.where(Transcript.symbol == symbol)
+
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(
+        [
+            {
+                "id": r.id,
+                "symbol": r.symbol,
+                "fiscal_quarter": r.fiscal_quarter,
+                "filed_at": r.filed_at,
+                "text": r.text,
+                "sections": r.sections,
+            }
+            for r in rows
+        ]
+    )
+
+
+async def load_transcript_pairs(symbol: str) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Load consecutive transcript pairs for a symbol (newer, older)."""
+    df = await load_transcripts(symbol=symbol)
+    if len(df) < 2:
+        return []
+
+    records = df.to_dict("records")
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for i in range(len(records) - 1):
+        pairs.append((records[i], records[i + 1]))
+    return pairs
+
+
 async def load_disclosures_by_ids(ids: list[int]) -> list[Disclosure]:
     """Load disclosure rows by their primary key IDs."""
     if not ids:
