@@ -94,7 +94,6 @@ async def run_extraction_batch(
 
         if extraction is None:
             failed += 1
-            processed_ids.append(disc_id)
             continue
 
         events.append(
