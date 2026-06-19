@@ -40,6 +40,7 @@ SURVEILLANCE_INGESTION_TIME = "19:30"  # ASM/GSM list snapshot
 DEALS_INGESTION_TIME = "19:45"  # bulk/block/short deals
 CREDIT_RATING_INGESTION_TIME = "19:50"  # credit rating actions from announcements
 TRANSCRIPT_INGESTION_TIME = "20:15"  # concall transcripts (heavier PDFs, runs after weekly drift)
+INTEL_EXTRACTION_TIME = "20:00"  # LLM extraction on unprocessed disclosures
 INTEL_QUALITY_CHECK_TIME = "20:30"  # intel row-count + disk checks after all collectors finish
 DRIFT_CHECK_DAY = "saturday"
 DRIFT_CHECK_TIME = "20:00"
@@ -888,6 +889,37 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_intel_extraction(self) -> JobResult:
+        """Run LLM extraction on unprocessed disclosures."""
+        result = JobResult(job_name="intel_extraction", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("intel_extraction_skipped", reason="weekend")
+            result.success = True
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="intel_extraction")
+
+        try:
+            if self._demo:
+                logger.info("intel_extraction_skipped", reason="demo mode")
+            else:
+                from alphavedha.intel.extraction.batcher import run_nightly_extraction
+
+                summary = _run_async(run_nightly_extraction())
+                logger.info("scheduler_job_complete", job="intel_extraction", **summary)
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="intel_extraction", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def run_drift_check(self) -> JobResult:
         """Check feature distribution drift across all monitored features."""
         result = JobResult(job_name="weekly_drift_check", started_at=_now_ist())
@@ -1234,6 +1266,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(DEALS_INGESTION_TIME).do(self.run_deals_ingestion)
         schedule.every().day.at(CREDIT_RATING_INGESTION_TIME).do(self.run_credit_rating_ingestion)
         schedule.every().day.at(TRANSCRIPT_INGESTION_TIME).do(self.run_transcript_ingestion)
+        schedule.every().day.at(INTEL_EXTRACTION_TIME).do(self.run_intel_extraction)
         schedule.every().day.at(INTEL_QUALITY_CHECK_TIME).do(self.run_intel_quality_check)
         schedule.every().day.at(XGBOOST_RETRAIN_TIME).do(self.run_daily_xgboost_retrain)
         schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
