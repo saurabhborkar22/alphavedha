@@ -47,6 +47,10 @@ typer[all]>=0.12
 pyyaml>=6.0
 structlog>=24.1
 
+# LLM extraction (Phase 2)
+google-genai>=1.0
+groq>=0.9
+
 # Utilities
 joblib>=1.4
 pytz>=2024.1
