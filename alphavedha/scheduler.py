@@ -624,9 +624,7 @@ class AlphaVedhaScheduler:
             result.success = True
         except Exception as e:
             result.error = str(e)
-            logger.error(
-                "scheduler_job_failed", job="daily_nse_ann_ingestion", error=str(e)
-            )
+            logger.error("scheduler_job_failed", job="daily_nse_ann_ingestion", error=str(e))
 
         result.finished_at = _now_ist()
         self._record_job(result)
