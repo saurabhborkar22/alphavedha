@@ -39,6 +39,7 @@ NSE_ANN_INGESTION_TIME = "19:15"  # daily NSE announcements (PIT/SAST flagging)
 SURVEILLANCE_INGESTION_TIME = "19:30"  # ASM/GSM list snapshot
 DEALS_INGESTION_TIME = "19:45"  # bulk/block/short deals
 CREDIT_RATING_INGESTION_TIME = "19:50"  # credit rating actions from announcements
+TRANSCRIPT_INGESTION_TIME = "20:15"  # concall transcripts (heavier PDFs, runs after weekly drift)
 DRIFT_CHECK_DAY = "saturday"
 DRIFT_CHECK_TIME = "20:00"
 RETRAIN_DAY = "saturday"
@@ -762,6 +763,49 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_transcript_ingestion(self) -> JobResult:
+        """Ingest concall transcripts from NSE announcements."""
+        result = JobResult(job_name="daily_transcript_ingestion", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("transcript_ingestion_skipped", reason="weekend")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="daily_transcript_ingestion")
+
+        try:
+            if self._demo:
+                logger.info("transcript_ingestion_skipped", reason="demo mode")
+            else:
+                from alphavedha.intel.collectors.transcripts import (
+                    ingest_transcripts_daily,
+                )
+
+                count = _run_async(ingest_transcripts_daily())
+                result.symbols_processed = int(count)  # type: ignore[arg-type]
+                logger.info(
+                    "scheduler_job_complete",
+                    job="daily_transcript_ingestion",
+                    transcripts_stored=count,
+                )
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error(
+                "scheduler_job_failed",
+                job="daily_transcript_ingestion",
+                error=str(e),
+            )
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def run_drift_check(self) -> JobResult:
         """Check feature distribution drift across all monitored features."""
         result = JobResult(job_name="weekly_drift_check", started_at=_now_ist())
@@ -1107,6 +1151,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(SURVEILLANCE_INGESTION_TIME).do(self.run_surveillance_ingestion)
         schedule.every().day.at(DEALS_INGESTION_TIME).do(self.run_deals_ingestion)
         schedule.every().day.at(CREDIT_RATING_INGESTION_TIME).do(self.run_credit_rating_ingestion)
+        schedule.every().day.at(TRANSCRIPT_INGESTION_TIME).do(self.run_transcript_ingestion)
         schedule.every().day.at(XGBOOST_RETRAIN_TIME).do(self.run_daily_xgboost_retrain)
         schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
 
@@ -1154,6 +1199,7 @@ class AlphaVedhaScheduler:
             surveillance_ingestion_time=SURVEILLANCE_INGESTION_TIME,
             deals_ingestion_time=DEALS_INGESTION_TIME,
             credit_rating_ingestion_time=CREDIT_RATING_INGESTION_TIME,
+            transcript_ingestion_time=TRANSCRIPT_INGESTION_TIME,
             xgboost_retrain_time=XGBOOST_RETRAIN_TIME,
             lstm_tft_retrain_day=LSTM_TFT_RETRAIN_DAY,
             drift_day=DRIFT_CHECK_DAY,
