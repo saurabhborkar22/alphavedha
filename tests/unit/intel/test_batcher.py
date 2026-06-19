@@ -179,6 +179,61 @@ class TestRunExtractionBatch:
             assert result["extracted"] == 1
             assert result["skipped_boilerplate"] == 1
 
+    @pytest.mark.asyncio
+    async def test_failed_not_marked_processed(self) -> None:
+        """Failed extractions must NOT be marked as processed (so they can be retried)."""
+        import pandas as pd
+
+        mock_df = pd.DataFrame(
+            [
+                {
+                    "id": 10,
+                    "symbol": "SBIN.NS",
+                    "source": "nse",
+                    "category": "Press Release",
+                    "headline": "Quarterly update",
+                    "filed_at": "2026-06-19",
+                    "url": None,
+                    "text": None,
+                    "text_hash": None,
+                    "processed_at": None,
+                },
+            ]
+        )
+
+        with (
+            patch(
+                "alphavedha.intel.extraction.batcher.load_disclosures",
+                new_callable=AsyncMock,
+                return_value=mock_df,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.extract_one",
+                return_value=None,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.store_disclosure_events",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.mark_disclosures_processed",
+                new_callable=AsyncMock,
+                return_value=0,
+            ) as mock_mark,
+            patch("alphavedha.intel.extraction.batcher.CostLedger") as MockLedger,
+        ):
+            mock_ledger = MagicMock()
+            mock_ledger.is_over_budget.return_value = False
+            mock_ledger.estimate_batch_cost.return_value = 0.0002
+            mock_ledger.current_month_usd.return_value = 0.0002
+            MockLedger.return_value = mock_ledger
+
+            result = await run_extraction_batch()
+            assert result["failed"] == 1
+            assert result["extracted"] == 0
+            mock_mark.assert_not_called()
+
 
 class TestRunNightlyExtraction:
     @pytest.mark.asyncio
