@@ -80,10 +80,11 @@ class _IsDemoMiddleware(BaseHTTPMiddleware):
                 body = json.dumps(data).encode()
             except (json.JSONDecodeError, TypeError):
                 pass
+            headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
             return Response(
                 content=body,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=headers,
                 media_type=response.media_type,
             )
         return response

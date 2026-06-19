@@ -42,3 +42,17 @@ class TestHealthEndpoints:
         resp = client.get("/metrics")
         assert resp.status_code == 200
         assert "http_request" in resp.text or "HELP" in resp.text
+
+    def test_is_demo_middleware_returns_full_body(self, client: TestClient) -> None:
+        # Regression: _IsDemoMiddleware was passing the original Content-Length header
+        # through unchanged after enlarging the body with "is_demo", causing uvicorn to
+        # raise RuntimeError("Response content longer than Content-Length") and close
+        # every connection — all JSON endpoints returned 0 bytes.
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert "is_demo" in data
+        # Content-Length must match actual body — was stale (too small) before the fix
+        cl = int(resp.headers["content-length"])
+        assert cl == len(resp.content)
