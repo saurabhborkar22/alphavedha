@@ -53,7 +53,13 @@ def run_bakeoff(provider_names: list[str]) -> None:
             category = g["nse_category"]
             headline = g["headline"]
 
-            result = extract_one(provider, symbol, category, headline)
+            for attempt in range(3):
+                result = extract_one(provider, symbol, category, headline)
+                if result is not None:
+                    break
+                wait = 15 * (attempt + 1)
+                print(f"  Retry {attempt + 1}/3 for {symbol} (waiting {wait}s)...")
+                time.sleep(wait)
 
             if result is None:
                 result = DisclosureExtraction(
@@ -69,6 +75,8 @@ def run_bakeoff(provider_names: list[str]) -> None:
 
             if (i + 1) % 10 == 0:
                 print(f"  Processed {i + 1}/{len(relevant)}...")
+
+            time.sleep(13)
 
         elapsed = time.time() - start
         print(f"  Done in {elapsed:.1f}s ({errors} errors)\n")

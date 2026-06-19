@@ -129,7 +129,10 @@ class GroqProvider:
             response = client.chat.completions.create(
                 model=self._model,
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "system",
+                        "content": system_prompt + "\n\nRespond with valid JSON only.",
+                    },
                     {"role": "user", "content": user_prompt},
                 ],
                 response_format={"type": "json_object"},

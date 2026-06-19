@@ -6,6 +6,7 @@ structured extraction, and returns validated DisclosureExtraction objects.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -65,6 +66,29 @@ def build_triage_prompt(
     )
 
 
+def _coerce_llm_output(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize LLM JSON output before Pydantic validation.
+
+    Some providers (Groq/Llama) omit fields or return ints as strings.
+    """
+    if "confidence" not in raw:
+        raw["confidence"] = 0.5
+    if "summary" not in raw:
+        raw["summary"] = raw.get("event_type", "unknown")
+    if "red_flags" not in raw:
+        raw["red_flags"] = []
+    if "numbers" not in raw:
+        raw["numbers"] = {}
+    for int_field in ("direction", "materiality"):
+        if int_field in raw and isinstance(raw[int_field], str):
+            with contextlib.suppress(ValueError):
+                raw[int_field] = int(raw[int_field])
+    if "confidence" in raw and isinstance(raw["confidence"], str):
+        with contextlib.suppress(ValueError):
+            raw["confidence"] = float(raw["confidence"])
+    return raw
+
+
 def extract_one(
     provider: LLMProvider,
     symbol: str,
@@ -90,6 +114,8 @@ def extract_one(
     if result is None:
         logger.warning("extraction_returned_none", symbol=symbol)
         return None
+
+    result = _coerce_llm_output(result)
 
     try:
         extraction = DisclosureExtraction.model_validate(result)
