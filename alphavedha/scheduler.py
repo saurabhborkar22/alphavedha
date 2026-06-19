@@ -36,6 +36,8 @@ FII_DII_INGESTION_TIME = "18:30"  # NSE publishes FII/DII participation data by 
 BHAVCOPY_INGESTION_TIME = "18:45"  # after FII/DII, before BSE weekly jobs
 BSE_ANN_INGESTION_TIME = "19:00"  # daily BSE announcements + PDF extraction
 NSE_ANN_INGESTION_TIME = "19:15"  # daily NSE announcements (PIT/SAST flagging)
+SURVEILLANCE_INGESTION_TIME = "19:30"  # ASM/GSM list snapshot
+DEALS_INGESTION_TIME = "19:45"  # bulk/block/short deals
 DRIFT_CHECK_DAY = "saturday"
 DRIFT_CHECK_TIME = "20:00"
 RETRAIN_DAY = "saturday"
@@ -630,6 +632,92 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_surveillance_ingestion(self) -> JobResult:
+        """Ingest current ASM/GSM surveillance lists from NSE."""
+        result = JobResult(job_name="daily_surveillance_ingestion", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("surveillance_ingestion_skipped", reason="weekend")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="daily_surveillance_ingestion")
+
+        try:
+            if self._demo:
+                logger.info("surveillance_ingestion_skipped", reason="demo mode")
+            else:
+                from alphavedha.intel.collectors.surveillance import (
+                    ingest_surveillance_daily,
+                )
+
+                count = _run_async(ingest_surveillance_daily())
+                result.symbols_processed = int(count)  # type: ignore[arg-type]
+                logger.info(
+                    "scheduler_job_complete",
+                    job="daily_surveillance_ingestion",
+                    flags_stored=count,
+                )
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error(
+                "scheduler_job_failed",
+                job="daily_surveillance_ingestion",
+                error=str(e),
+            )
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_deals_ingestion(self) -> JobResult:
+        """Ingest today's bulk/block/short deals from NSE."""
+        result = JobResult(job_name="daily_deals_ingestion", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("deals_ingestion_skipped", reason="weekend")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="daily_deals_ingestion")
+
+        try:
+            if self._demo:
+                logger.info("deals_ingestion_skipped", reason="demo mode")
+            else:
+                from alphavedha.intel.collectors.bulk_block_deals import (
+                    ingest_bulk_block_deals_daily,
+                )
+
+                count = _run_async(ingest_bulk_block_deals_daily())
+                result.symbols_processed = int(count)  # type: ignore[arg-type]
+                logger.info(
+                    "scheduler_job_complete",
+                    job="daily_deals_ingestion",
+                    deals_stored=count,
+                )
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error(
+                "scheduler_job_failed",
+                job="daily_deals_ingestion",
+                error=str(e),
+            )
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def run_drift_check(self) -> JobResult:
         """Check feature distribution drift across all monitored features."""
         result = JobResult(job_name="weekly_drift_check", started_at=_now_ist())
@@ -972,6 +1060,8 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(BHAVCOPY_INGESTION_TIME).do(self.run_bhavcopy_ingestion)
         schedule.every().day.at(BSE_ANN_INGESTION_TIME).do(self.run_bse_ann_ingestion)
         schedule.every().day.at(NSE_ANN_INGESTION_TIME).do(self.run_nse_ann_ingestion)
+        schedule.every().day.at(SURVEILLANCE_INGESTION_TIME).do(self.run_surveillance_ingestion)
+        schedule.every().day.at(DEALS_INGESTION_TIME).do(self.run_deals_ingestion)
         schedule.every().day.at(XGBOOST_RETRAIN_TIME).do(self.run_daily_xgboost_retrain)
         schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
 
@@ -1016,6 +1106,8 @@ class AlphaVedhaScheduler:
             bhavcopy_ingestion_time=BHAVCOPY_INGESTION_TIME,
             bse_ann_ingestion_time=BSE_ANN_INGESTION_TIME,
             nse_ann_ingestion_time=NSE_ANN_INGESTION_TIME,
+            surveillance_ingestion_time=SURVEILLANCE_INGESTION_TIME,
+            deals_ingestion_time=DEALS_INGESTION_TIME,
             xgboost_retrain_time=XGBOOST_RETRAIN_TIME,
             lstm_tft_retrain_day=LSTM_TFT_RETRAIN_DAY,
             drift_day=DRIFT_CHECK_DAY,
