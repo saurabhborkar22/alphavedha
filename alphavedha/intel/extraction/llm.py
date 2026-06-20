@@ -159,7 +159,7 @@ class CerebrasProvider:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "llama-3.3-70b",
+        model: str = "gpt-oss-120b",
     ) -> None:
         self._api_key = api_key or os.environ.get("CEREBRAS_API_KEY", "")
         self._model = model
