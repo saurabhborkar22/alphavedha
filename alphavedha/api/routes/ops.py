@@ -65,7 +65,13 @@ async def _table_freshness(
 ) -> dict[str, Any]:
     """Check latest row and recent count for a table."""
     col = getattr(model, date_col)
-    cutoff = datetime.now(IST) - timedelta(days=lookback_days)
+    col_type = getattr(col, "type", None)
+    is_tz_aware = getattr(col_type, "timezone", False) if col_type else False
+
+    now = datetime.now(IST)
+    cutoff = now - timedelta(days=lookback_days)
+    if not is_tz_aware and not isinstance(cutoff, date):
+        cutoff = cutoff.replace(tzinfo=None)
 
     latest_stmt = select(func.max(col))
     count_stmt = select(func.count()).where(col >= cutoff)
