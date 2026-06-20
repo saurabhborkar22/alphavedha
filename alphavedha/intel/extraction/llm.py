@@ -151,15 +151,147 @@ class GroqProvider:
             return None
 
 
+class CerebrasProvider:
+    """Cerebras provider (Llama 3.3 70B) via OpenAI-compatible REST API."""
+
+    CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "llama-3.3-70b",
+    ) -> None:
+        self._api_key = api_key or os.environ.get("CEREBRAS_API_KEY", "")
+        self._model = model
+
+    @property
+    def name(self) -> str:
+        return f"cerebras/{self._model}"
+
+    def extract_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        json_schema: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        import json
+
+        import httpx
+
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt + "\n\nRespond with valid JSON only.",
+                },
+                {"role": "user", "content": user_prompt},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1,
+            "max_tokens": 1024,
+        }
+
+        try:
+            resp = httpx.post(
+                self.CEREBRAS_API_URL,
+                headers=headers,
+                json=payload,
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            text = data["choices"][0]["message"]["content"]
+            if text:
+                result: dict[str, Any] = json.loads(text)
+                return result
+            return None
+
+        except Exception as e:
+            logger.error("cerebras_extraction_failed", error=str(e), model=self._model)
+            return None
+
+
+_PROVIDER_FACTORIES: dict[str, type] = {
+    "gemini": GeminiProvider,
+    "groq": GroqProvider,
+    "cerebras": CerebrasProvider,
+}
+
+_PROVIDER_ORDER: tuple[str, ...] = ("gemini", "groq", "cerebras")
+
+
 def get_provider(
     provider_name: str = "gemini",
     api_key: str | None = None,
 ) -> LLMProvider:
     """Factory function to get an LLM provider by name."""
-    if provider_name == "gemini":
-        return GeminiProvider(api_key=api_key)
-    if provider_name == "groq":
-        return GroqProvider(api_key=api_key)
+    cls = _PROVIDER_FACTORIES.get(provider_name)
+    if cls is not None:
+        provider: LLMProvider = cls(api_key=api_key)
+        return provider
 
     msg = f"Unknown provider: {provider_name}"
     raise ValueError(msg)
+
+
+def get_available_providers() -> list[LLMProvider]:
+    """Return providers that have API keys configured, in priority order."""
+    env_keys = {
+        "gemini": "GEMINI_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "cerebras": "CEREBRAS_API_KEY",
+    }
+    providers: list[LLMProvider] = []
+    for name in _PROVIDER_ORDER:
+        env_var = env_keys[name]
+        if os.environ.get(env_var):
+            providers.append(get_provider(name))
+    return providers
+
+
+class RoundRobinProvider:
+    """Cycles through multiple LLM providers to spread rate-limit load."""
+
+    def __init__(self, providers: list[LLMProvider]) -> None:
+        if not providers:
+            msg = "At least one provider is required"
+            raise ValueError(msg)
+        self._providers = providers
+        self._index = 0
+
+    @property
+    def name(self) -> str:
+        return self._providers[self._index].name
+
+    def extract_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        json_schema: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        provider = self._providers[self._index]
+        self._index = (self._index + 1) % len(self._providers)
+
+        result = provider.extract_json(system_prompt, user_prompt, json_schema)
+        if result is not None:
+            return result
+
+        # On failure, try remaining providers once
+        for i in range(len(self._providers) - 1):
+            fallback_idx = (self._index + i) % len(self._providers)
+            fallback = self._providers[fallback_idx]
+            logger.info(
+                "llm_fallback",
+                failed=provider.name,
+                trying=fallback.name,
+            )
+            result = fallback.extract_json(system_prompt, user_prompt, json_schema)
+            if result is not None:
+                return result
+
+        return None

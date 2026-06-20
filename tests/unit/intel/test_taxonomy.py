@@ -12,7 +12,9 @@ from alphavedha.intel.extraction.schemas import (
     TriageResult,
 )
 from alphavedha.intel.extraction.taxonomy import (
+    ALWAYS_EXTRACT_PATTERNS,
     BOILERPLATE_CATEGORIES,
+    BOILERPLATE_HEADLINE_PATTERNS,
     EVENT_CATALOG,
     RED_FLAG_TYPES,
     EventMeta,
@@ -55,9 +57,17 @@ class TestEventType:
         assert len(meta.description) > 0
 
     def test_boilerplate_categories_non_empty(self) -> None:
-        assert len(BOILERPLATE_CATEGORIES) > 0
+        assert len(BOILERPLATE_CATEGORIES) >= 25
         assert "Trading Window" in BOILERPLATE_CATEGORIES
         assert "ESOP/ESOS" in BOILERPLATE_CATEGORIES
+        assert "Board Meeting - Intimation" in BOILERPLATE_CATEGORIES
+        assert "Investor Presentation" in BOILERPLATE_CATEGORIES
+
+    def test_boilerplate_headline_patterns_non_empty(self) -> None:
+        assert len(BOILERPLATE_HEADLINE_PATTERNS) > 0
+
+    def test_always_extract_patterns_non_empty(self) -> None:
+        assert len(ALWAYS_EXTRACT_PATTERNS) > 0
 
     def test_enum_value_lowercase_snake(self) -> None:
         for et in EventType:
