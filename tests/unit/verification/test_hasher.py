@@ -15,10 +15,12 @@ def _sample_trade(
     symbol: str = "TCS.NS",
     direction: int = 1,
     confidence: float = 0.75,
+    strategy: str = "ensemble_v1",
 ) -> dict[str, object]:
     return {
         "symbol": symbol,
         "prediction_date": date(2026, 6, 18),
+        "strategy": strategy,
         "predicted_direction": direction,
         "predicted_magnitude": 0.02,
         "confidence": confidence,
@@ -63,6 +65,11 @@ class TestCanonicalPayload:
         trade = _sample_trade()
         payload = canonical_payload([trade])
         assert b"2026-06-18" in payload
+
+    def test_different_strategy_changes_payload(self) -> None:
+        trade_a = _sample_trade(strategy="ensemble_v1")
+        trade_b = _sample_trade(strategy="event_drift_v1")
+        assert canonical_payload([trade_a]) != canonical_payload([trade_b])
 
     def test_float_precision_normalized(self) -> None:
         trade_a = _sample_trade()

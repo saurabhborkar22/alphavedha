@@ -182,3 +182,30 @@ def compute_track_record(
         cost_pct=round_trip_cost_pct,
     )
     return record
+
+
+def compute_track_records_by_strategy(
+    trades: pd.DataFrame,
+    round_trip_cost_pct: float,
+    gate_confidence: float = DEFAULT_GATE_CONFIDENCE,
+    top_k: int = DEFAULT_TOP_K,
+) -> dict[str, TrackRecord]:
+    """Compute per-strategy track records.
+
+    Returns a dict keyed by strategy name. Falls back to a single
+    'ensemble_v1' entry if the strategy column is missing.
+    """
+    if trades.empty:
+        return {}
+
+    if "strategy" not in trades.columns:
+        return {
+            "ensemble_v1": compute_track_record(trades, round_trip_cost_pct, gate_confidence, top_k)
+        }
+
+    results: dict[str, TrackRecord] = {}
+    for strategy_name, group in trades.groupby("strategy"):
+        results[str(strategy_name)] = compute_track_record(
+            group.reset_index(drop=True), round_trip_cost_pct, gate_confidence, top_k
+        )
+    return results

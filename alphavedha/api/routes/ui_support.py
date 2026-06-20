@@ -2071,6 +2071,7 @@ async def place_paper_order(order: dict[str, Any]) -> dict[str, str]:
     row = {
         "symbol": symbol,
         "prediction_date": today,
+        "strategy": str(order.get("strategy", "ensemble_v1")),
         "predicted_direction": -1 if side == "SELL" else 1,
         "predicted_magnitude": float(order.get("magnitude") or 0.0),
         "confidence": float(order.get("confidence") or 0.0),
@@ -2126,6 +2127,7 @@ async def close_paper_position(position_id: str) -> dict[str, str]:
             exit_price=exit_price,
             actual_return=actual_return,
             is_correct=actual_return > 0,
+            strategy=str(trade.get("strategy", "ensemble_v1")),
         )
         return {"status": "closed", "id": position_id}
     except HTTPException:

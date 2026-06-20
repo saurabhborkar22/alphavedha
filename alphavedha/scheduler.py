@@ -154,6 +154,7 @@ async def _persist_paper_trades(
                 {
                     "symbol": pred.symbol,
                     "prediction_date": prediction_date,
+                    "strategy": "ensemble_v1",
                     "predicted_direction": int(pred.direction),
                     "predicted_magnitude": float(pred.magnitude),
                     "confidence": float(pred.meta_confidence),
@@ -223,6 +224,7 @@ async def _evaluate_open_paper_trades(as_of: date) -> EvaluationSummary:
                 exit_price=exit_price,
                 actual_return=actual_return,
                 is_correct=is_correct,
+                strategy=str(trade.get("strategy", "ensemble_v1")),
             )
 
             summary.n_evaluated += 1
