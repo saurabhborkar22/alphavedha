@@ -749,6 +749,7 @@ async def store_paper_trade(row: dict) -> int:
         values = {
             "symbol": row["symbol"],
             "prediction_date": row["prediction_date"],
+            "strategy": row.get("strategy", "ensemble_v1"),
             "predicted_direction": row["predicted_direction"],
             "predicted_magnitude": row["predicted_magnitude"],
             "confidence": row["confidence"],
@@ -759,12 +760,13 @@ async def store_paper_trade(row: dict) -> int:
             "stop_loss_price": row.get("stop_loss_price"),
             "take_profit_price": row.get("take_profit_price"),
         }
+        pk_cols = ("symbol", "prediction_date", "strategy")
         stmt = (
             pg_insert(PaperTrade)
             .values(**values)
             .on_conflict_do_update(
-                index_elements=["symbol", "prediction_date"],
-                set_={k: v for k, v in values.items() if k not in ("symbol", "prediction_date")},
+                index_elements=list(pk_cols),
+                set_={k: v for k, v in values.items() if k not in pk_cols},
             )
         )
         await session.execute(stmt)
@@ -780,6 +782,7 @@ async def update_paper_trade_outcome(
     actual_return: float,
     is_correct: bool,
     exit_reason: str | None = None,
+    strategy: str = "ensemble_v1",
 ) -> None:
     """Update a paper trade with the actual outcome."""
     from sqlalchemy import update
@@ -799,6 +802,7 @@ async def update_paper_trade_outcome(
             .where(
                 PaperTrade.symbol == symbol,
                 PaperTrade.prediction_date == prediction_date,
+                PaperTrade.strategy == strategy,
             )
             .values(**values)
         )
@@ -810,8 +814,9 @@ async def load_paper_trades(
     start: date | None = None,
     end: date | None = None,
     symbol: str | None = None,
+    strategy: str | None = None,
 ) -> pd.DataFrame:
-    """Load paper trade records."""
+    """Load paper trade records, optionally filtered by strategy."""
     session_factory = get_session_factory()
 
     async with session_factory() as session:
@@ -822,6 +827,8 @@ async def load_paper_trades(
             stmt = stmt.where(PaperTrade.prediction_date >= start)
         if end:
             stmt = stmt.where(PaperTrade.prediction_date <= end)
+        if strategy:
+            stmt = stmt.where(PaperTrade.strategy == strategy)
         stmt = stmt.order_by(PaperTrade.prediction_date)
 
         result = await session.execute(stmt)
@@ -835,6 +842,7 @@ async def load_paper_trades(
             {
                 "symbol": r.symbol,
                 "prediction_date": r.prediction_date,
+                "strategy": r.strategy,
                 "predicted_direction": r.predicted_direction,
                 "predicted_magnitude": r.predicted_magnitude,
                 "confidence": r.confidence,

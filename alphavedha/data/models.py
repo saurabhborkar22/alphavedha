@@ -227,14 +227,14 @@ class PaperTrade(Base):
 
     symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
     prediction_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    strategy: Mapped[str] = mapped_column(
+        String(50), primary_key=True, server_default="ensemble_v1"
+    )
     predicted_direction: Mapped[int] = mapped_column(Integer, nullable=False)
     predicted_magnitude: Mapped[float] = mapped_column(Float, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     model_version: Mapped[str] = mapped_column(String(50), nullable=False)
     regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    # Meta-labeling gate decision at prediction time. Null on rows persisted
-    # before the column existed; the track record falls back to a confidence
-    # threshold for those.
     is_tradeable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_loss_price: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -248,6 +248,7 @@ class PaperTrade(Base):
     __table_args__ = (
         Index("ix_paper_trades_date", "prediction_date"),
         Index("ix_paper_trades_symbol", "symbol"),
+        Index("ix_paper_trades_strategy", "strategy"),
     )
 
 

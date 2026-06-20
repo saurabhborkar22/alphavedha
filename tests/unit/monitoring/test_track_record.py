@@ -14,6 +14,7 @@ from alphavedha.monitoring.track_record import (
     TrackRecord,
     TrackStats,
     compute_track_record,
+    compute_track_records_by_strategy,
     compute_track_stats,
 )
 
@@ -210,3 +211,27 @@ class TestComputeTrackRecord:
         for stats in (record.all_predictions, record.gate_passed, record.top_k):
             assert isinstance(stats, TrackStats)
             assert stats.avg_return_net == pytest.approx(0.03 - 0.005)
+
+
+class TestComputeTrackRecordsByStrategy:
+    def test_empty_frame_returns_empty_dict(self) -> None:
+        result = compute_track_records_by_strategy(pd.DataFrame(), round_trip_cost_pct=0.005)
+        assert result == {}
+
+    def test_groups_by_strategy(self) -> None:
+        rows = [
+            {**_trade("A", D1, 1, 0.7, actual_return=0.03), "strategy": "ensemble_v1"},
+            {**_trade("B", D1, 1, 0.6, actual_return=0.02), "strategy": "ensemble_v1"},
+            {**_trade("C", D1, -1, 0.8, actual_return=-0.04), "strategy": "event_drift_v1"},
+        ]
+        trades = pd.DataFrame(rows)
+        result = compute_track_records_by_strategy(trades, round_trip_cost_pct=0.0)
+        assert set(result.keys()) == {"ensemble_v1", "event_drift_v1"}
+        assert result["ensemble_v1"].all_predictions.n_selected == 2
+        assert result["event_drift_v1"].all_predictions.n_selected == 1
+
+    def test_missing_strategy_column_falls_back(self) -> None:
+        trades = pd.DataFrame([_trade("A", D1, 1, 0.7, actual_return=0.03)])
+        result = compute_track_records_by_strategy(trades, round_trip_cost_pct=0.0)
+        assert "ensemble_v1" in result
+        assert result["ensemble_v1"].all_predictions.n_selected == 1

@@ -19,6 +19,7 @@ from typing import Any
 CANONICAL_FIELDS: list[str] = [
     "symbol",
     "prediction_date",
+    "strategy",
     "predicted_direction",
     "predicted_magnitude",
     "confidence",
@@ -50,7 +51,7 @@ def canonical_payload(trades: list[dict[str, Any]]) -> bytes:
     """
     normalized = sorted(
         [_normalize_row(t) for t in trades],
-        key=lambda r: (r.get("symbol", ""), r.get("prediction_date", "")),
+        key=lambda r: (r.get("symbol", ""), r.get("prediction_date", ""), r.get("strategy", "")),
     )
     return json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode("utf-8")
 

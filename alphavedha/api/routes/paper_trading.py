@@ -28,6 +28,7 @@ class PaperTradeRequest(BaseModel):
     predicted_magnitude: float
     confidence: float = Field(..., ge=0, le=1)
     model_version: str
+    strategy: str = "ensemble_v1"
     regime: str | None = None
     is_tradeable: bool | None = None
     entry_price: float | None = None
@@ -38,6 +39,7 @@ class PaperTradeRequest(BaseModel):
 class PaperTradeResponse(BaseModel):
     symbol: str
     prediction_date: str
+    strategy: str
     predicted_direction: int
     confidence: float
     model_version: str
@@ -47,6 +49,7 @@ class PaperTradeResponse(BaseModel):
 class TradeOutcomeRequest(BaseModel):
     symbol: str
     prediction_date: str
+    strategy: str = "ensemble_v1"
     exit_price: float
     actual_return: float
     is_correct: bool
@@ -88,6 +91,7 @@ class DashboardSummary(BaseModel):
 class PredictionRecord(BaseModel):
     symbol: str
     prediction_date: str
+    strategy: str = "ensemble_v1"
     predicted_direction: int
     predicted_magnitude: float
     confidence: float
@@ -113,6 +117,7 @@ async def record_prediction(req: PaperTradeRequest) -> PaperTradeResponse:
     row = {
         "symbol": req.symbol,
         "prediction_date": today,
+        "strategy": req.strategy,
         "predicted_direction": req.predicted_direction,
         "predicted_magnitude": req.predicted_magnitude,
         "confidence": req.confidence,
@@ -133,6 +138,7 @@ async def record_prediction(req: PaperTradeRequest) -> PaperTradeResponse:
     return PaperTradeResponse(
         symbol=req.symbol,
         prediction_date=today.isoformat(),
+        strategy=req.strategy,
         predicted_direction=req.predicted_direction,
         confidence=req.confidence,
         model_version=req.model_version,
@@ -154,6 +160,7 @@ async def record_outcome(req: TradeOutcomeRequest) -> dict[str, str]:
             actual_return=req.actual_return,
             is_correct=req.is_correct,
             exit_reason=req.exit_reason,
+            strategy=req.strategy,
         )
     except Exception as e:
         logger.error("paper_outcome_failed", error=str(e))
@@ -253,6 +260,7 @@ async def evaluate_stops(evaluation_date: str | None = None) -> dict[str, Any]:
                     actual_return=actual_return,
                     is_correct=is_correct,
                     exit_reason=exit_reason,
+                    strategy=str(trade.get("strategy", "ensemble_v1")),
                 )
                 evaluated += 1
             except Exception as e:
@@ -266,7 +274,7 @@ def _track_stats_out(stats: TrackStats) -> TrackStatsOut:
 
 
 @router.get("/dashboard", response_model=DashboardSummary)
-async def get_dashboard() -> DashboardSummary:
+async def get_dashboard(strategy: str | None = None) -> DashboardSummary:
     """Paper trading dashboard: accuracy plus the cost-adjusted track record.
 
     Returns are directional (predicted_direction * actual_return), so a
@@ -278,7 +286,7 @@ async def get_dashboard() -> DashboardSummary:
     from alphavedha.data.store import load_paper_trades
     from alphavedha.monitoring.track_record import compute_track_record, compute_track_stats
 
-    trades_df = await load_paper_trades()
+    trades_df = await load_paper_trades(strategy=strategy)
     cost_pct = compute_round_trip_cost_pct("large", get_config().backtest)
 
     if trades_df.empty:
@@ -344,12 +352,13 @@ async def get_dashboard() -> DashboardSummary:
 @router.get("/trades", response_model=list[PredictionRecord])
 async def list_trades(
     symbol: str | None = None,
+    strategy: str | None = None,
     limit: int = 100,
 ) -> list[PredictionRecord]:
     """List paper trade predictions with outcomes."""
     from alphavedha.data.store import load_paper_trades
 
-    trades_df = await load_paper_trades(symbol=symbol)
+    trades_df = await load_paper_trades(symbol=symbol, strategy=strategy)
 
     if trades_df.empty:
         return []
@@ -360,6 +369,7 @@ async def list_trades(
         PredictionRecord(
             symbol=row["symbol"],
             prediction_date=str(row["prediction_date"]),
+            strategy=row.get("strategy", "ensemble_v1"),
             predicted_direction=row["predicted_direction"],
             predicted_magnitude=row["predicted_magnitude"],
             confidence=row["confidence"],
