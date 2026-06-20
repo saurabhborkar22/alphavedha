@@ -125,7 +125,21 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           EXPECTED: ${{ secrets.VPS_HOST_FINGERPRINT }}
         run: |
-          ACTUAL=$(ssh-keyscan -t ed25519 "$VPS_HOST" 2>/dev/null | ssh-keygen -lf - | awk '{print $2}')
+          echo "Waiting for SSH to become ready..."
+          for i in $(seq 1 60); do
+            KEY=$(ssh-keyscan -t ed25519 "$VPS_HOST" 2>/dev/null)
+            if [ -n "$KEY" ]; then
+              echo "SSH ready (after ${i}s)"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "ERROR: SSH not ready after 60s"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          ACTUAL=$(echo "$KEY" | ssh-keygen -lf - | awk '{print $2}')
           if [ "$ACTUAL" != "$EXPECTED" ]; then
             echo "ERROR: Host key fingerprint mismatch"
             echo "  Expected: $EXPECTED"
@@ -133,7 +147,7 @@ jobs:
             exit 1
           fi
           mkdir -p ~/.ssh
-          ssh-keyscan -t ed25519 "$VPS_HOST" >> ~/.ssh/known_hosts
+          echo "$KEY" >> ~/.ssh/known_hosts
 
       - name: Run training on VPS
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17  # v1.2.0
