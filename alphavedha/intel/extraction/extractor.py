@@ -7,6 +7,7 @@ structured extraction, and returns validated DisclosureExtraction objects.
 from __future__ import annotations
 
 import contextlib
+import re
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,7 +19,11 @@ from alphavedha.intel.extraction.schemas import (
     DisclosureExtraction,
     TriageResult,
 )
-from alphavedha.intel.extraction.taxonomy import BOILERPLATE_CATEGORIES
+from alphavedha.intel.extraction.taxonomy import (
+    ALWAYS_EXTRACT_PATTERNS,
+    BOILERPLATE_CATEGORIES,
+    BOILERPLATE_HEADLINE_PATTERNS,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -27,9 +32,28 @@ IST = ZoneInfo("Asia/Kolkata")
 CURRENT_PROMPT_VERSION = "v1"
 
 
-def is_boilerplate(category: str) -> bool:
-    """Check if a disclosure category is boilerplate (skip LLM)."""
-    return category in BOILERPLATE_CATEGORIES
+def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
+    """Check if text matches any of the compiled regex patterns."""
+    return any(re.search(p, text) for p in patterns)
+
+
+def is_always_extract(headline: str) -> bool:
+    """Red-flag headlines that must go to LLM regardless of category."""
+    return _matches_any(headline, ALWAYS_EXTRACT_PATTERNS)
+
+
+def is_boilerplate(category: str, headline: str = "") -> bool:
+    """Check if a disclosure is boilerplate (skip LLM).
+
+    A disclosure is boilerplate if its category is in the skip list OR its
+    headline matches a boilerplate pattern — UNLESS the headline matches
+    an always-extract red-flag pattern, in which case it is never skipped.
+    """
+    if headline and is_always_extract(headline):
+        return False
+    if category in BOILERPLATE_CATEGORIES:
+        return True
+    return bool(headline and _matches_any(headline, BOILERPLATE_HEADLINE_PATTERNS))
 
 
 def build_user_prompt(
@@ -101,7 +125,7 @@ def extract_one(
 
     Returns None if the disclosure is boilerplate or extraction fails.
     """
-    if is_boilerplate(category):
+    if is_boilerplate(category, headline):
         logger.debug("skipped_boilerplate", symbol=symbol, category=category)
         return None
 
@@ -138,7 +162,7 @@ def triage_one(
     prompt_version: str = CURRENT_PROMPT_VERSION,
 ) -> TriageResult | None:
     """Quick triage: is this disclosure relevant or boilerplate?"""
-    if is_boilerplate(category):
+    if is_boilerplate(category, headline):
         return TriageResult(is_relevant=False, reason="Boilerplate category")
 
     system_prompt = load_system_prompt(prompt_version)
@@ -182,7 +206,7 @@ def extract_batch(
         extraction = extract_one(provider, symbol, category, headline, text, prompt_version)
 
         if extraction is None:
-            if is_boilerplate(category):
+            if is_boilerplate(category, headline):
                 skipped += 1
             else:
                 failed += 1

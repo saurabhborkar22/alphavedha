@@ -10,6 +10,7 @@ from alphavedha.intel.extraction.extractor import (
     build_user_prompt,
     extract_batch,
     extract_one,
+    is_always_extract,
     is_boilerplate,
     triage_one,
 )
@@ -42,6 +43,58 @@ class TestIsBoilerplate:
     def test_all_boilerplate_categories_detected(self) -> None:
         for cat in BOILERPLATE_CATEGORIES:
             assert is_boilerplate(cat) is True
+
+    def test_expanded_categories(self) -> None:
+        assert is_boilerplate("Board Meeting - Intimation") is True
+        assert is_boilerplate("Postal Ballot") is True
+        assert is_boilerplate("Annual Secretarial Compliance") is True
+        assert is_boilerplate("Investor Presentation") is True
+
+    def test_headline_pattern_catches_boilerplate(self) -> None:
+        assert is_boilerplate("Other", "Loss of share certificate - duplicate issued") is True
+        assert is_boilerplate("Other", "Compliance certificate under Reg 31") is True
+        assert is_boilerplate("Other", "Proceedings of AGM held on 2026-06-15") is True
+
+    def test_always_extract_overrides_boilerplate_category(self) -> None:
+        assert is_boilerplate("Cessation", "CFO resigns effective immediately") is False
+        assert is_boilerplate("Change In Address", "SEBI order against company") is False
+        assert is_boilerplate("Board Meeting - Intimation", "Default on loan payment") is False
+
+    def test_always_extract_overrides_headline_pattern(self) -> None:
+        assert is_boilerplate("Other", "Reg. 31 compliance - auditor resignation") is False
+
+
+class TestIsAlwaysExtract:
+    def test_cfo_resign(self) -> None:
+        assert is_always_extract("CFO resigns citing personal reasons") is True
+
+    def test_ceo_steps_down(self) -> None:
+        assert is_always_extract("CEO to step down effective March 2026") is True
+
+    def test_default(self) -> None:
+        assert is_always_extract("Company defaults on Rs 100 Cr term loan") is True
+
+    def test_auditor_resign(self) -> None:
+        assert is_always_extract("Statutory auditor resignation") is True
+
+    def test_fraud(self) -> None:
+        assert is_always_extract("Fraud detected in subsidiary operations") is True
+
+    def test_sebi_order(self) -> None:
+        assert is_always_extract("SEBI penalty imposed for insider trading") is True
+
+    def test_surveillance(self) -> None:
+        assert is_always_extract("Stock placed under ASM framework") is True
+
+    def test_downgrade(self) -> None:
+        assert is_always_extract("ICRA downgrades rating to BB+") is True
+
+    def test_pledge_increase(self) -> None:
+        assert is_always_extract("Promoter pledge created on additional shares") is True
+
+    def test_normal_headline_not_flagged(self) -> None:
+        assert is_always_extract("Board approves quarterly results") is False
+        assert is_always_extract("Investor presentation scheduled") is False
 
 
 class TestBuildPrompts:

@@ -19,7 +19,12 @@ from alphavedha.intel.extraction.extractor import (
     extract_one,
     is_boilerplate,
 )
-from alphavedha.intel.extraction.llm import LLMProvider, get_provider
+from alphavedha.intel.extraction.llm import (
+    LLMProvider,
+    RoundRobinProvider,
+    get_available_providers,
+    get_provider,
+)
 from alphavedha.intel.store import (
     load_disclosures,
     mark_disclosures_processed,
@@ -76,7 +81,10 @@ async def run_extraction_batch(
     events: list[dict[str, Any]] = []
     processed_ids: list[int] = []
     skipped = 0
+    deduped = 0
     failed = 0
+
+    seen_hashes: dict[str, dict[str, Any]] = {}
 
     for disc in disclosures:
         disc_id = disc["id"]
@@ -84,10 +92,18 @@ async def run_extraction_batch(
         category = disc.get("category", "")
         headline = disc.get("headline", "")
         text = disc.get("text")
+        text_hash = disc.get("text_hash")
 
-        if is_boilerplate(category):
+        if is_boilerplate(category, headline):
             skipped += 1
             processed_ids.append(disc_id)
+            continue
+
+        if text_hash and text_hash in seen_hashes:
+            prior = seen_hashes[text_hash]
+            events.append({**prior, "disclosure_id": disc_id, "symbol": symbol})
+            processed_ids.append(disc_id)
+            deduped += 1
             continue
 
         extraction = extract_one(provider, symbol, category, headline, text, prompt_version)
@@ -96,22 +112,24 @@ async def run_extraction_batch(
             failed += 1
             continue
 
-        events.append(
-            {
-                "disclosure_id": disc_id,
-                "symbol": symbol,
-                "event_type": extraction.event_type.value,
-                "direction": extraction.direction,
-                "materiality": extraction.materiality,
-                "confidence": extraction.confidence,
-                "summary": extraction.summary,
-                "red_flags": extraction.red_flags if extraction.red_flags else None,
-                "llm_model": provider.name,
-                "prompt_version": prompt_version,
-                "extracted_at": datetime.now(IST),
-            }
-        )
+        event_dict = {
+            "disclosure_id": disc_id,
+            "symbol": symbol,
+            "event_type": extraction.event_type.value,
+            "direction": extraction.direction,
+            "materiality": extraction.materiality,
+            "confidence": extraction.confidence,
+            "summary": extraction.summary,
+            "red_flags": extraction.red_flags if extraction.red_flags else None,
+            "llm_model": provider.name,
+            "prompt_version": prompt_version,
+            "extracted_at": datetime.now(IST),
+        }
+        events.append(event_dict)
         processed_ids.append(disc_id)
+
+        if text_hash:
+            seen_hashes[text_hash] = event_dict
 
     stored = 0
     if events:
@@ -120,8 +138,9 @@ async def run_extraction_batch(
     if processed_ids:
         await mark_disclosures_processed(processed_ids, datetime.now(IST))
 
+    llm_calls = len(disclosures) - skipped - deduped
     estimated_cost = cost_ledger.estimate_batch_cost(
-        llm_calls=len(disclosures) - skipped,
+        llm_calls=llm_calls,
         provider_name=provider.name,
     )
     cost_ledger.record_batch(estimated_cost)
@@ -131,6 +150,7 @@ async def run_extraction_batch(
         "total": len(disclosures),
         "extracted": stored,
         "skipped_boilerplate": skipped,
+        "skipped_dedup": deduped,
         "failed": failed,
         "estimated_cost_usd": round(estimated_cost, 4),
         "month_total_usd": round(cost_ledger.current_month_usd(), 4),
@@ -145,10 +165,20 @@ async def run_nightly_extraction(
     batch_size: int = BATCH_SIZE,
 ) -> dict[str, Any]:
     """Run extraction in batches until all disclosures are processed or budget is hit."""
-    provider = get_provider()
+    providers = get_available_providers()
+    if providers:
+        provider: LLMProvider = RoundRobinProvider(providers)
+        logger.info(
+            "extraction_providers",
+            providers=[p.name for p in providers],
+        )
+    else:
+        provider = get_provider()
+
     batches_run = 0
     total_extracted = 0
     total_skipped = 0
+    total_deduped = 0
     total_failed = 0
     total_cost_usd = 0.0
     status = "ok"
@@ -170,6 +200,7 @@ async def run_nightly_extraction(
 
         total_extracted += int(result["extracted"])
         total_skipped += int(result["skipped_boilerplate"])
+        total_deduped += int(result.get("skipped_dedup", 0))
         total_failed += int(result["failed"])
         total_cost_usd += float(result["estimated_cost_usd"])
 
@@ -177,6 +208,7 @@ async def run_nightly_extraction(
         "batches_run": batches_run,
         "total_extracted": total_extracted,
         "total_skipped": total_skipped,
+        "total_deduped": total_deduped,
         "total_failed": total_failed,
         "total_cost_usd": round(total_cost_usd, 4),
         "status": status,
@@ -195,6 +227,7 @@ class CostLedger:
     COST_PER_CALL_USD: ClassVar[dict[str, float]] = {
         "gemini": 0.0002,
         "groq": 0.0003,
+        "cerebras": 0.0001,
         "anthropic": 0.003,
     }
 

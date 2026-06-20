@@ -35,6 +35,11 @@ class TestCostLedger:
         cost = ledger.estimate_batch_cost(10, "groq/llama-3.3-70b")
         assert cost == pytest.approx(0.003)
 
+    def test_estimate_batch_cost_cerebras(self) -> None:
+        ledger = CostLedger()
+        cost = ledger.estimate_batch_cost(10, "cerebras/llama-3.3-70b")
+        assert cost == pytest.approx(0.001)
+
     def test_estimate_batch_cost_unknown_provider(self) -> None:
         ledger = CostLedger()
         cost = ledger.estimate_batch_cost(10, "unknown/model")
@@ -233,6 +238,85 @@ class TestRunExtractionBatch:
             assert result["failed"] == 1
             assert result["extracted"] == 0
             mock_mark.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dedup_skips_duplicate_text_hash(self) -> None:
+        """Disclosures with the same text_hash reuse the first extraction."""
+        import pandas as pd
+
+        from alphavedha.intel.extraction.schemas import DisclosureExtraction
+        from alphavedha.intel.extraction.taxonomy import EventType
+
+        mock_df = pd.DataFrame(
+            [
+                {
+                    "id": 1,
+                    "symbol": "TCS.NS",
+                    "source": "bse",
+                    "category": "Press Release",
+                    "headline": "TCS wins deal",
+                    "filed_at": "2026-06-19",
+                    "url": None,
+                    "text": "Full text...",
+                    "text_hash": "abc123hash",
+                    "processed_at": None,
+                },
+                {
+                    "id": 2,
+                    "symbol": "TCS.NS",
+                    "source": "nse",
+                    "category": "Press Release",
+                    "headline": "TCS wins deal",
+                    "filed_at": "2026-06-19",
+                    "url": None,
+                    "text": "Full text...",
+                    "text_hash": "abc123hash",
+                    "processed_at": None,
+                },
+            ]
+        )
+
+        mock_extraction = DisclosureExtraction(
+            event_type=EventType.ORDER_WIN,
+            direction=1,
+            materiality=7,
+            confidence=0.9,
+            summary="TCS wins deal",
+        )
+
+        with (
+            patch(
+                "alphavedha.intel.extraction.batcher.load_disclosures",
+                new_callable=AsyncMock,
+                return_value=mock_df,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.extract_one",
+                return_value=mock_extraction,
+            ) as mock_extract,
+            patch(
+                "alphavedha.intel.extraction.batcher.store_disclosure_events",
+                new_callable=AsyncMock,
+                return_value=2,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.mark_disclosures_processed",
+                new_callable=AsyncMock,
+                return_value=2,
+            ),
+            patch("alphavedha.intel.extraction.batcher.CostLedger") as MockLedger,
+        ):
+            mock_ledger = MagicMock()
+            mock_ledger.is_over_budget.return_value = False
+            mock_ledger.estimate_batch_cost.return_value = 0.0002
+            mock_ledger.current_month_usd.return_value = 0.0002
+            MockLedger.return_value = mock_ledger
+
+            result = await run_extraction_batch()
+            assert result["status"] == "ok"
+            assert result["extracted"] == 2
+            assert result["skipped_dedup"] == 1
+            assert mock_extract.call_count == 1
 
 
 class TestRunNightlyExtraction:

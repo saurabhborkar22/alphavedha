@@ -183,6 +183,7 @@ RED_FLAG_TYPES: frozenset[EventType] = frozenset(
 
 BOILERPLATE_CATEGORIES: frozenset[str] = frozenset(
     {
+        # Original 12
         "Trading Window",
         "Trading Window-Loss of UPSI",
         "ESOP/ESOS",
@@ -195,5 +196,43 @@ BOILERPLATE_CATEGORIES: frozenset[str] = frozenset(
         "Annual Report",
         "Compliances-Reg. 39 (3) - Details of Loss of Certificate / Duplicate Certificate",
         "Certificate Under Reg. 74 (5) Of SEBI (DP) Regulations, 2018",
+        # Routine compliance and procedural filings
+        "Board Meeting - Intimation",
+        "Shareholders meeting",
+        "Postal Ballot",
+        "Change In Address",
+        "Cessation",
+        "Reg. 13(3) - Investor Grievance",
+        "Compliances-Certificate",
+        "Reg.31(1)(a)/31(2)/75(2)",
+        "Annual Secretarial Compliance",
+        "Certificate under Reg. 40(9)",
+        "Proceedings of AGM/EGM",
+        "Investor Presentation",
+        "Corporate Action-Stock Split",
     }
+)
+
+BOILERPLATE_HEADLINE_PATTERNS: tuple[str, ...] = (
+    r"(?i)trading\s+window",
+    r"(?i)loss\s+of\s+share\s+certificate",
+    r"(?i)duplicate\s+share\s+certificate",
+    r"(?i)newspaper\s+(publication|advertisement|ad)",
+    r"(?i)book\s+closure",
+    r"(?i)investor\s+grievance",
+    r"(?i)compliance\s+certificate",
+    r"(?i)secretarial\s+compliance",
+    r"(?i)proceedings\s+of\s+(agm|egm)",
+    r"(?i)reg\.?\s*(13|31|40|74)\s*\(",
+)
+
+ALWAYS_EXTRACT_PATTERNS: tuple[str, ...] = (
+    r"(?i)(cfo|ceo|md|managing\s*director|chief\s*financial|company\s*secretary)\s*.*(resign|step\s*down|vacate)",
+    r"(?i)default",
+    r"(?i)auditor\s*(resign|removal|step)",
+    r"(?i)fraud",
+    r"(?i)sebi\s*(order|penalty|action|directive)",
+    r"(?i)(asm|gsm|surveillance)",
+    r"(?i)downgrad",
+    r"(?i)pledge\s*(creat|increas|invoc)",
 )
