@@ -37,6 +37,7 @@ FII_DII_INGESTION_TIME = "18:30"  # NSE publishes FII/DII participation data by 
 BHAVCOPY_INGESTION_TIME = "18:45"  # after FII/DII, before BSE weekly jobs
 BSE_ANN_INGESTION_TIME = "19:00"  # daily BSE announcements + PDF extraction
 NSE_ANN_INGESTION_TIME = "19:15"  # daily NSE announcements (PIT/SAST flagging)
+INSIDER_TRADES_INGESTION_TIME = "19:20"  # insider trades from BSE API (SAST disclosures)
 SURVEILLANCE_INGESTION_TIME = "19:30"  # ASM/GSM list snapshot
 DEALS_INGESTION_TIME = "19:45"  # bulk/block/short deals
 CREDIT_RATING_INGESTION_TIME = "19:50"  # credit rating actions from announcements
@@ -884,6 +885,72 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_insider_trades_ingestion(self) -> JobResult:
+        """Ingest insider (SAST) trades from BSE API for Nifty 50 symbols."""
+        result = JobResult(job_name="daily_insider_trades_ingestion", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("insider_trades_ingestion_skipped", reason="weekend")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="daily_insider_trades_ingestion")
+
+        try:
+            if self._demo:
+                logger.info("insider_trades_ingestion_skipped", reason="demo mode")
+            else:
+                from alphavedha.data.providers.sebi_provider import SebiProvider
+                from alphavedha.data.store import store_insider_trades
+
+                async def _task() -> int:
+                    from alphavedha.api.routes.ui_support import NIFTY_50
+
+                    provider = SebiProvider()
+                    symbols = [s for s, _n, _sec, _c in NIFTY_50]
+                    all_rows: list[dict[str, Any]] = []
+                    for symbol in symbols:
+                        records = await provider.fetch_insider_trades(
+                            symbol.replace(".NS", ""), days_back=7
+                        )
+                        for r in records:
+                            all_rows.append(
+                                {
+                                    "symbol": r.symbol,
+                                    "trade_date": r.trade_date,
+                                    "person_name": r.person_name,
+                                    "person_category": r.person_category,
+                                    "trade_type": r.trade_type,
+                                    "shares": r.shares,
+                                    "value_lakhs": r.value_lakhs,
+                                }
+                            )
+                    return await store_insider_trades(all_rows) if all_rows else 0
+
+                count: int = _run_async(_task())  # type: ignore[assignment]
+                result.symbols_processed = int(count)
+                logger.info(
+                    "scheduler_job_complete",
+                    job="daily_insider_trades_ingestion",
+                    trades_stored=count,
+                )
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error(
+                "scheduler_job_failed",
+                job="daily_insider_trades_ingestion",
+                error=str(e),
+            )
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def run_surveillance_ingestion(self) -> JobResult:
         """Ingest current ASM/GSM surveillance lists from NSE."""
         result = JobResult(job_name="daily_surveillance_ingestion", started_at=_now_ist())
@@ -1488,6 +1555,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(BHAVCOPY_INGESTION_TIME).do(self.run_bhavcopy_ingestion)
         schedule.every().day.at(BSE_ANN_INGESTION_TIME).do(self.run_bse_ann_ingestion)
         schedule.every().day.at(NSE_ANN_INGESTION_TIME).do(self.run_nse_ann_ingestion)
+        schedule.every().day.at(INSIDER_TRADES_INGESTION_TIME).do(self.run_insider_trades_ingestion)
         schedule.every().day.at(SURVEILLANCE_INGESTION_TIME).do(self.run_surveillance_ingestion)
         schedule.every().day.at(DEALS_INGESTION_TIME).do(self.run_deals_ingestion)
         schedule.every().day.at(CREDIT_RATING_INGESTION_TIME).do(self.run_credit_rating_ingestion)
@@ -1539,6 +1607,7 @@ class AlphaVedhaScheduler:
             bhavcopy_ingestion_time=BHAVCOPY_INGESTION_TIME,
             bse_ann_ingestion_time=BSE_ANN_INGESTION_TIME,
             nse_ann_ingestion_time=NSE_ANN_INGESTION_TIME,
+            insider_trades_ingestion_time=INSIDER_TRADES_INGESTION_TIME,
             surveillance_ingestion_time=SURVEILLANCE_INGESTION_TIME,
             deals_ingestion_time=DEALS_INGESTION_TIME,
             credit_rating_ingestion_time=CREDIT_RATING_INGESTION_TIME,

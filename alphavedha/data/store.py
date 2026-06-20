@@ -533,7 +533,7 @@ async def store_insider_trades(rows: list[dict]) -> int:
 
     async with session_factory() as session:
         for row in rows:
-            stmt = InsiderTrade(
+            obj = InsiderTrade(
                 symbol=row["symbol"],
                 trade_date=row["trade_date"],
                 person_name=row.get("person_name", "Unknown"),
@@ -542,7 +542,7 @@ async def store_insider_trades(rows: list[dict]) -> int:
                 shares=row.get("shares", 0),
                 value_lakhs=row.get("value_lakhs", 0.0),
             )
-            session.add(stmt)
+            await session.merge(obj)
             stored += 1
 
         await session.commit()
