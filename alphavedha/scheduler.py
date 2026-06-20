@@ -287,6 +287,36 @@ async def _store_pnl_summary(as_of: date, summary: EvaluationSummary) -> None:
     )
 
 
+def _send_strategy_summary(as_of: date) -> None:
+    """Build and email the per-strategy daily summary after evaluation."""
+    try:
+        from alphavedha.data.store import load_paper_trades
+        from alphavedha.monitoring.alerts import EmailAlerter
+        from alphavedha.monitoring.strategy_summary import build_strategy_summary
+
+        trades = _run_async(load_paper_trades())
+        avoid_symbols: list[str] = []
+        try:
+            from alphavedha.api.routes.ui_support import NIFTY_50
+            from alphavedha.intel.signals.blowup_score import compute_avoid_list, run_blowup_scores
+
+            symbols = [s for s, _n, _sec, _c in NIFTY_50]
+            scores = _run_async(run_blowup_scores(symbols, as_of=as_of))
+            avoid_symbols = [s.symbol for s in compute_avoid_list(scores)]
+        except Exception:
+            pass
+
+        report = build_strategy_summary(trades, as_of, avoid_list_symbols=avoid_symbols)
+        text = report.format_text()
+        alerter = EmailAlerter()
+        alerter.strategy_daily_summary(text, str(as_of))
+        logger.info(
+            "strategy_summary_sent", date=str(as_of), strategies=len(report.strategy_sections)
+        )
+    except Exception as e:
+        logger.warning("strategy_summary_failed", error=str(e))
+
+
 class AlphaVedhaScheduler:
     """Manages all scheduled background jobs.
 
@@ -455,6 +485,8 @@ class AlphaVedhaScheduler:
                     _run_async(_store_pnl_summary(as_of, summary))
                 else:
                     logger.info("daily_pnl_skipped", reason="no trades evaluated")
+
+                _send_strategy_summary(as_of)
 
             result.success = True
             self._state.last_evaluation_run = _now_ist()

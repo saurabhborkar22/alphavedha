@@ -121,3 +121,8 @@ class TestEmailAlerter:
         alerter = EmailAlerter(AlertConfig())
         result = alerter.api_error_spike(50, 5)
         assert result is False
+
+    def test_strategy_daily_summary_disabled(self) -> None:
+        alerter = EmailAlerter(AlertConfig())
+        result = alerter.strategy_daily_summary("report text", "2026-06-20")
+        assert result is False

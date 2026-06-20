@@ -120,6 +120,14 @@ class EmailAlerter:
             level=AlertLevel.CRITICAL,
         )
 
+    def strategy_daily_summary(self, report_text: str, report_date: str) -> bool:
+        """Send the per-strategy daily summary email."""
+        return self.send(
+            subject=f"Daily strategy report — {report_date}",
+            body=report_text,
+            level=AlertLevel.INFO,
+        )
+
     def data_quality_failed(self, report: QualityReport) -> bool:
         """Send alert when critical data quality checks fail."""
         critical = [r for r in report.results if not r.passed and r.severity == "critical"]
