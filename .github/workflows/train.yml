@@ -60,35 +60,65 @@ jobs:
 
       - name: Scale up server (cx23 → cx43)
         if: env.DO_SCALE == 'true'
+        env:
+          HETZNER_TOKEN: ${{ secrets.HETZNER_TOKEN }}
+          SERVER_ID: ${{ secrets.HETZNER_SERVER_ID }}
         run: |
+          hcloud() {
+            local resp
+            resp=$(curl -s -w "\n%{http_code}" "$@")
+            local code=$(echo "$resp" | tail -1)
+            local body=$(echo "$resp" | sed '$d')
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "ERROR: HTTP $code — $body" >&2
+              return 1
+            fi
+            echo "$body"
+          }
+
+          wait_for_status() {
+            local target=$1 timeout=$2
+            echo "Waiting up to ${timeout}s for server status=$target..."
+            for i in $(seq 1 "$timeout"); do
+              status=$(hcloud -H "Authorization: Bearer $HETZNER_TOKEN" \
+                "https://api.hetzner.cloud/v1/servers/$SERVER_ID" \
+                | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['status'])")
+              if [ "$status" = "$target" ]; then
+                echo "Server is $target (after ${i}s)"
+                return 0
+              fi
+              sleep 1
+            done
+            echo "ERROR: Server still '$status' after ${timeout}s (wanted '$target')" >&2
+            return 1
+          }
+
           echo "Scaling up to cx43 for heavy training..."
 
-          curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+          hcloud -X POST \
+            -H "Authorization: Bearer $HETZNER_TOKEN" \
             -H "Content-Type: application/json" \
-            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/poweroff" \
+            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/poweroff" \
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweroff:', d.get('action',{}).get('status','?'))"
 
-          echo "Waiting 60s for server to power off..."
-          sleep 60
+          wait_for_status "off" 120
 
-          curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+          hcloud -X POST \
+            -H "Authorization: Bearer $HETZNER_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"server_type":"cx43","upgrade_disk":false}' \
-            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/change_type" \
+            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/change_type" \
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('resize:', d.get('action',{}).get('status','?'))"
 
           sleep 15
 
-          curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+          hcloud -X POST \
+            -H "Authorization: Bearer $HETZNER_TOKEN" \
             -H "Content-Type: application/json" \
-            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/poweron" \
+            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/poweron" \
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweron:', d.get('action',{}).get('status','?'))"
 
-          echo "Waiting 90s for server to boot..."
-          sleep 90
+          wait_for_status "running" 120
 
       - name: Verify VPS host key
         env:
@@ -126,30 +156,63 @@ jobs:
       # always() ensures scale-down runs even if training failed — never leave on cx43 by accident
       - name: Scale down server (cx43 → cx23)
         if: always() && env.DO_SCALE == 'true'
+        env:
+          HETZNER_TOKEN: ${{ secrets.HETZNER_TOKEN }}
+          SERVER_ID: ${{ secrets.HETZNER_SERVER_ID }}
         run: |
+          hcloud() {
+            local resp
+            resp=$(curl -s -w "\n%{http_code}" "$@")
+            local code=$(echo "$resp" | tail -1)
+            local body=$(echo "$resp" | sed '$d')
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "ERROR: HTTP $code — $body" >&2
+              return 1
+            fi
+            echo "$body"
+          }
+
+          wait_for_status() {
+            local target=$1 timeout=$2
+            echo "Waiting up to ${timeout}s for server status=$target..."
+            for i in $(seq 1 "$timeout"); do
+              status=$(hcloud -H "Authorization: Bearer $HETZNER_TOKEN" \
+                "https://api.hetzner.cloud/v1/servers/$SERVER_ID" \
+                | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['status'])")
+              if [ "$status" = "$target" ]; then
+                echo "Server is $target (after ${i}s)"
+                return 0
+              fi
+              sleep 1
+            done
+            echo "ERROR: Server still '$status' after ${timeout}s (wanted '$target')" >&2
+            return 1
+          }
+
           echo "Scaling back down to cx23..."
 
-          curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+          hcloud -X POST \
+            -H "Authorization: Bearer $HETZNER_TOKEN" \
             -H "Content-Type: application/json" \
-            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/poweroff" \
+            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/poweroff" \
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweroff:', d.get('action',{}).get('status','?'))"
 
-          sleep 60
+          wait_for_status "off" 120
 
-          curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+          hcloud -X POST \
+            -H "Authorization: Bearer $HETZNER_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"server_type":"cx23","upgrade_disk":false}' \
-            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/change_type" \
+            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/change_type" \
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('resize:', d.get('action',{}).get('status','?'))"
 
           sleep 15
 
-          curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.HETZNER_TOKEN }}" \
+          hcloud -X POST \
+            -H "Authorization: Bearer $HETZNER_TOKEN" \
             -H "Content-Type: application/json" \
-            "https://api.hetzner.cloud/v1/servers/${{ secrets.HETZNER_SERVER_ID }}/actions/poweron" \
+            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/poweron" \
             | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweron:', d.get('action',{}).get('status','?'))"
 
+          wait_for_status "running" 120
           echo "Server back to cx23 (€3.99/mo)."
