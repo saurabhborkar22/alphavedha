@@ -187,12 +187,12 @@ class TestAlphaVedhaScheduler:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ALPHAVEDHA_HEAVY_TRAINING", None)
             AlphaVedhaScheduler(demo=True).setup_schedule()
-            assert len(schedule.get_jobs()) == 23  # heavy retrain gated off
+            assert len(schedule.get_jobs()) == 24  # heavy retrain gated off
 
         schedule.clear()
         with patch.dict(os.environ, {"ALPHAVEDHA_HEAVY_TRAINING": "1"}, clear=False):
             AlphaVedhaScheduler(demo=True).setup_schedule()
-            assert len(schedule.get_jobs()) == 24  # incl. weekly LSTM/TFT retrain
+            assert len(schedule.get_jobs()) == 25  # incl. weekly LSTM/TFT retrain
 
     def test_maybe_monthly_retrain_first_week(self) -> None:
         sched = AlphaVedhaScheduler(demo=True)

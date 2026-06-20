@@ -456,9 +456,18 @@ async def store_transcripts(rows: list[dict[str, Any]]) -> int:
     session_factory = get_session_factory()
     stored = 0
 
+    deduped: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in rows:
+        key = (r["symbol"], r["fiscal_quarter"])
+        existing = deduped.get(key)
+        if existing is None or (r.get("text") and not existing.get("text")):
+            deduped[key] = r
+
+    unique_rows = list(deduped.values())
+
     async with session_factory() as session:
-        for batch_start in range(0, len(rows), 100):
-            batch = rows[batch_start : batch_start + 100]
+        for batch_start in range(0, len(unique_rows), 100):
+            batch = unique_rows[batch_start : batch_start + 100]
             values = [
                 {
                     "symbol": r["symbol"],
