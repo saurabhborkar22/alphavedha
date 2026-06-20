@@ -38,11 +38,11 @@ class TestGetProvider:
 class TestCerebrasProvider:
     def test_name(self) -> None:
         p = CerebrasProvider(api_key="test")
-        assert p.name == "cerebras/llama-3.3-70b"
+        assert p.name == "cerebras/gpt-oss-120b"
 
     def test_custom_model(self) -> None:
-        p = CerebrasProvider(api_key="test", model="llama-3.1-8b")
-        assert p.name == "cerebras/llama-3.1-8b"
+        p = CerebrasProvider(api_key="test", model="zai-glm-4.7")
+        assert p.name == "cerebras/zai-glm-4.7"
 
     def test_extract_json_success(self) -> None:
         p = CerebrasProvider(api_key="test-key")
