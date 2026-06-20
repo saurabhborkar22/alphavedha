@@ -255,6 +255,45 @@ async def store_rating_events(rows: list[dict[str, Any]]) -> int:
     return stored
 
 
+async def load_rating_events(
+    symbol: str | None = None,
+    since: datetime | None = None,
+    limit: int = 100,
+) -> pd.DataFrame:
+    """Load rating events, ordered by filed_at descending."""
+    session_factory = get_session_factory()
+
+    async with session_factory() as session:
+        stmt = select(RatingEvent).order_by(RatingEvent.filed_at.desc()).limit(limit)
+
+        if symbol is not None:
+            stmt = stmt.where(RatingEvent.symbol == symbol)
+        if since is not None:
+            stmt = stmt.where(RatingEvent.filed_at >= since)
+
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(
+        [
+            {
+                "id": r.id,
+                "symbol": r.symbol,
+                "agency": r.agency,
+                "action": r.action,
+                "rating_from": r.rating_from,
+                "rating_to": r.rating_to,
+                "outlook": r.outlook,
+                "filed_at": r.filed_at,
+            }
+            for r in rows
+        ]
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pledge Snapshots
 # ---------------------------------------------------------------------------
@@ -334,6 +373,41 @@ async def store_surveillance_flags(rows: list[dict[str, Any]]) -> int:
 
     logger.info("surveillance_flags_stored", rows=stored)
     return stored
+
+
+async def load_surveillance_flags(
+    symbol: str | None = None,
+    active_only: bool = False,
+) -> pd.DataFrame:
+    """Load surveillance flags, optionally filtered by symbol and active status."""
+    session_factory = get_session_factory()
+
+    async with session_factory() as session:
+        stmt = select(SurveillanceFlag).order_by(SurveillanceFlag.added_on.desc())
+
+        if symbol is not None:
+            stmt = stmt.where(SurveillanceFlag.symbol == symbol)
+        if active_only:
+            stmt = stmt.where(SurveillanceFlag.removed_on.is_(None))
+
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(
+        [
+            {
+                "id": r.id,
+                "symbol": r.symbol,
+                "list_name": r.list_name,
+                "added_on": r.added_on,
+                "removed_on": r.removed_on,
+            }
+            for r in rows
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
