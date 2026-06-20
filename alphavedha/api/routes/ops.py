@@ -40,7 +40,7 @@ IST = ZoneInfo("Asia/Kolkata")
 
 _CRITICAL_TABLES: list[tuple[str, Any, str, str]] = [
     ("paper_trades", PaperTrade, "prediction_date", "08:30 predictions"),
-    ("prediction_proofs", PredictionProof, "prediction_date", "08:40 hash"),
+    ("prediction_proofs", PredictionProof, "proof_date", "08:40 hash"),
     ("daily_ohlcv", DailyOHLCV, "date", "17:00 data refresh"),
     ("institutional_flows", InstitutionalFlow, "date", "18:30 FII/DII"),
     ("disclosures", Disclosure, "filed_at", "19:00-19:15 announcements"),
@@ -52,7 +52,7 @@ _CRITICAL_TABLES: list[tuple[str, Any, str, str]] = [
 ]
 
 _OPTIONAL_TABLES: list[tuple[str, Any, str, str]] = [
-    ("intraday_ohlcv", IntradayOHLCV, "timestamp", "intraday poll"),
+    ("intraday_ohlcv", IntradayOHLCV, "last_updated", "intraday poll"),
     ("daily_pnl", DailyPnL, "date", "15:45 evaluation"),
 ]
 
