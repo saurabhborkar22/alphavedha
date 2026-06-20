@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import schedule
@@ -29,6 +29,7 @@ logger = structlog.get_logger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
 PREDICTION_TIME = "08:30"
+SIGNAL_STRATEGIES_TIME = "08:35"  # signal strategies after ensemble, before hash
 PREDICTION_HASH_TIME = "08:40"  # hash daily predictions after 08:30 persist, before 09:15 open
 EVALUATION_TIME = "15:45"
 DATA_REFRESH_TIME = "17:00"  # daily OHLCV ingestion after market close (15:30 IST)
@@ -93,6 +94,7 @@ class SchedulerState:
     last_trends_ingestion: datetime | None = None
     last_intraday_poll: datetime | None = None
     last_fii_dii_ingestion: datetime | None = None
+    last_signal_strategies: datetime | None = None
 
 
 def _run_async(coro: object) -> object:
@@ -167,6 +169,44 @@ async def _persist_paper_trades(
             persisted += 1
         except Exception as e:
             logger.error("paper_trade_persist_failed", symbol=pred.symbol, error=str(e))
+    return persisted
+
+
+async def _persist_signal_paper_trades(
+    signals: list[dict[str, Any]],
+    strategy: str,
+    prediction_date: date,
+) -> int:
+    """Persist signal-generated paper trades. Each signal dict needs symbol, direction, confidence."""
+    from alphavedha.data.store import store_paper_trade
+
+    persisted = 0
+    for sig in signals:
+        symbol = str(sig["symbol"])
+        try:
+            entry_price = await _latest_close(symbol, prediction_date)
+            if entry_price is None:
+                logger.warning("signal_entry_price_missing", symbol=symbol, strategy=strategy)
+
+            await store_paper_trade(
+                {
+                    "symbol": symbol,
+                    "prediction_date": prediction_date,
+                    "strategy": strategy,
+                    "predicted_direction": int(sig["direction"]),
+                    "predicted_magnitude": 0.0,
+                    "confidence": float(sig["confidence"]),
+                    "model_version": strategy,
+                    "regime": None,
+                    "is_tradeable": True,
+                    "entry_price": entry_price,
+                }
+            )
+            persisted += 1
+        except Exception as e:
+            logger.error(
+                "signal_paper_trade_failed", symbol=symbol, strategy=strategy, error=str(e)
+            )
     return persisted
 
 
@@ -425,6 +465,157 @@ class AlphaVedhaScheduler:
         except Exception as e:
             result.error = str(e)
             logger.error("scheduler_job_failed", job="daily_predictions", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_signal_strategies(self) -> JobResult:
+        """Run intel-based signal strategies and persist as paper trades."""
+        result = JobResult(job_name="signal_strategies", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("signal_strategies_skipped", reason="weekend")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="signal_strategies")
+
+        try:
+            if self._demo:
+                logger.info("signal_strategies_skipped", reason="demo mode")
+            else:
+                prediction_date = _now_ist().date()
+                total_persisted = 0
+
+                from alphavedha.api.routes.ui_support import NIFTY_50
+                from alphavedha.intel.signals.blowup_score import (
+                    STRATEGY_NAME as BLOWUP_STRATEGY,
+                )
+                from alphavedha.intel.signals.blowup_score import (
+                    BlowupScore,
+                    compute_avoid_list,
+                    run_blowup_scores,
+                )
+                from alphavedha.intel.signals.event_drift import (
+                    STRATEGY_NAME as EVENT_DRIFT_STRATEGY,
+                )
+                from alphavedha.intel.signals.event_drift import (
+                    EventDriftSignal,
+                    run_event_drift_signals,
+                )
+                from alphavedha.intel.signals.guidance_delta import (
+                    STRATEGY_NAME as GUIDANCE_STRATEGY,
+                )
+                from alphavedha.intel.signals.guidance_delta import (
+                    GuidanceDeltaSignal,
+                    run_guidance_delta_signals,
+                )
+                from alphavedha.intel.signals.insider_cluster import (
+                    STRATEGY_NAME as INSIDER_STRATEGY,
+                )
+                from alphavedha.intel.signals.insider_cluster import (
+                    InsiderClusterSignal,
+                    run_insider_cluster_signals,
+                )
+
+                symbols = [s for s, _n, _sec, _c in NIFTY_50]
+
+                # 1. Blowup scores → avoid list
+                scores: list[BlowupScore] = _run_async(  # type: ignore[assignment]
+                    run_blowup_scores(symbols, as_of=prediction_date)
+                )
+                avoid_list = compute_avoid_list(scores)
+                avoid_symbols = frozenset(s.symbol for s in avoid_list)
+
+                # Persist blowup_short_v1 paper trades for new avoid-list entries
+                if avoid_list:
+                    blowup_signals = [
+                        {"symbol": s.symbol, "direction": -1, "confidence": s.total_score / 100.0}
+                        for s in avoid_list
+                    ]
+                    n: int = _run_async(  # type: ignore[assignment]
+                        _persist_signal_paper_trades(
+                            blowup_signals, BLOWUP_STRATEGY, prediction_date
+                        )
+                    )
+                    total_persisted += n
+                    logger.info(
+                        "signal_blowup_persisted",
+                        count=n,
+                        avoid_symbols=list(avoid_symbols),
+                    )
+
+                # 2. Event drift
+                event_signals: list[EventDriftSignal] = _run_async(  # type: ignore[assignment]
+                    run_event_drift_signals(prediction_date)
+                )
+                if event_signals:
+                    event_dicts = [
+                        {"symbol": s.symbol, "direction": s.direction, "confidence": s.confidence}
+                        for s in event_signals
+                        if s.symbol not in avoid_symbols
+                    ]
+                    n = _run_async(  # type: ignore[assignment]
+                        _persist_signal_paper_trades(
+                            event_dicts, EVENT_DRIFT_STRATEGY, prediction_date
+                        )
+                    )
+                    total_persisted += n
+                    logger.info("signal_event_drift_persisted", count=n)
+
+                # 3. Insider cluster
+                insider_signals: list[InsiderClusterSignal] = _run_async(  # type: ignore[assignment]
+                    run_insider_cluster_signals(
+                        symbols, signal_date=prediction_date, avoid_symbols=avoid_symbols
+                    )
+                )
+                if insider_signals:
+                    insider_dicts = [
+                        {"symbol": s.symbol, "direction": s.direction, "confidence": s.confidence}
+                        for s in insider_signals
+                    ]
+                    n = _run_async(  # type: ignore[assignment]
+                        _persist_signal_paper_trades(
+                            insider_dicts, INSIDER_STRATEGY, prediction_date
+                        )
+                    )
+                    total_persisted += n
+                    logger.info("signal_insider_cluster_persisted", count=n)
+
+                # 4. Guidance delta
+                guidance_signals: list[GuidanceDeltaSignal] = _run_async(  # type: ignore[assignment]
+                    run_guidance_delta_signals(prediction_date)
+                )
+                if guidance_signals:
+                    guidance_dicts = [
+                        {"symbol": s.symbol, "direction": s.direction, "confidence": s.confidence}
+                        for s in guidance_signals
+                    ]
+                    n = _run_async(  # type: ignore[assignment]
+                        _persist_signal_paper_trades(
+                            guidance_dicts, GUIDANCE_STRATEGY, prediction_date
+                        )
+                    )
+                    total_persisted += n
+                    logger.info("signal_guidance_delta_persisted", count=n)
+
+                result.symbols_processed = total_persisted
+                logger.info(
+                    "scheduler_job_complete",
+                    job="signal_strategies",
+                    total_persisted=total_persisted,
+                    avoid_list_size=len(avoid_list),
+                )
+
+            result.success = True
+            self._state.last_signal_strategies = _now_ist()
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="signal_strategies", error=str(e))
 
         result.finished_at = _now_ist()
         self._record_job(result)
@@ -1288,6 +1479,7 @@ class AlphaVedhaScheduler:
     def setup_schedule(self) -> None:
         """Register all jobs with the schedule library."""
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
+        schedule.every().day.at(SIGNAL_STRATEGIES_TIME).do(self.run_signal_strategies)
         schedule.every().day.at(PREDICTION_HASH_TIME).do(self.run_prediction_hash)
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
@@ -1339,6 +1531,7 @@ class AlphaVedhaScheduler:
         logger.info(
             "scheduler_configured",
             prediction_time=PREDICTION_TIME,
+            signal_strategies_time=SIGNAL_STRATEGIES_TIME,
             prediction_hash_time=PREDICTION_HASH_TIME,
             evaluation_time=EVALUATION_TIME,
             data_refresh_time=DATA_REFRESH_TIME,
