@@ -24,6 +24,7 @@ from alphavedha.api.routes import (
     fundamental,
     health,
     live,
+    ops,
     paper_trading,
     predictions,
     public,
@@ -202,6 +203,7 @@ def create_app(demo: bool | None = None) -> FastAPI:
     app.include_router(paper_trading.router)
     app.include_router(dashboard.router)
     app.include_router(public.router)
+    app.include_router(ops.router)
 
     Instrumentator(
         should_group_status_codes=True,
