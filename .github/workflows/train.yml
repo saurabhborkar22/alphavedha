@@ -127,7 +127,7 @@ jobs:
         run: |
           echo "Waiting for SSH to become ready..."
           for i in $(seq 1 60); do
-            KEY=$(ssh-keyscan -t ed25519 "$VPS_HOST" 2>/dev/null)
+            KEY=$(ssh-keyscan -t ed25519 "$VPS_HOST" 2>/dev/null) || true
             if [ -n "$KEY" ]; then
               echo "SSH ready (after ${i}s)"
               break
