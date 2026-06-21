@@ -133,6 +133,146 @@ class TestOpsIntelPush:
         assert data["rows_stored"] == 2
 
 
+class TestOpsIntelPending:
+    def test_requires_auth(self, client: TestClient) -> None:
+        resp = client.get("/api/ops/intel/pending")
+        assert resp.status_code == 401
+
+    def test_returns_pending_disclosures(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        mock_disclosures = [
+            {
+                "id": 1,
+                "symbol": "TCS.NS",
+                "category": "Results",
+                "headline": "Q1 results declared",
+                "text": "Revenue up 10%",
+                "text_hash": "abc123",
+                "filed_at": None,
+            },
+        ]
+        with patch(
+            "alphavedha.api.routes.ops.get_unprocessed_disclosures",
+            new_callable=AsyncMock,
+            return_value=mock_disclosures,
+        ):
+            resp = client.get("/api/ops/intel/pending", headers=auth_headers)
+        data = resp.json()
+        assert data["count"] == 1
+        assert data["pending"][0]["symbol"] == "TCS.NS"
+
+    def test_filters_boilerplate(self, client: TestClient, auth_headers: dict[str, str]) -> None:
+        mock_disclosures = [
+            {
+                "id": 1,
+                "symbol": "TCS.NS",
+                "category": "Trading Window",
+                "headline": "Closure of trading window",
+                "text": None,
+                "text_hash": None,
+                "filed_at": None,
+            },
+        ]
+        with (
+            patch(
+                "alphavedha.api.routes.ops.get_unprocessed_disclosures",
+                new_callable=AsyncMock,
+                return_value=mock_disclosures,
+            ),
+            patch(
+                "alphavedha.api.routes.ops.mark_disclosures_processed",
+                new_callable=AsyncMock,
+                return_value=1,
+            ),
+        ):
+            resp = client.get("/api/ops/intel/pending", headers=auth_headers)
+        data = resp.json()
+        assert data["count"] == 0
+        assert data["boilerplate_skipped"] == 1
+
+    def test_empty_when_none_pending(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        with patch(
+            "alphavedha.api.routes.ops.get_unprocessed_disclosures",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            resp = client.get("/api/ops/intel/pending", headers=auth_headers)
+        data = resp.json()
+        assert data["count"] == 0
+        assert data["pending"] == []
+
+
+class TestOpsIntelEvents:
+    def test_requires_auth(self, client: TestClient) -> None:
+        resp = client.post("/api/ops/intel/events", json={"events": [], "processed_ids": []})
+        assert resp.status_code == 401
+
+    def test_rejects_empty_payload(self, client: TestClient, auth_headers: dict[str, str]) -> None:
+        resp = client.post(
+            "/api/ops/intel/events",
+            json={"events": [], "processed_ids": []},
+            headers=auth_headers,
+        )
+        data = resp.json()
+        assert data["success"] is False
+
+    def test_accepts_events(self, client: TestClient, auth_headers: dict[str, str]) -> None:
+        with (
+            patch(
+                "alphavedha.api.routes.ops.store_disclosure_events",
+                new_callable=AsyncMock,
+                return_value=1,
+            ),
+            patch(
+                "alphavedha.api.routes.ops.mark_disclosures_processed",
+                new_callable=AsyncMock,
+                return_value=1,
+            ),
+        ):
+            resp = client.post(
+                "/api/ops/intel/events",
+                json={
+                    "events": [
+                        {
+                            "disclosure_id": 1,
+                            "symbol": "TCS.NS",
+                            "event_type": "order_win",
+                            "direction": 1,
+                            "materiality": 7,
+                            "confidence": 0.9,
+                            "summary": "Won Rs 100 Cr order",
+                            "red_flags": [],
+                        }
+                    ],
+                    "processed_ids": [1],
+                },
+                headers=auth_headers,
+            )
+        data = resp.json()
+        assert data["success"] is True
+        assert data["events_stored"] == 1
+        assert data["ids_marked_processed"] == 1
+
+    def test_marks_processed_only(self, client: TestClient, auth_headers: dict[str, str]) -> None:
+        with patch(
+            "alphavedha.api.routes.ops.mark_disclosures_processed",
+            new_callable=AsyncMock,
+            return_value=3,
+        ):
+            resp = client.post(
+                "/api/ops/intel/events",
+                json={"events": [], "processed_ids": [1, 2, 3]},
+                headers=auth_headers,
+            )
+        data = resp.json()
+        assert data["success"] is True
+        assert data["events_stored"] == 0
+        assert data["ids_marked_processed"] == 3
+
+
 class TestOpsSchedulerStatus:
     def test_requires_auth(self, client: TestClient) -> None:
         resp = client.get("/api/ops/scheduler/status")

@@ -31,6 +31,9 @@ from alphavedha.data.models import (
     SurveillanceFlag,
     Transcript,
 )
+from alphavedha.intel.extraction.batcher import get_unprocessed_disclosures
+from alphavedha.intel.extraction.extractor import is_boilerplate
+from alphavedha.intel.store import mark_disclosures_processed, store_disclosure_events
 
 logger = structlog.get_logger(__name__)
 
@@ -344,6 +347,123 @@ async def table_counts() -> dict[str, Any]:
                 counts[table_name] = -1
 
     return {"counts": counts, "checked_at": datetime.now(IST).isoformat()}
+
+
+@router.get("/intel/pending")
+async def intel_pending(limit: int = 100) -> dict[str, Any]:
+    """Return unprocessed disclosures for Claude Routine extraction.
+
+    The Routine calls this, extracts events with Claude, and pushes
+    results back via POST /api/ops/intel/events. The VPS scheduler's
+    Gemini/Groq extraction acts as fallback for anything left over.
+    """
+    limit = min(limit, 500)
+
+    disclosures = await get_unprocessed_disclosures(limit=limit)
+
+    pending: list[dict[str, Any]] = []
+    boilerplate_ids: list[int] = []
+
+    for disc in disclosures:
+        if is_boilerplate(disc.get("category", ""), disc.get("headline", "")):
+            boilerplate_ids.append(disc["id"])
+            continue
+        pending.append(
+            {
+                "id": disc["id"],
+                "symbol": disc["symbol"],
+                "category": disc.get("category", ""),
+                "headline": disc.get("headline", ""),
+                "text": disc.get("text"),
+                "filed_at": filed.isoformat() if (filed := disc.get("filed_at")) else None,
+            }
+        )
+
+    if boilerplate_ids:
+        await mark_disclosures_processed(boilerplate_ids, datetime.now(IST))
+
+    logger.info(
+        "ops_intel_pending",
+        total=len(disclosures),
+        pending=len(pending),
+        boilerplate_skipped=len(boilerplate_ids),
+    )
+
+    return {
+        "pending": pending,
+        "count": len(pending),
+        "boilerplate_skipped": len(boilerplate_ids),
+    }
+
+
+@router.post("/intel/events")
+async def push_intel_events(payload: dict[str, Any]) -> dict[str, Any]:
+    """Accept extracted disclosure events from Claude Routine.
+
+    Payload format:
+    {
+        "events": [
+            {
+                "disclosure_id": 123,
+                "symbol": "TCS",
+                "event_type": "order_win",
+                "direction": 1,
+                "materiality": 7,
+                "confidence": 0.95,
+                "summary": "Won Rs 100 Cr order from Indian Railways",
+                "red_flags": []
+            },
+            ...
+        ],
+        "processed_ids": [123, 124, 125]
+    }
+    """
+
+    events = payload.get("events", [])
+    processed_ids = payload.get("processed_ids", [])
+
+    if not events and not processed_ids:
+        return {"success": False, "error": "Missing 'events' and 'processed_ids'"}
+
+    now = datetime.now(IST)
+
+    event_rows: list[dict[str, Any]] = []
+    for evt in events:
+        event_rows.append(
+            {
+                "disclosure_id": evt["disclosure_id"],
+                "symbol": evt["symbol"],
+                "event_type": evt["event_type"],
+                "direction": evt.get("direction", 0),
+                "materiality": evt.get("materiality", 0),
+                "confidence": evt.get("confidence", 0.5),
+                "summary": evt.get("summary", ""),
+                "red_flags": evt.get("red_flags"),
+                "llm_model": "anthropic/claude-routine",
+                "prompt_version": "v1",
+                "extracted_at": now,
+            }
+        )
+
+    stored = 0
+    if event_rows:
+        stored = await store_disclosure_events(event_rows)
+
+    marked = 0
+    if processed_ids:
+        marked = await mark_disclosures_processed(processed_ids, now)
+
+    logger.info(
+        "ops_intel_events_pushed",
+        events_stored=stored,
+        ids_marked=marked,
+    )
+
+    return {
+        "success": True,
+        "events_stored": stored,
+        "ids_marked_processed": marked,
+    }
 
 
 @router.get("/scheduler/status")
