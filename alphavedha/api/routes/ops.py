@@ -6,6 +6,7 @@ cloud Routines for automated monitoring and auto-healing.
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -506,3 +507,239 @@ async def scheduler_status() -> dict[str, Any]:
             "scheduler_running": False,
             "error": str(e),
         }
+
+
+@router.get("/predictions/summary")
+async def predictions_summary() -> dict[str, Any]:
+    """Today's prediction pipeline summary — count, coverage, hash status."""
+    from alphavedha.data.store import load_daily_pnl, load_paper_trades
+
+    today = date.today()
+    trades_df = await load_paper_trades(start=today, end=today)
+
+    n_predictions = len(trades_df)
+    symbols: list[str] = []
+    n_tradeable = 0
+    directions: dict[str, int] = {"bullish": 0, "bearish": 0, "neutral": 0}
+
+    if not trades_df.empty:
+        symbols = sorted(trades_df["symbol"].unique().tolist())
+        n_tradeable = int(trades_df["is_tradeable"].sum()) if "is_tradeable" in trades_df else 0
+        for _, row in trades_df.iterrows():
+            d = row.get("predicted_direction", 0)
+            if d == 1:
+                directions["bullish"] += 1
+            elif d == -1:
+                directions["bearish"] += 1
+            else:
+                directions["neutral"] += 1
+
+    hash_status: dict[str, Any] = {"published": False}
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            proof_stmt = select(PredictionProof).where(PredictionProof.proof_date == today)
+            proof_row = await session.execute(proof_stmt)
+            proof = proof_row.scalar()
+            if proof:
+                hash_status = {
+                    "published": True,
+                    "sha256": proof.sha256[:16] + "...",
+                    "n_predictions": proof.n_predictions,
+                }
+    except Exception:
+        hash_status["error"] = "db_unavailable"
+
+    yesterday_pnl: dict[str, Any] = {}
+    pnl_df = await load_daily_pnl(
+        start=today - timedelta(days=7),
+        end=today,
+    )
+    if not pnl_df.empty:
+        latest = pnl_df.iloc[-1]
+        yesterday_pnl = {
+            "date": str(latest["date"]),
+            "n_correct": int(latest["n_correct"]),
+            "n_positions": int(latest["n_positions"]),
+            "accuracy": round(latest["n_correct"] / latest["n_positions"] * 100, 1)
+            if latest["n_positions"] > 0
+            else 0,
+            "cumulative_return": round(float(latest["cumulative_return"]) * 100, 2),
+        }
+
+    return {
+        "date": today.isoformat(),
+        "predictions": n_predictions,
+        "symbols": symbols,
+        "n_tradeable": n_tradeable,
+        "directions": directions,
+        "hash": hash_status,
+        "latest_evaluation": yesterday_pnl,
+    }
+
+
+@router.get("/models/status")
+async def models_status() -> dict[str, Any]:
+    """Model artifact ages, versions, and staleness."""
+    import json as json_mod
+    from pathlib import Path
+
+    artifact_dir = Path(os.environ.get("ALPHAVEDHA_MODEL_DIR", "models/artifacts"))
+    required_models = [
+        "xgboost",
+        "lstm",
+        "tft",
+        "regime",
+        "ensemble",
+        "meta_labeling",
+        "conformal",
+    ]
+
+    now = datetime.now(IST)
+    models: dict[str, Any] = {}
+
+    for name in required_models:
+        meta_path = artifact_dir / name / "latest" / "metadata.json"
+        if not meta_path.exists():
+            models[name] = {"status": "missing", "age_days": None}
+            continue
+
+        try:
+            metadata = json_mod.loads(meta_path.read_text())
+            created_str = metadata.get("created_at", "")
+            created = datetime.fromisoformat(created_str)
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=IST)
+            age_days = (now - created).days
+
+            models[name] = {
+                "status": "stale" if age_days > 30 else "ok",
+                "age_days": age_days,
+                "created_at": created_str,
+                "metrics": {
+                    k: round(v, 4) if isinstance(v, float) else v
+                    for k, v in metadata.get("metrics", {}).items()
+                },
+            }
+        except Exception as e:
+            models[name] = {"status": "error", "error": str(e)}
+
+    n_ok = sum(1 for m in models.values() if m.get("status") == "ok")
+    n_stale = sum(1 for m in models.values() if m.get("status") == "stale")
+    n_missing = sum(1 for m in models.values() if m.get("status") == "missing")
+
+    return {
+        "summary": f"{n_ok} ok, {n_stale} stale, {n_missing} missing",
+        "models": models,
+        "checked_at": now.isoformat(),
+    }
+
+
+@router.get("/tables/deltas")
+async def table_deltas() -> dict[str, Any]:
+    """Row count deltas: today vs yesterday for each critical table."""
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    deltas: dict[str, Any] = {}
+
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            for table_name, model, date_col, _desc in _CRITICAL_TABLES:
+                col = getattr(model, date_col)
+                col_type = getattr(col, "type", None)
+                is_tz_aware = getattr(col_type, "timezone", False) if col_type else False
+
+                try:
+                    today_start: Any = datetime(today.year, today.month, today.day, tzinfo=IST)
+                    yest_start: Any = datetime(
+                        yesterday.year, yesterday.month, yesterday.day, tzinfo=IST
+                    )
+                    if not is_tz_aware:
+                        today_start = today
+                        yest_start = yesterday
+
+                    today_stmt = select(func.count()).where(col >= today_start)
+                    yest_stmt = select(func.count()).where(col >= yest_start, col < today_start)
+
+                    today_row = await session.execute(today_stmt)
+                    today_count = today_row.scalar() or 0
+                    yest_row = await session.execute(yest_stmt)
+                    yest_count = yest_row.scalar() or 0
+
+                    deltas[table_name] = {
+                        "today": today_count,
+                        "yesterday": yest_count,
+                        "delta": today_count - yest_count,
+                    }
+                except Exception as e:
+                    deltas[table_name] = {"error": str(e)}
+    except Exception:
+        deltas["error"] = "db_unavailable"
+
+    return {"date": today.isoformat(), "deltas": deltas}
+
+
+@router.get("/weekly/report")
+async def weekly_report() -> dict[str, Any]:
+    """Weekly summary: accuracy, P&L, ingestion health, model status."""
+    from alphavedha.data.store import load_daily_pnl, load_paper_trades
+
+    today = date.today()
+    week_start = today - timedelta(days=7)
+
+    pnl_df = await load_daily_pnl(start=week_start, end=today)
+
+    weekly_pnl: dict[str, Any] = {"trading_days": 0}
+    if not pnl_df.empty:
+        total_correct = int(pnl_df["n_correct"].sum())
+        total_positions = int(pnl_df["n_positions"].sum())
+        weekly_pnl = {
+            "trading_days": len(pnl_df),
+            "total_predictions_evaluated": total_positions,
+            "total_correct": total_correct,
+            "accuracy_pct": round(total_correct / total_positions * 100, 1)
+            if total_positions > 0
+            else 0,
+            "cumulative_return_pct": round(float(pnl_df.iloc[-1]["cumulative_return"]) * 100, 2),
+            "best_day_return": round(float(pnl_df["daily_return"].max()) * 100, 2),
+            "worst_day_return": round(float(pnl_df["daily_return"].min()) * 100, 2),
+        }
+
+    trades_df = await load_paper_trades(start=week_start, end=today)
+    n_predictions = len(trades_df)
+    unique_symbols = len(trades_df["symbol"].unique()) if not trades_df.empty else 0
+
+    ingestion: dict[str, int] = {}
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            for table_name, model, date_col, _desc in _CRITICAL_TABLES:
+                col = getattr(model, date_col)
+                col_type = getattr(col, "type", None)
+                is_tz_aware = getattr(col_type, "timezone", False) if col_type else False
+
+                try:
+                    cutoff: Any = datetime(
+                        week_start.year, week_start.month, week_start.day, tzinfo=IST
+                    )
+                    if not is_tz_aware:
+                        cutoff = week_start
+                    stmt = select(func.count()).where(col >= cutoff)
+                    row = await session.execute(stmt)
+                    ingestion[table_name] = row.scalar() or 0
+                except Exception:
+                    ingestion[table_name] = -1
+    except Exception:
+        pass
+
+    return {
+        "period": f"{week_start.isoformat()} to {today.isoformat()}",
+        "predictions": {
+            "total": n_predictions,
+            "unique_symbols": unique_symbols,
+        },
+        "performance": weekly_pnl,
+        "ingestion_rows": ingestion,
+    }
