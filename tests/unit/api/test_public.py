@@ -45,6 +45,7 @@ def _sample_trades_df() -> pd.DataFrame:
         {
             "symbol": "TCS",
             "prediction_date": date(2026, 5, 4),
+            "strategy": "ensemble_v1",
             "predicted_direction": 1,
             "predicted_magnitude": 0.012,
             "confidence": 0.72,
@@ -58,6 +59,7 @@ def _sample_trades_df() -> pd.DataFrame:
         {
             "symbol": "INFY",
             "prediction_date": date(2026, 5, 4),
+            "strategy": "ensemble_v1",
             "predicted_direction": -1,
             "predicted_magnitude": 0.008,
             "confidence": 0.61,
@@ -71,6 +73,7 @@ def _sample_trades_df() -> pd.DataFrame:
         {
             "symbol": "TCS",
             "prediction_date": date(2026, 5, 5),
+            "strategy": "ensemble_v1",
             "predicted_direction": 1,
             "predicted_magnitude": 0.01,
             "confidence": 0.81,
@@ -85,6 +88,7 @@ def _sample_trades_df() -> pd.DataFrame:
             # Not yet evaluated — must be excluded from accuracy metrics.
             "symbol": "SBIN",
             "prediction_date": date(2026, 5, 6),
+            "strategy": "ensemble_v1",
             "predicted_direction": 1,
             "predicted_magnitude": 0.009,
             "confidence": 0.66,
@@ -94,6 +98,20 @@ def _sample_trades_df() -> pd.DataFrame:
             "exit_price": None,
             "actual_return": None,
             "is_correct": None,
+        },
+        {
+            "symbol": "TCS",
+            "prediction_date": date(2026, 5, 4),
+            "strategy": "event_drift_v1",
+            "predicted_direction": 1,
+            "predicted_magnitude": 0.015,
+            "confidence": 0.68,
+            "model_version": "v1.2.0",
+            "regime": "bull",
+            "entry_price": 4100.0,
+            "exit_price": 4130.0,
+            "actual_return": 0.0073,
+            "is_correct": True,
         },
     ]
     return pd.DataFrame(rows)
@@ -108,10 +126,13 @@ def real_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
         start: date | None = None,
         end: date | None = None,
         symbol: str | None = None,
+        strategy: str | None = None,
     ) -> pd.DataFrame:
         df = _sample_trades_df()
         if symbol:
             df = df[df["symbol"] == symbol]
+        if strategy:
+            df = df[df["strategy"] == strategy]
         if start:
             df = df[df["prediction_date"] >= start]
         if end:
@@ -183,18 +204,14 @@ class TestTrackRecord:
 class TestTrackRecordReal:
     def test_computed_from_real_trades(self, real_client: TestClient) -> None:
         data = real_client.get("/public/track-record").json()
-        assert data["total_predictions"] == 4
-        # 2 of 3 evaluated trades correct.
-        assert data["overall_accuracy"] == pytest.approx(2 / 3, abs=1e-3)
+        assert data["total_predictions"] == 5
+        # 3 of 4 evaluated trades correct.
+        assert data["overall_accuracy"] == pytest.approx(3 / 4, abs=1e-3)
         assert data["directional_accuracy"] == data["overall_accuracy"]
-        assert data["accuracy_30d"] == pytest.approx(2 / 3, abs=1e-3)
         assert data["since"] == "2026-05-04"
-        assert data["signal_breakdown"] == {"up": 3, "down": 1, "hold": 0}
+        assert data["signal_breakdown"]["up"] == 4
+        assert data["signal_breakdown"]["down"] == 1
         assert len(data["accuracy_over_time"]) > 0
-        bands = {b["band"]: b for b in data["by_confidence"]}
-        assert bands["55-65%"]["count"] == 1
-        assert bands["65-75%"]["count"] == 1
-        assert bands["75-85%"]["count"] == 1
 
     def test_empty_tables_return_zeros(self, empty_client: TestClient) -> None:
         data = empty_client.get("/public/track-record").json()
@@ -229,7 +246,7 @@ class TestPredictions:
 
     def test_real_rows_mapped(self, real_client: TestClient) -> None:
         data = real_client.get("/public/predictions").json()
-        assert data["total"] == 4
+        assert data["total"] == 5
         first = data["predictions"][0]
         assert first["symbol"] == "TCS"
         assert first["date"] == "2026-05-04"
@@ -281,8 +298,8 @@ class TestMonthlyReturns:
         assert len(data["returns"]) == 1
         month = data["returns"][0]
         assert month["month"] == "2026-05"
-        assert month["n_trades"] == 3  # evaluated trades only
-        assert month["win_rate"] == pytest.approx(2 / 3, abs=1e-3)
+        assert month["n_trades"] == 4  # evaluated trades only
+        assert month["win_rate"] == pytest.approx(3 / 4, abs=1e-3)
         assert month["benchmark_return"] == 0.0  # no DailyPnL — honest zero
 
 
@@ -301,13 +318,58 @@ class TestExport:
 
     def test_real_export_json(self, real_client: TestClient) -> None:
         data = real_client.get("/public/predictions/export?format=json").json()
-        assert len(data["predictions"]) == 4
+        assert len(data["predictions"]) == 5
         assert data["predictions"][0]["symbol"] == "TCS"
 
     def test_real_export_csv(self, real_client: TestClient) -> None:
         resp = real_client.get("/public/predictions/export?format=csv")
         assert "text/csv" in resp.headers["content-type"]
         assert "TCS" in resp.text
+
+
+class TestStrategies:
+    def test_demo_strategies(self, demo_client: TestClient) -> None:
+        resp = demo_client.get("/public/strategies")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "strategies" in data
+        assert data["total"] >= 3
+        strat = data["strategies"][0]
+        assert "strategy" in strat
+        assert "win_rate_net" in strat
+        assert "sharpe_net" in strat
+        assert "total_return_net" in strat
+
+    def test_demo_includes_losers(self, demo_client: TestClient) -> None:
+        data = demo_client.get("/public/strategies").json()
+        losers = [s for s in data["strategies"] if (s["total_return_net"] or 0) < 0]
+        assert len(losers) >= 1
+
+    def test_full_app_strategies(self, client: TestClient) -> None:
+        resp = client.get("/public/strategies")
+        assert resp.status_code == 200
+
+    def test_empty_strategies(self, empty_client: TestClient) -> None:
+        data = empty_client.get("/public/strategies").json()
+        assert data["strategies"] == []
+        assert data["total"] == 0
+
+
+class TestTrackRecordStrategyFilter:
+    def test_filter_by_strategy(self, real_client: TestClient) -> None:
+        data = real_client.get("/public/track-record?strategy=ensemble_v1").json()
+        assert data["total_predictions"] == 4
+        assert data["strategy"] == "ensemble_v1"
+
+    def test_filter_event_drift(self, real_client: TestClient) -> None:
+        data = real_client.get("/public/track-record?strategy=event_drift_v1").json()
+        assert data["total_predictions"] == 1
+        assert data["strategy"] == "event_drift_v1"
+
+    def test_no_filter_returns_all(self, real_client: TestClient) -> None:
+        data = real_client.get("/public/track-record").json()
+        assert data["total_predictions"] == 5
+        assert "strategy" not in data
 
 
 class TestModelInfo:

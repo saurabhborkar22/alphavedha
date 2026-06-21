@@ -187,12 +187,18 @@ async def _load_real_records(
     start: date | None = None,
     end: date | None = None,
     symbol: str | None = None,
+    strategy: str | None = None,
 ) -> list[PredictionRecord]:
     """Load real paper trades; on any failure return an honest empty list."""
     from alphavedha.data.store import load_paper_trades
 
     try:
-        trades_df = await load_paper_trades(start=start, end=end, symbol=symbol)
+        trades_df = await load_paper_trades(
+            start=start,
+            end=end,
+            symbol=symbol,
+            strategy=strategy,
+        )
     except Exception as exc:
         logger.error("public_paper_trades_load_failed", error=str(exc))
         return []
@@ -366,13 +372,136 @@ def _build_track_record(
 
 
 @router.get("/track-record")
-async def get_track_record() -> dict[str, Any]:
+async def get_track_record(
+    strategy: str | None = Query(None, description="Filter by strategy name"),
+) -> dict[str, Any]:
     if _is_demo():
         return _build_track_record(_generate_demo_predictions(), None)
 
-    records = await _load_real_records()
+    records = await _load_real_records(strategy=strategy)
     pnl_df = await _load_real_pnl()
-    return _build_track_record(records, pnl_df)
+    result = _build_track_record(records, pnl_df)
+    if strategy:
+        result["strategy"] = strategy
+    return result
+
+
+@router.get("/strategies")
+async def list_strategies() -> dict[str, Any]:
+    """List all strategies with cost-adjusted performance stats.
+
+    Shows every strategy — including losing ones. Publishing losers is the
+    credibility move: it proves the system measures honestly, not just
+    cherry-picks winners.
+    """
+    if _is_demo():
+        return _generate_demo_strategies()
+
+    from alphavedha.backtest.costs import compute_round_trip_cost_pct
+    from alphavedha.config import get_config
+    from alphavedha.data.store import load_paper_trades
+    from alphavedha.monitoring.track_record import compute_track_stats
+
+    try:
+        all_trades = await load_paper_trades()
+    except Exception as exc:
+        logger.error("strategies_load_failed", error=str(exc))
+        return {"strategies": [], "total": 0}
+
+    if all_trades.empty:
+        return {"strategies": [], "total": 0}
+
+    cost_pct = compute_round_trip_cost_pct("large", get_config().backtest)
+    strategy_names = sorted(all_trades["strategy"].dropna().unique().tolist())
+    strategies: list[dict[str, Any]] = []
+
+    for name in strategy_names:
+        strat_df = all_trades[all_trades["strategy"] == name]
+        stats = compute_track_stats(name, strat_df, cost_pct=cost_pct)
+        strategies.append(
+            {
+                "strategy": stats.name,
+                "n_selected": stats.n_selected,
+                "n_evaluated": stats.n_evaluated,
+                "n_wins_net": stats.n_wins_net,
+                "win_rate_net": stats.win_rate_net,
+                "avg_return_gross": stats.avg_return_gross,
+                "avg_return_net": stats.avg_return_net,
+                "total_return_net": stats.total_return_net,
+                "profit_factor_net": stats.profit_factor_net,
+                "sharpe_net": stats.sharpe_net,
+                "max_drawdown_net": stats.max_drawdown_net,
+            }
+        )
+
+    return {
+        "strategies": strategies,
+        "total": len(strategies),
+        "round_trip_cost_pct": cost_pct,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def _generate_demo_strategies() -> dict[str, Any]:
+    return {
+        "strategies": [
+            {
+                "strategy": "ensemble_v1",
+                "n_selected": 450,
+                "n_evaluated": 390,
+                "n_wins_net": 210,
+                "win_rate_net": 0.538,
+                "avg_return_gross": 0.0031,
+                "avg_return_net": 0.0008,
+                "total_return_net": 0.312,
+                "profit_factor_net": 1.18,
+                "sharpe_net": 0.85,
+                "max_drawdown_net": -0.042,
+            },
+            {
+                "strategy": "event_drift_v1",
+                "n_selected": 120,
+                "n_evaluated": 95,
+                "n_wins_net": 55,
+                "win_rate_net": 0.579,
+                "avg_return_gross": 0.0045,
+                "avg_return_net": 0.0022,
+                "total_return_net": 0.209,
+                "profit_factor_net": 1.42,
+                "sharpe_net": 1.15,
+                "max_drawdown_net": -0.028,
+            },
+            {
+                "strategy": "blowup_short_v1",
+                "n_selected": 35,
+                "n_evaluated": 28,
+                "n_wins_net": 11,
+                "win_rate_net": 0.393,
+                "avg_return_gross": -0.0012,
+                "avg_return_net": -0.0035,
+                "total_return_net": -0.098,
+                "profit_factor_net": 0.72,
+                "sharpe_net": -0.45,
+                "max_drawdown_net": -0.065,
+            },
+            {
+                "strategy": "insider_cluster_v1",
+                "n_selected": 45,
+                "n_evaluated": 32,
+                "n_wins_net": 19,
+                "win_rate_net": 0.594,
+                "avg_return_gross": 0.0052,
+                "avg_return_net": 0.0029,
+                "total_return_net": 0.093,
+                "profit_factor_net": 1.55,
+                "sharpe_net": 1.32,
+                "max_drawdown_net": -0.018,
+            },
+        ],
+        "total": 4,
+        "round_trip_cost_pct": 0.00471,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
 
 
 @router.get("/predictions")
