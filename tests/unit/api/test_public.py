@@ -326,6 +326,73 @@ class TestModelInfo:
         assert isinstance(info["base_models"], list)
 
 
+class TestRedFlagRadar:
+    def test_demo_radar(self, demo_client: TestClient) -> None:
+        resp = demo_client.get("/public/red-flag-radar")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "disclaimer" in data
+        assert len(data["disclaimer"]) > 100
+        assert "flagged_count" in data
+        assert data["flagged_count"] >= 1
+        assert "symbols" in data
+        assert "generated_at" in data
+
+    def test_demo_flags_are_cited(self, demo_client: TestClient) -> None:
+        data = demo_client.get("/public/red-flag-radar").json()
+        sym = data["symbols"][0]
+        assert "flags" in sym
+        flag = sym["flags"][0]
+        assert "category" in flag
+        assert "severity" in flag
+        assert "description" in flag
+        assert "source" in flag
+
+    def test_demo_threshold_filter(self, demo_client: TestClient) -> None:
+        data = demo_client.get("/public/red-flag-radar?threshold=90").json()
+        assert data["threshold"] == 90
+        for sym in data["symbols"]:
+            assert sym["total_score"] >= 90
+
+    def test_full_app_radar(self, client: TestClient) -> None:
+        resp = client.get("/public/red-flag-radar")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "disclaimer" in data
+
+
+class TestFormatFlags:
+    def test_known_flags(self) -> None:
+        from alphavedha.intel.signals.blowup_score import BlowupScore
+
+        score = BlowupScore(
+            symbol="TEST",
+            total_score=80,
+            flags=["pledge_critical_50pct", "auditor_resignation", "rating_downgrade_CRISIL"],
+            on_avoid_list=True,
+        )
+        formatted = public._format_flags(score)
+        assert len(formatted) == 3
+        assert formatted[0]["category"] == "Pledge"
+        assert formatted[0]["severity"] == "critical"
+        assert formatted[1]["category"] == "Governance"
+        assert formatted[2]["category"] == "Rating"
+        assert "CRISIL" in formatted[2]["description"]
+
+    def test_surveillance_flag(self) -> None:
+        from alphavedha.intel.signals.blowup_score import BlowupScore
+
+        score = BlowupScore(
+            symbol="TEST",
+            total_score=15,
+            flags=["surveillance_ASM_Stage_2"],
+        )
+        formatted = public._format_flags(score)
+        assert len(formatted) == 1
+        assert formatted[0]["category"] == "Surveillance"
+        assert "ASM_Stage_2" in formatted[0]["description"]
+
+
 class TestIsDemo:
     def test_env_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for value in ("1", "true", "YES"):

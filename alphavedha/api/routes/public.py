@@ -686,3 +686,269 @@ async def get_model_info() -> dict:
             "validation_sharpe": 1.65,
         }
     return _real_model_info()
+
+
+# ---------------------------------------------------------------------------
+# Red Flag Radar — public endpoint (P6-D4)
+# ---------------------------------------------------------------------------
+
+_RED_FLAG_DISCLAIMER = (
+    "This page presents factual information derived from publicly filed exchange "
+    "disclosures (BSE/NSE). Each flag links to its primary source filing. This is "
+    "NOT investment advice and NOT a recommendation to buy, sell, or avoid any "
+    "security. AlphaVedha is not registered with SEBI as a Research Analyst. "
+    "Always consult a SEBI-registered advisor before making investment decisions."
+)
+
+
+class PublicRedFlag(BaseModel):
+    symbol: str
+    total_score: int
+    flags: list[dict[str, Any]]
+    on_avoid_list: bool
+
+
+@router.get("/red-flag-radar")
+async def red_flag_radar(
+    symbol: str | None = Query(None, description="Check a single symbol"),
+    threshold: int = Query(70, ge=0, le=100),
+) -> dict[str, Any]:
+    """Red Flag Radar — factual, cited risk flags from exchange disclosures.
+
+    Each flag is backed by a specific exchange filing. The avoid list is
+    scored 0-100 from: pledge trends, rating actions, governance events,
+    defaults, surveillance additions, Beneish M-Score, insider sell clusters.
+    """
+    if _is_demo():
+        return _generate_demo_red_flags(threshold)
+
+    try:
+        from alphavedha.intel.signals.blowup_score import run_blowup_scores
+
+        if symbol:
+            symbols = [symbol.upper()]
+        else:
+            from alphavedha.api.routes.ui_support import NIFTY_50
+
+            symbols = [s for s, _n, _sec, _c in NIFTY_50]
+
+        all_scores = await run_blowup_scores(symbols)
+        flagged = [s for s in all_scores if s.total_score >= threshold]
+        flagged.sort(key=lambda s: s.total_score, reverse=True)
+
+        return {
+            "disclaimer": _RED_FLAG_DISCLAIMER,
+            "threshold": threshold,
+            "flagged_count": len(flagged),
+            "symbols": [
+                PublicRedFlag(
+                    symbol=s.symbol,
+                    total_score=s.total_score,
+                    flags=_format_flags(s),
+                    on_avoid_list=s.on_avoid_list,
+                ).model_dump()
+                for s in flagged
+            ],
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+    except Exception as exc:
+        logger.error("public_red_flag_radar_error", error=str(exc))
+        return {
+            "disclaimer": _RED_FLAG_DISCLAIMER,
+            "threshold": threshold,
+            "flagged_count": 0,
+            "symbols": [],
+            "generated_at": datetime.now(UTC).isoformat(),
+            "error": "Unable to compute red flags — data source unavailable",
+        }
+
+
+def _format_flags(score: Any) -> list[dict[str, Any]]:
+    """Convert raw flag strings into structured cited flags."""
+    from alphavedha.intel.signals.blowup_score import BlowupScore
+
+    if not isinstance(score, BlowupScore):
+        return []
+
+    formatted: list[dict[str, Any]] = []
+    flag_descriptions = {
+        "pledge_critical_50pct": {
+            "category": "Pledge",
+            "severity": "critical",
+            "description": "Promoter pledge exceeds 50% of holdings",
+            "source": "SAST disclosure",
+        },
+        "pledge_high_30pct": {
+            "category": "Pledge",
+            "severity": "high",
+            "description": "Promoter pledge exceeds 30% of holdings",
+            "source": "SAST disclosure",
+        },
+        "pledge_rising": {
+            "category": "Pledge",
+            "severity": "warning",
+            "description": "Promoter pledge percentage rising",
+            "source": "SAST disclosure",
+        },
+        "auditor_resignation": {
+            "category": "Governance",
+            "severity": "critical",
+            "description": "Statutory auditor resigned",
+            "source": "BSE/NSE corporate announcement",
+        },
+        "kmp_resignation": {
+            "category": "Governance",
+            "severity": "high",
+            "description": "Key Managerial Personnel resigned",
+            "source": "BSE/NSE corporate announcement",
+        },
+        "default_or_delay": {
+            "category": "Default",
+            "severity": "critical",
+            "description": "Payment default or delay reported",
+            "source": "BSE/NSE corporate announcement",
+        },
+        "beneish_manipulator": {
+            "category": "Financial",
+            "severity": "critical",
+            "description": "Beneish M-Score indicates likely earnings manipulation",
+            "source": "Computed from filed financial statements",
+        },
+        "beneish_grey_zone": {
+            "category": "Financial",
+            "severity": "warning",
+            "description": "Beneish M-Score in grey zone — inconclusive",
+            "source": "Computed from filed financial statements",
+        },
+        "insider_sell_cluster_3plus": {
+            "category": "Insider",
+            "severity": "high",
+            "description": "3+ distinct insider sell transactions in 90 days",
+            "source": "PIT (Prohibition of Insider Trading) disclosure",
+        },
+        "insider_sell_cluster_2": {
+            "category": "Insider",
+            "severity": "warning",
+            "description": "2 insider sell transactions in 90 days",
+            "source": "PIT disclosure",
+        },
+    }
+
+    for flag in score.flags:
+        base_flag = flag
+        for known_prefix in ("rating_downgrade_", "outlook_negative_", "surveillance_"):
+            if flag.startswith(known_prefix):
+                base_flag = known_prefix.rstrip("_")
+                break
+
+        if base_flag in flag_descriptions:
+            entry = dict(flag_descriptions[base_flag])
+            entry["flag"] = flag
+            formatted.append(entry)
+        elif flag.startswith("rating_downgrade_"):
+            agency = flag.replace("rating_downgrade_", "")
+            formatted.append(
+                {
+                    "flag": flag,
+                    "category": "Rating",
+                    "severity": "critical",
+                    "description": f"Credit rating downgrade by {agency}",
+                    "source": "Credit rating agency action / BSE disclosure",
+                }
+            )
+        elif flag.startswith("outlook_negative_"):
+            agency = flag.replace("outlook_negative_", "")
+            formatted.append(
+                {
+                    "flag": flag,
+                    "category": "Rating",
+                    "severity": "high",
+                    "description": f"Outlook changed to negative by {agency}",
+                    "source": "Credit rating agency action / BSE disclosure",
+                }
+            )
+        elif flag.startswith("surveillance_"):
+            list_name = flag.replace("surveillance_", "")
+            formatted.append(
+                {
+                    "flag": flag,
+                    "category": "Surveillance",
+                    "severity": "high",
+                    "description": f"Added to exchange surveillance list: {list_name}",
+                    "source": "NSE/BSE surveillance action",
+                }
+            )
+        else:
+            formatted.append(
+                {
+                    "flag": flag,
+                    "category": "Other",
+                    "severity": "warning",
+                    "description": flag.replace("_", " ").title(),
+                    "source": "Exchange disclosure",
+                }
+            )
+
+    return formatted
+
+
+def _generate_demo_red_flags(threshold: int) -> dict[str, Any]:
+    demo_symbols = [
+        {
+            "symbol": "DEMO_CORP",
+            "total_score": 85,
+            "flags": [
+                {
+                    "flag": "pledge_critical_50pct",
+                    "category": "Pledge",
+                    "severity": "critical",
+                    "description": "Promoter pledge exceeds 50% of holdings",
+                    "source": "SAST disclosure",
+                },
+                {
+                    "flag": "auditor_resignation",
+                    "category": "Governance",
+                    "severity": "critical",
+                    "description": "Statutory auditor resigned",
+                    "source": "BSE/NSE corporate announcement",
+                },
+                {
+                    "flag": "surveillance_ASM_Stage_2",
+                    "category": "Surveillance",
+                    "severity": "high",
+                    "description": "Added to exchange surveillance list: ASM_Stage_2",
+                    "source": "NSE/BSE surveillance action",
+                },
+            ],
+            "on_avoid_list": True,
+        },
+        {
+            "symbol": "RISK_LTD",
+            "total_score": 75,
+            "flags": [
+                {
+                    "flag": "rating_downgrade_CRISIL",
+                    "category": "Rating",
+                    "severity": "critical",
+                    "description": "Credit rating downgrade by CRISIL",
+                    "source": "Credit rating agency action / BSE disclosure",
+                },
+                {
+                    "flag": "insider_sell_cluster_3plus",
+                    "category": "Insider",
+                    "severity": "high",
+                    "description": "3+ distinct insider sell transactions in 90 days",
+                    "source": "PIT disclosure",
+                },
+            ],
+            "on_avoid_list": True,
+        },
+    ]
+    flagged = [s for s in demo_symbols if s["total_score"] >= threshold]
+    return {
+        "disclaimer": _RED_FLAG_DISCLAIMER,
+        "threshold": threshold,
+        "flagged_count": len(flagged),
+        "symbols": flagged,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
