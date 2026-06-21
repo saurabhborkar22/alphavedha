@@ -30,6 +30,10 @@ from alphavedha.execution.shadow import (
     ShadowSignal,
     shadow_fills_to_rows,
 )
+from alphavedha.execution.telegram import (
+    TelegramBot,
+    TelegramConfig,
+)
 
 __all__ = [
     "BrokerAdapter",
@@ -53,5 +57,7 @@ __all__ = [
     "ShadowResult",
     "ShadowRunner",
     "ShadowSignal",
+    "TelegramBot",
+    "TelegramConfig",
     "shadow_fills_to_rows",
 ]
