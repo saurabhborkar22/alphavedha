@@ -74,7 +74,7 @@ async def _table_freshness(
 
     now = datetime.now(IST)
     cutoff = now - timedelta(days=lookback_days)
-    if not is_tz_aware and not isinstance(cutoff, date):
+    if not is_tz_aware:
         cutoff = cutoff.replace(tzinfo=None)
 
     latest_stmt = select(func.max(col))
