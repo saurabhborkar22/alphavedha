@@ -326,6 +326,37 @@ class TestModelInfo:
         assert isinstance(info["base_models"], list)
 
 
+class TestVerifyPage:
+    def test_demo_verify_page(self, demo_client: TestClient) -> None:
+        resp = demo_client.get("/public/verify")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "hash_scheme" in data
+        assert data["hash_scheme"]["algorithm"] == "SHA-256"
+        assert "verification_steps" in data["hash_scheme"]
+        assert len(data["hash_scheme"]["verification_steps"]) >= 4
+        assert "proofs_repo_url" in data
+        assert "stats" in data
+        assert data["stats"]["total_proof_days"] > 0
+        assert "recent_proofs" in data
+        assert len(data["recent_proofs"]) > 0
+        assert "claim" in data
+
+    def test_demo_verify_recent_proofs_structure(self, demo_client: TestClient) -> None:
+        data = demo_client.get("/public/verify").json()
+        proof = data["recent_proofs"][0]
+        assert "proof_date" in proof
+        assert "sha256" in proof
+        assert "n_predictions" in proof
+        assert "verified" in proof
+
+    def test_full_app_verify(self, client: TestClient) -> None:
+        resp = client.get("/public/verify")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "hash_scheme" in data
+
+
 class TestIsDemo:
     def test_env_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for value in ("1", "true", "YES"):
