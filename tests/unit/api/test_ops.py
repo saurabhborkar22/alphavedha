@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from datetime import date
 from unittest.mock import AsyncMock, patch
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -283,3 +285,149 @@ class TestOpsSchedulerStatus:
         assert resp.status_code == 200
         data = resp.json()
         assert "scheduler_running" in data
+
+
+class TestOpsPredictionsSummary:
+    def test_requires_auth(self, client: TestClient) -> None:
+        resp = client.get("/api/ops/predictions/summary")
+        assert resp.status_code == 401
+
+    def test_returns_summary_with_predictions(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        trades_df = pd.DataFrame(
+            [
+                {
+                    "symbol": "TCS.NS",
+                    "prediction_date": date.today(),
+                    "strategy": "ensemble_v1",
+                    "predicted_direction": 1,
+                    "predicted_magnitude": 0.02,
+                    "confidence": 0.85,
+                    "model_version": "v1.0",
+                    "regime": "bull",
+                    "is_tradeable": True,
+                    "entry_price": 100.0,
+                    "stop_loss_price": 95.0,
+                    "take_profit_price": 110.0,
+                    "exit_price": None,
+                    "exit_reason": None,
+                    "actual_return": None,
+                    "is_correct": None,
+                },
+                {
+                    "symbol": "INFY.NS",
+                    "prediction_date": date.today(),
+                    "strategy": "ensemble_v1",
+                    "predicted_direction": -1,
+                    "predicted_magnitude": 0.01,
+                    "confidence": 0.7,
+                    "model_version": "v1.0",
+                    "regime": "bear",
+                    "is_tradeable": False,
+                    "entry_price": 200.0,
+                    "stop_loss_price": 210.0,
+                    "take_profit_price": 185.0,
+                    "exit_price": None,
+                    "exit_reason": None,
+                    "actual_return": None,
+                    "is_correct": None,
+                },
+            ]
+        )
+        pnl_df = pd.DataFrame()
+        with (
+            patch(
+                "alphavedha.data.store.load_paper_trades",
+                new_callable=AsyncMock,
+                return_value=trades_df,
+            ),
+            patch(
+                "alphavedha.data.store.load_daily_pnl",
+                new_callable=AsyncMock,
+                return_value=pnl_df,
+            ),
+        ):
+            resp = client.get("/api/ops/predictions/summary", headers=auth_headers)
+        data = resp.json()
+        assert data["predictions"] == 2
+        assert "TCS.NS" in data["symbols"]
+        assert data["n_tradeable"] == 1
+        assert data["directions"]["bullish"] == 1
+        assert data["directions"]["bearish"] == 1
+
+    def test_returns_empty_when_no_predictions(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        with (
+            patch(
+                "alphavedha.data.store.load_paper_trades",
+                new_callable=AsyncMock,
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "alphavedha.data.store.load_daily_pnl",
+                new_callable=AsyncMock,
+                return_value=pd.DataFrame(),
+            ),
+        ):
+            resp = client.get("/api/ops/predictions/summary", headers=auth_headers)
+        data = resp.json()
+        assert data["predictions"] == 0
+        assert data["symbols"] == []
+
+
+class TestOpsModelsStatus:
+    def test_requires_auth(self, client: TestClient) -> None:
+        resp = client.get("/api/ops/models/status")
+        assert resp.status_code == 401
+
+    def test_returns_model_status(self, client: TestClient, auth_headers: dict[str, str]) -> None:
+        with patch.dict(os.environ, {"ALPHAVEDHA_MODEL_DIR": "/tmp/nonexistent_models"}):
+            resp = client.get("/api/ops/models/status", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "models" in data
+        assert "summary" in data
+        assert "xgboost" in data["models"]
+        assert data["models"]["xgboost"]["status"] == "missing"
+
+
+class TestOpsTableDeltas:
+    def test_requires_auth(self, client: TestClient) -> None:
+        resp = client.get("/api/ops/tables/deltas")
+        assert resp.status_code == 401
+
+    def test_returns_deltas(self, client: TestClient, auth_headers: dict[str, str]) -> None:
+        resp = client.get("/api/ops/tables/deltas", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "deltas" in data
+        assert "date" in data
+
+
+class TestOpsWeeklyReport:
+    def test_requires_auth(self, client: TestClient) -> None:
+        resp = client.get("/api/ops/weekly/report")
+        assert resp.status_code == 401
+
+    def test_returns_report(self, client: TestClient, auth_headers: dict[str, str]) -> None:
+        with (
+            patch(
+                "alphavedha.data.store.load_daily_pnl",
+                new_callable=AsyncMock,
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "alphavedha.data.store.load_paper_trades",
+                new_callable=AsyncMock,
+                return_value=pd.DataFrame(),
+            ),
+        ):
+            resp = client.get("/api/ops/weekly/report", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "period" in data
+        assert "predictions" in data
+        assert "performance" in data
+        assert data["performance"]["trading_days"] == 0
