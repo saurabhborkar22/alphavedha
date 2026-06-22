@@ -154,6 +154,61 @@ async def _store_proof(
         await session.commit()
 
 
+async def _upsert_proof(
+    proof_date: date,
+    hex_digest: str,
+    n_predictions: int,
+    payload_json: str,
+    git_commit: str | None,
+) -> None:
+    """Insert or update a proof row (handles duplicate proof_date)."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import PredictionProof
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = (
+            pg_insert(PredictionProof)
+            .values(
+                proof_date=proof_date,
+                sha256=hex_digest,
+                n_predictions=n_predictions,
+                payload_json=payload_json,
+                git_commit=git_commit,
+            )
+            .on_conflict_do_update(
+                index_elements=["proof_date"],
+                set_={
+                    "sha256": hex_digest,
+                    "n_predictions": n_predictions,
+                    "payload_json": payload_json,
+                },
+            )
+        )
+        await session.execute(stmt)
+        await session.commit()
+
+
+async def _update_proof_git_commit(proof_date: date, git_commit: str) -> None:
+    """Update the git_commit field after a successful push."""
+    from sqlalchemy import update
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import PredictionProof
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = (
+            update(PredictionProof)
+            .where(PredictionProof.proof_date == proof_date)
+            .values(git_commit=git_commit)
+        )
+        await session.execute(stmt)
+        await session.commit()
+
+
 async def publish_daily_proof(
     proof_date: date | None = None,
     proofs_repo: Path | None = None,
@@ -190,24 +245,37 @@ async def publish_daily_proof(
         sha256=hex_digest[:16] + "...",
     )
 
+    db_stored = False
     try:
         await _store_proof(proof_date, hex_digest, n, payload_str, None)
+        db_stored = True
     except Exception as e:
-        logger.error("proof_store_failed", error=str(e))
+        logger.error("proof_store_failed", error=str(e), error_type=type(e).__name__)
+        try:
+            await _upsert_proof(proof_date, hex_digest, n, payload_str, None)
+            db_stored = True
+            logger.info("proof_upsert_succeeded", date=proof_date.isoformat())
+        except Exception as e2:
+            logger.error("proof_upsert_also_failed", error=str(e2))
 
     git_commit: str | None = None
-    if proofs_repo.exists():
-        _ensure_git_repo(proofs_repo)
-        _write_proof_file(proofs_repo, proof_date, hex_digest, payload)
-        if (proofs_repo / ".git").exists():
-            git_commit = _git_commit_and_push(proofs_repo, proof_date, hex_digest)
-    else:
-        logger.warning("proofs_repo_missing", path=str(proofs_repo))
+    proofs_repo.mkdir(parents=True, exist_ok=True)
+    _ensure_git_repo(proofs_repo)
+    _write_proof_file(proofs_repo, proof_date, hex_digest, payload)
+    if (proofs_repo / ".git").exists():
+        git_commit = _git_commit_and_push(proofs_repo, proof_date, hex_digest)
+
+    if git_commit and db_stored:
+        try:
+            await _update_proof_git_commit(proof_date, git_commit)
+        except Exception as e:
+            logger.warning("proof_git_commit_update_failed", error=str(e))
 
     return {
         "proof_date": proof_date.isoformat(),
         "n_predictions": n,
         "sha256": hex_digest,
         "git_commit": git_commit,
-        "status": "published" if git_commit else "stored_only",
+        "db_stored": db_stored,
+        "status": "published" if git_commit else ("stored_only" if db_stored else "hash_only"),
     }

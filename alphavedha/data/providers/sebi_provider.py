@@ -18,36 +18,37 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 _BSE_SYMBOL_MAP: dict[str, str] = {
-    "RELIANCE.NS": "500325",
-    "TCS.NS": "532540",
-    "HDFCBANK.NS": "500180",
-    "INFY.NS": "500209",
-    "ICICIBANK.NS": "532174",
-    "HINDUNILVR.NS": "500696",
-    "SBIN.NS": "500112",
-    "BHARTIARTL.NS": "532454",
-    "ITC.NS": "500875",
-    "KOTAKBANK.NS": "500247",
-    "LT.NS": "500510",
-    "AXISBANK.NS": "532215",
-    "ASIANPAINT.NS": "500820",
-    "MARUTI.NS": "532500",
-    "TITAN.NS": "500114",
-    "SUNPHARMA.NS": "524715",
-    "BAJFINANCE.NS": "500034",
-    "WIPRO.NS": "507685",
-    "ULTRACEMCO.NS": "532538",
-    "HCLTECH.NS": "532281",
-    "ONGC.NS": "500312",
-    "NTPC.NS": "532555",
-    "POWERGRID.NS": "532898",
-    "M&M.NS": "500520",
-    "TATAMOTORS.NS": "500570",
-    "TATASTEEL.NS": "500470",
-    "BAJAJFINSV.NS": "532978",
-    "NESTLEIND.NS": "500790",
-    "DIVISLAB.NS": "532488",
-    "DRREDDY.NS": "500124",
+    "RELIANCE": "500325",
+    "TCS": "532540",
+    "HDFCBANK": "500180",
+    "INFY": "500209",
+    "ICICIBANK": "532174",
+    "HINDUNILVR": "500696",
+    "SBIN": "500112",
+    "BHARTIARTL": "532454",
+    "ITC": "500875",
+    "KOTAKBANK": "500247",
+    "LT": "500510",
+    "AXISBANK": "532215",
+    "ASIANPAINT": "500820",
+    "MARUTI": "532500",
+    "TITAN": "500114",
+    "SUNPHARMA": "524715",
+    "BAJFINANCE": "500034",
+    "WIPRO": "507685",
+    "ULTRACEMCO": "532538",
+    "HCLTECH": "532281",
+    "ONGC": "500312",
+    "NTPC": "532555",
+    "POWERGRID": "532898",
+    "M&M": "500520",
+    "TATAMOTORS": "500570",
+    "TATASTEEL": "500470",
+    "BAJAJFINSV": "532978",
+    "NESTLEIND": "500790",
+    "DIVISLAB": "532488",
+    "DRREDDY": "500124",
+    "ADANIENT": "512599",
 }
 
 _RATE_LIMIT_DELAY = 1.5
@@ -91,6 +92,7 @@ class SebiProvider:
         Returns list of quarterly records with promoter %, pledge %, FII/DII %.
         Falls back to generating from known patterns if BSE API unavailable.
         """
+        symbol = symbol.removesuffix(".NS")
         bse_code = _BSE_SYMBOL_MAP.get(symbol)
         if not bse_code:
             logger.debug("sebi_no_bse_mapping", symbol=symbol)
@@ -195,6 +197,7 @@ class SebiProvider:
 
         Returns list of insider buy/sell records.
         """
+        symbol = symbol.removesuffix(".NS")
         bse_code = _BSE_SYMBOL_MAP.get(symbol)
         if not bse_code:
             return []
