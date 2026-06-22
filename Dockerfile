@@ -47,9 +47,11 @@ RUN mkdir -p /app/models/artifacts /app/logs && \
 
 USER alphavedha
 
+ARG GIT_SHA=unknown
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    GIT_SHA=$GIT_SHA
 
 EXPOSE 8000
 

@@ -14,6 +14,7 @@ jobs:
   lint:
     name: Lint & Typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -44,7 +45,7 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
@@ -68,6 +69,7 @@ jobs:
   security:
     name: Dependency Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -96,7 +98,8 @@ jobs:
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
-    needs: [lint, security]
+    timeout-minutes: 15
+    needs: [lint, test, security]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
     steps:
@@ -127,8 +130,34 @@ jobs:
             cd /opt/alphavedha/alphavedha
             git fetch origin
             git -c advice.detachedHead=false checkout "$GITHUB_SHA"
+            export GIT_SHA="$GITHUB_SHA"
             docker compose --env-file .env.vps -f docker-compose.vps.yml --profile training build api scheduler trainer
+            docker compose --env-file .env.vps -f docker-compose.vps.yml run --rm -T api alembic upgrade head
             docker compose --env-file .env.vps -f docker-compose.vps.yml up -d --force-recreate api scheduler
             docker compose --env-file .env.vps -f docker-compose.vps.yml restart nginx
-            docker compose --env-file .env.vps -f docker-compose.vps.yml exec -T api alembic upgrade head
-            echo "Deploy complete: $GITHUB_SHA"
+
+      - name: Verify deployed version
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17  # v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GITHUB_SHA
+          script: |
+            set -euo pipefail
+            echo "Waiting for API to become healthy..."
+            for i in $(seq 1 30); do
+              RESP=$(docker exec alphavedha-api curl -sf http://localhost:8000/health 2>/dev/null) && break
+              sleep 2
+            done
+            if [ -z "${RESP:-}" ]; then
+              echo "ERROR: API did not become healthy within 60s"
+              docker logs --tail=50 alphavedha-api
+              exit 1
+            fi
+            DEPLOYED=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sha',''))")
+            if [ "$DEPLOYED" != "$GITHUB_SHA" ]; then
+              echo "ERROR: Version mismatch — expected $GITHUB_SHA, got $DEPLOYED"
+              exit 1
+            fi
+            echo "Deploy verified: $GITHUB_SHA"
