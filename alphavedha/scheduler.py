@@ -913,7 +913,7 @@ class AlphaVedhaScheduler:
                     symbols = [s for s, _n, _sec, _c in NIFTY_50]
                     all_rows: list[dict[str, Any]] = []
                     for symbol in symbols:
-                        records = await provider.fetch_insider_trades(symbol, days_back=7)
+                        records = await provider.fetch_insider_trades(symbol, days_back=90)
                         for r in records:
                             all_rows.append(
                                 {
