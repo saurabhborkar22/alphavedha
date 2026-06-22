@@ -24,6 +24,12 @@ from alphavedha.execution.oms import (
     OrderManager,
     OrderPlan,
 )
+from alphavedha.execution.shadow import (
+    ShadowResult,
+    ShadowRunner,
+    ShadowSignal,
+    shadow_fills_to_rows,
+)
 
 __all__ = [
     "BrokerAdapter",
@@ -44,4 +50,8 @@ __all__ = [
     "OrderType",
     "PaperBroker",
     "Position",
+    "ShadowResult",
+    "ShadowRunner",
+    "ShadowSignal",
+    "shadow_fills_to_rows",
 ]
