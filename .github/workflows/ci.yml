@@ -119,7 +119,7 @@ jobs:
           ssh-keyscan -t ed25519 "$VPS_HOST" >> ~/.ssh/known_hosts
 
       - name: Deploy to VPS via SSH
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17  # v1.2.0
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2  # v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
           username: root
@@ -137,7 +137,7 @@ jobs:
             docker compose --env-file .env.vps -f docker-compose.vps.yml restart nginx
 
       - name: Verify deployed version
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17  # v1.2.0
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2  # v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
           username: root
