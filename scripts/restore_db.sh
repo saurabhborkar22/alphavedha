@@ -15,6 +15,7 @@ DB_HOST="${PGHOST:-localhost}"
 DB_PORT="${PGPORT:-5435}"
 DB_USER="${POSTGRES_USER:-alphavedha}"
 DB_NAME="${POSTGRES_DB:-alphavedha}"
+export PGPASSWORD="${PGPASSWORD:-${POSTGRES_PASSWORD:-}}"
 
 if [ ! -f "$BACKUP_FILE" ]; then
     echo "ERROR: Backup file not found: $BACKUP_FILE" >&2

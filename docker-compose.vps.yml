@@ -20,6 +20,7 @@ services:
       dockerfile: Dockerfile
       args:
         INSTALL_TARGET: vps
+        GIT_SHA: ${GIT_SHA:-unknown}
     container_name: alphavedha-api
     env_file: .env.vps
     expose:
@@ -46,6 +47,7 @@ services:
       dockerfile: Dockerfile
       args:
         INSTALL_TARGET: vps
+        GIT_SHA: ${GIT_SHA:-unknown}
     container_name: alphavedha-scheduler
     env_file: .env.vps
     environment:
@@ -64,6 +66,7 @@ services:
     volumes:
       - model-artifacts:/app/models/artifacts
       - app-logs:/app/logs
+      - proofs-repo:/app/alphavedha-proofs
 
   trainer:
     build:
@@ -71,6 +74,7 @@ services:
       dockerfile: Dockerfile
       args:
         INSTALL_TARGET: vps
+        GIT_SHA: ${GIT_SHA:-unknown}
     container_name: alphavedha-trainer
     env_file: .env.vps
     depends_on:
@@ -143,3 +147,4 @@ volumes:
   redisdata:
   model-artifacts:
   app-logs:
+  proofs-repo:
