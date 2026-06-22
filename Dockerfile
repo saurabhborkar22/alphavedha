@@ -30,7 +30,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 curl && \
+    apt-get install -y --no-install-recommends libpq5 curl git openssh-client && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd -r alphavedha && \
     useradd -r -g alphavedha -d /app alphavedha
