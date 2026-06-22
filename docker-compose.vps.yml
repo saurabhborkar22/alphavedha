@@ -64,6 +64,7 @@ services:
     volumes:
       - model-artifacts:/app/models/artifacts
       - app-logs:/app/logs
+      - proofs-repo:/app/alphavedha-proofs
 
   trainer:
     build:
@@ -143,3 +144,4 @@ volumes:
   redisdata:
   model-artifacts:
   app-logs:
+  proofs-repo:
