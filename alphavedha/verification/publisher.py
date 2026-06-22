@@ -30,6 +30,29 @@ IST = ZoneInfo("Asia/Kolkata")
 DEFAULT_PROOFS_REPO = Path.home() / "alphavedha-proofs"
 
 
+def _ensure_git_repo(repo_dir: Path) -> None:
+    """Initialize the proofs directory as a git repo if not already."""
+    if (repo_dir / ".git").exists():
+        return
+    try:
+        subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "scheduler@alphavedha.local"],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "AlphaVedha Scheduler"],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+        )
+        logger.info("proofs_repo_initialized", path=str(repo_dir))
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning("proofs_repo_init_failed", error=str(e))
+
+
 async def _load_todays_trades(proof_date: date) -> list[dict[str, Any]]:
     """Load paper trades for the given date from the DB."""
     from alphavedha.data.store import load_paper_trades
@@ -167,17 +190,19 @@ async def publish_daily_proof(
         sha256=hex_digest[:16] + "...",
     )
 
-    git_commit: str | None = None
-    if proofs_repo.exists() and (proofs_repo / ".git").exists():
-        _write_proof_file(proofs_repo, proof_date, hex_digest, payload)
-        git_commit = _git_commit_and_push(proofs_repo, proof_date, hex_digest)
-    else:
-        logger.warning("proofs_repo_missing", path=str(proofs_repo))
-
     try:
-        await _store_proof(proof_date, hex_digest, n, payload_str, git_commit)
+        await _store_proof(proof_date, hex_digest, n, payload_str, None)
     except Exception as e:
         logger.error("proof_store_failed", error=str(e))
+
+    git_commit: str | None = None
+    if proofs_repo.exists():
+        _ensure_git_repo(proofs_repo)
+        _write_proof_file(proofs_repo, proof_date, hex_digest, payload)
+        if (proofs_repo / ".git").exists():
+            git_commit = _git_commit_and_push(proofs_repo, proof_date, hex_digest)
+    else:
+        logger.warning("proofs_repo_missing", path=str(proofs_repo))
 
     return {
         "proof_date": proof_date.isoformat(),
