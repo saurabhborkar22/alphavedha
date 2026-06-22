@@ -193,70 +193,75 @@ class SebiProvider:
         symbol: str,
         days_back: int = 365,
     ) -> list[InsiderTradeRecord]:
-        """Fetch insider (SAST) trading disclosures.
+        """Fetch insider (PIT) trading disclosures from NSE.
 
-        Returns list of insider buy/sell records.
+        Uses NSE's corporates-pit API which requires a session cookie.
+        Returns list of insider buy/sell records filtered to the date range.
         """
         symbol = symbol.removesuffix(".NS")
-        bse_code = _BSE_SYMBOL_MAP.get(symbol)
-        if not bse_code:
-            return []
-
         today = date.today()
         from_date = today - timedelta(days=days_back)
-        records: list[InsiderTradeRecord] = []
 
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                url = (
-                    f"https://api.bseindia.com/BseIndiaAPI/api/"
-                    f"InsiderTrading/w?scripcode={bse_code}"
-                    f"&fromdate={from_date.strftime('%Y%m%d')}"
-                    f"&todate={today.strftime('%Y%m%d')}"
-                )
-                resp = await client.get(
-                    url,
-                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bseindia.com"},
-                )
-                if resp.status_code == 200 and resp.text.strip():
-                    for row in resp.json():
-                        parsed = self._parse_insider_trade(row, symbol)
-                        if parsed:
-                            records.append(parsed)
-        except (httpx.HTTPError, ValueError):
-            logger.debug("sebi_insider_fetch_failed", symbol=symbol)
+        def _fetch() -> list[InsiderTradeRecord]:
+            from alphavedha.data.providers.nse_provider import NSESession
 
+            session = NSESession()
+            url = (
+                f"https://www.nseindia.com/api/corporates-pit"
+                f"?index=equities&symbol={symbol}"
+                f"&from_date={from_date.strftime('%d-%m-%Y')}"
+                f"&to_date={today.strftime('%d-%m-%Y')}"
+            )
+            try:
+                resp = session.get(url)
+                data = resp.json()
+            except Exception:
+                logger.debug("nse_pit_fetch_failed", symbol=symbol)
+                return []
+
+            records: list[InsiderTradeRecord] = []
+            for row in data.get("data", []):
+                parsed = self._parse_nse_pit_record(row, symbol, from_date)
+                if parsed:
+                    records.append(parsed)
+            return records
+
+        records = await asyncio.to_thread(_fetch)
+        await asyncio.sleep(_RATE_LIMIT_DELAY)
         logger.info("sebi_insider_fetched", symbol=symbol, records=len(records))
         return records
 
-    def _parse_insider_trade(
+    def _parse_nse_pit_record(
         self,
-        row: dict,
+        row: dict[str, str],
         symbol: str,
+        from_date: date,
     ) -> InsiderTradeRecord | None:
-        """Parse a single insider trade row."""
+        """Parse a single NSE PIT (insider trading) record."""
         try:
-            trade_type_raw = str(row.get("BUYSELL", row.get("TRANSACTIONTYPE", ""))).lower()
-            trade_type = (
-                "buy" if "buy" in trade_type_raw or "acquisition" in trade_type_raw else "sell"
-            )
+            txn_type = row.get("tdpTransactionType", "").lower()
+            trade_type = "buy" if "buy" in txn_type or "acquisition" in txn_type else "sell"
 
-            date_str = row.get("TRADE_DATE", row.get("TRANSACTIONDATE", ""))
+            date_str = row.get("acqfromDt", "")
             if not date_str:
                 return None
+            from datetime import datetime
 
-            from dateutil.parser import parse as parse_date
+            trade_date = datetime.strptime(date_str, "%d-%b-%Y").date()
+            if trade_date < from_date:
+                return None
 
-            trade_date = parse_date(str(date_str)).date()
+            shares = int(float(row.get("secAcq", 0)))
+            value = float(row.get("secVal", 0))
 
             return InsiderTradeRecord(
                 symbol=symbol,
                 trade_date=trade_date,
-                person_name=str(row.get("PERSONNAME", row.get("NAME", "Unknown"))),
-                person_category=str(row.get("CATEGORY", row.get("PERSONCATEGORY", ""))),
+                person_name=row.get("acqName", "Unknown"),
+                person_category=row.get("personCategory", ""),
                 trade_type=trade_type,
-                shares=int(float(row.get("NO_OF_SHARES", row.get("NOOFSHARES", 0)))),
-                value_lakhs=float(row.get("VALUE", row.get("TRADEDVALUE", 0))),
+                shares=shares,
+                value_lakhs=round(value / 100_000, 2),
             )
         except (ValueError, TypeError):
             return None
