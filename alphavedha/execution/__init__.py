@@ -61,3 +61,7 @@ __all__ = [
     "TelegramConfig",
     "shadow_fills_to_rows",
 ]
+
+# KiteAdapter and KiteConfig are NOT re-exported here because importing
+# them would fail if the kiteconnect SDK is not installed. Import
+# directly: from alphavedha.execution.kite_adapter import KiteAdapter

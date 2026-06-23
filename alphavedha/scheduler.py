@@ -913,9 +913,7 @@ class AlphaVedhaScheduler:
                     symbols = [s for s, _n, _sec, _c in NIFTY_50]
                     all_rows: list[dict[str, Any]] = []
                     for symbol in symbols:
-                        records = await provider.fetch_insider_trades(
-                            symbol.replace(".NS", ""), days_back=7
-                        )
+                        records = await provider.fetch_insider_trades(symbol, days_back=90)
                         for r in records:
                             all_rows.append(
                                 {
@@ -1671,6 +1669,27 @@ class AlphaVedhaScheduler:
         logger.debug("rebalance_skipped_wrong_month", month=now.month)
         return None
 
+    def _write_heartbeat(self) -> None:
+        """Write a heartbeat file so the app container can check scheduler liveness."""
+        import contextlib
+        import json
+
+        heartbeat_path = (
+            Path(os.environ.get("ALPHAVEDHA_LOG_DIR", "/app/logs")) / "scheduler_heartbeat.json"
+        )
+        with contextlib.suppress(OSError):
+            heartbeat_path.write_text(
+                json.dumps(
+                    {
+                        "alive": True,
+                        "last_beat": _now_ist().isoformat(),
+                        "pid": os.getpid(),
+                        "tier": self._tier,
+                        "demo": self._demo,
+                    }
+                )
+            )
+
     def run_forever(self, poll_interval: float = 60.0) -> None:
         """Start the scheduler loop. Blocks until interrupted."""
         self.setup_schedule()
@@ -1681,6 +1700,7 @@ class AlphaVedhaScheduler:
         try:
             while self._state.is_running:
                 schedule.run_pending()
+                self._write_heartbeat()
                 time.sleep(poll_interval)
         except KeyboardInterrupt:
             logger.info("scheduler_stopped_by_user")
