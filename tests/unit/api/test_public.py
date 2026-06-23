@@ -539,3 +539,57 @@ class TestIsDemo:
         assert public._is_demo() is False
         monkeypatch.setenv("ALPHAVEDHA_DEMO", "0")
         assert public._is_demo() is False
+
+
+class TestWeeklyDigest:
+    def test_demo_digest(self, demo_client: TestClient) -> None:
+        resp = demo_client.get("/public/weekly-digest")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "week" in data
+        assert "start" in data["week"]
+        assert "this_week" in data
+        assert "cumulative" in data
+        assert data["cumulative"]["total_predictions"] > 0
+        assert "highlight_strategy" in data
+        assert "trend" in data
+        assert "insight" in data
+        assert len(data["insight"]) > 20
+        assert "chart_data" in data
+        assert len(data["chart_data"]) > 0
+
+    def test_demo_chart_structure(self, demo_client: TestClient) -> None:
+        data = demo_client.get("/public/weekly-digest").json()
+        point = data["chart_data"][0]
+        assert "week" in point
+        assert "accuracy" in point
+        assert "n_trades" in point
+
+    def test_full_app_digest(self, client: TestClient) -> None:
+        resp = client.get("/public/weekly-digest")
+        assert resp.status_code == 200
+
+    def test_empty_digest(self, empty_client: TestClient) -> None:
+        data = empty_client.get("/public/weekly-digest").json()
+        assert data["cumulative"]["total_predictions"] == 0
+        assert data["this_week"]["predictions"] == 0
+        assert data["chart_data"] == []
+        assert data["highlight_strategy"] is None
+
+
+class TestInsightGenerator:
+    def test_early_days(self) -> None:
+        result = public._generate_insight(0.5, 0.5, 3, 2, "steady")
+        assert "Too early" in result
+
+    def test_no_week_accuracy(self) -> None:
+        result = public._generate_insight(0.55, None, 20, 3, "steady")
+        assert "No trades matured" in result
+
+    def test_improving(self) -> None:
+        result = public._generate_insight(0.55, 0.60, 30, 4, "improving")
+        assert "trending up" in result
+
+    def test_declining(self) -> None:
+        result = public._generate_insight(0.55, 0.45, 30, 4, "declining")
+        assert "Tough week" in result

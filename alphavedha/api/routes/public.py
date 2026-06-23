@@ -1461,3 +1461,196 @@ def _generate_demo_red_flags(threshold: int) -> dict[str, Any]:
         "symbols": flagged,
         "generated_at": datetime.now(UTC).isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Weekly digest endpoint (P6-D5)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/weekly-digest")
+async def weekly_digest() -> dict[str, Any]:
+    """Weekly performance digest — one chart + one insight for build-in-public.
+
+    Generates a shareable summary: this week's accuracy, cumulative record,
+    strategy highlight, and a one-liner insight. Designed so Saurabh can
+    copy-paste into a social post with minimal editing.
+    """
+    if _is_demo():
+        return _generate_demo_digest()
+
+    from alphavedha.data.store import load_paper_trades
+
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    week_end = today
+
+    try:
+        all_trades = await load_paper_trades()
+        week_trades = await load_paper_trades(start=week_start, end=week_end)
+    except Exception as exc:
+        logger.error("weekly_digest_load_failed", error=str(exc))
+        return _empty_digest(week_start, week_end)
+
+    if all_trades.empty:
+        return _empty_digest(week_start, week_end)
+
+    all_eval = all_trades[all_trades["is_correct"].notna()]
+    week_eval = (
+        week_trades[week_trades["is_correct"].notna()] if not week_trades.empty else week_trades
+    )
+
+    all_accuracy = float(all_eval["is_correct"].mean()) if not all_eval.empty else 0.0
+    week_accuracy = float(week_eval["is_correct"].mean()) if not week_eval.empty else None
+    total_days = int(all_trades["prediction_date"].nunique())
+
+    strategies = sorted(all_trades["strategy"].dropna().unique().tolist())
+    best_strategy: dict[str, Any] | None = None
+    best_win_rate = -1.0
+    for strat in strategies:
+        strat_eval = all_eval[all_eval["strategy"] == strat]
+        if len(strat_eval) >= 10:
+            wr = float(strat_eval["is_correct"].mean())
+            if wr > best_win_rate:
+                best_win_rate = wr
+                best_strategy = {
+                    "name": strat,
+                    "win_rate": round(wr, 4),
+                    "n_evaluated": len(strat_eval),
+                }
+
+    trend = "improving" if week_accuracy and week_accuracy > all_accuracy else "steady"
+    if week_accuracy and week_accuracy < all_accuracy - 0.05:
+        trend = "declining"
+
+    insight = _generate_insight(
+        all_accuracy,
+        week_accuracy,
+        total_days,
+        len(strategies),
+        trend,
+    )
+
+    chart_data = _weekly_accuracy_series(all_trades)
+
+    return {
+        "week": {"start": week_start.isoformat(), "end": week_end.isoformat()},
+        "this_week": {
+            "predictions": len(week_trades) if not week_trades.empty else 0,
+            "evaluated": len(week_eval) if not week_eval.empty else 0,
+            "accuracy": round(week_accuracy, 4) if week_accuracy is not None else None,
+        },
+        "cumulative": {
+            "total_predictions": len(all_trades),
+            "total_evaluated": len(all_eval),
+            "accuracy": round(all_accuracy, 4),
+            "trading_days": total_days,
+            "strategies_active": len(strategies),
+        },
+        "highlight_strategy": best_strategy,
+        "trend": trend,
+        "insight": insight,
+        "chart_data": chart_data,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def _weekly_accuracy_series(trades: pd.DataFrame) -> list[dict[str, Any]]:
+    """Build weekly accuracy points for a sparkline chart."""
+    if trades.empty:
+        return []
+
+    evaluated = trades[trades["is_correct"].notna()].copy()
+    if evaluated.empty:
+        return []
+
+    evaluated["prediction_date"] = evaluated["prediction_date"].apply(
+        lambda x: x if isinstance(x, date) else date.fromisoformat(str(x))
+    )
+    evaluated["week"] = evaluated["prediction_date"].apply(
+        lambda d: (d - timedelta(days=d.weekday())).isoformat()
+    )
+
+    points: list[dict[str, Any]] = []
+    for week, group in sorted(evaluated.groupby("week")):
+        n = len(group)
+        correct = int(group["is_correct"].sum())
+        points.append(
+            {
+                "week": week,
+                "accuracy": round(correct / n, 4) if n > 0 else 0.0,
+                "n_trades": n,
+            }
+        )
+    return points
+
+
+def _generate_insight(
+    all_accuracy: float,
+    week_accuracy: float | None,
+    total_days: int,
+    n_strategies: int,
+    trend: str,
+) -> str:
+    if total_days < 5:
+        return f"Week {total_days} of the public record. Too early for patterns — building the dataset."
+
+    if week_accuracy is None:
+        return (
+            f"Day {total_days} of the record. No trades matured this week — check back next Friday."
+        )
+
+    pct = round(all_accuracy * 100, 1)
+    if trend == "improving":
+        return f"Accuracy trending up — {pct}% cumulative across {total_days} trading days and {n_strategies} strategies."
+    if trend == "declining":
+        return f"Tough week. Cumulative accuracy {pct}% across {total_days} days. The record stays honest."
+    return f"Steady at {pct}% cumulative accuracy over {total_days} trading days, {n_strategies} strategies running."
+
+
+def _empty_digest(week_start: date, week_end: date) -> dict[str, Any]:
+    return {
+        "week": {"start": week_start.isoformat(), "end": week_end.isoformat()},
+        "this_week": {"predictions": 0, "evaluated": 0, "accuracy": None},
+        "cumulative": {
+            "total_predictions": 0,
+            "total_evaluated": 0,
+            "accuracy": 0.0,
+            "trading_days": 0,
+            "strategies_active": 0,
+        },
+        "highlight_strategy": None,
+        "trend": "steady",
+        "insight": "No predictions yet — the record starts when the first cohort lands.",
+        "chart_data": [],
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def _generate_demo_digest() -> dict[str, Any]:
+    today = date(2026, 6, 20)
+    week_start = today - timedelta(days=today.weekday())
+    return {
+        "week": {"start": week_start.isoformat(), "end": today.isoformat()},
+        "this_week": {"predictions": 200, "evaluated": 165, "accuracy": 0.5636},
+        "cumulative": {
+            "total_predictions": 4500,
+            "total_evaluated": 3900,
+            "accuracy": 0.5487,
+            "trading_days": 90,
+            "strategies_active": 4,
+        },
+        "highlight_strategy": {
+            "name": "insider_cluster_v1",
+            "win_rate": 0.594,
+            "n_evaluated": 32,
+        },
+        "trend": "improving",
+        "insight": "Accuracy trending up — 54.9% cumulative across 90 trading days and 4 strategies.",
+        "chart_data": [
+            {"week": "2026-06-01", "accuracy": 0.52, "n_trades": 180},
+            {"week": "2026-06-08", "accuracy": 0.55, "n_trades": 195},
+            {"week": "2026-06-15", "accuracy": 0.56, "n_trades": 165},
+        ],
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
