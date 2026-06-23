@@ -8,6 +8,11 @@ from alphavedha.gates.reviewer import (
     GateVerdict,
     StrategyMetrics,
 )
+from alphavedha.gates.strategy_lifecycle import (
+    LifecycleStage,
+    StrategyLifecycle,
+    StrategyRecord,
+)
 
 __all__ = [
     "G1Criteria",
@@ -15,5 +20,8 @@ __all__ = [
     "GateLevel",
     "GateReviewer",
     "GateVerdict",
+    "LifecycleStage",
+    "StrategyLifecycle",
     "StrategyMetrics",
+    "StrategyRecord",
 ]
