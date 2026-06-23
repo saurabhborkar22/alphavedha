@@ -527,3 +527,26 @@ class BulkBlockDeal(Base):
         Index("ix_bulk_block_deals_symbol", "symbol"),
         Index("ix_bulk_block_deals_date", "deal_date"),
     )
+
+
+class ShadowFill(Base):
+    """Shadow execution log — ghost fills from the paper broker (P4-D3)."""
+
+    __tablename__ = "shadow_fills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strategy: Mapped[str] = mapped_column(String(50), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    fill_date: Mapped[date] = mapped_column(Date, nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    decision_price: Mapped[float] = mapped_column(Float, nullable=False)
+    sim_fill_price: Mapped[float] = mapped_column(Float, nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    slippage_bps: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")
+
+    __table_args__ = (
+        Index("ix_shadow_fills_date", "fill_date"),
+        Index("ix_shadow_fills_symbol", "symbol"),
+        Index("ix_shadow_fills_strategy", "strategy"),
+    )

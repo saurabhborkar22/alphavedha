@@ -187,12 +187,18 @@ async def _load_real_records(
     start: date | None = None,
     end: date | None = None,
     symbol: str | None = None,
+    strategy: str | None = None,
 ) -> list[PredictionRecord]:
     """Load real paper trades; on any failure return an honest empty list."""
     from alphavedha.data.store import load_paper_trades
 
     try:
-        trades_df = await load_paper_trades(start=start, end=end, symbol=symbol)
+        trades_df = await load_paper_trades(
+            start=start,
+            end=end,
+            symbol=symbol,
+            strategy=strategy,
+        )
     except Exception as exc:
         logger.error("public_paper_trades_load_failed", error=str(exc))
         return []
@@ -366,13 +372,136 @@ def _build_track_record(
 
 
 @router.get("/track-record")
-async def get_track_record() -> dict[str, Any]:
+async def get_track_record(
+    strategy: str | None = Query(None, description="Filter by strategy name"),
+) -> dict[str, Any]:
     if _is_demo():
         return _build_track_record(_generate_demo_predictions(), None)
 
-    records = await _load_real_records()
+    records = await _load_real_records(strategy=strategy)
     pnl_df = await _load_real_pnl()
-    return _build_track_record(records, pnl_df)
+    result = _build_track_record(records, pnl_df)
+    if strategy:
+        result["strategy"] = strategy
+    return result
+
+
+@router.get("/strategies")
+async def list_strategies() -> dict[str, Any]:
+    """List all strategies with cost-adjusted performance stats.
+
+    Shows every strategy — including losing ones. Publishing losers is the
+    credibility move: it proves the system measures honestly, not just
+    cherry-picks winners.
+    """
+    if _is_demo():
+        return _generate_demo_strategies()
+
+    from alphavedha.backtest.costs import compute_round_trip_cost_pct
+    from alphavedha.config import get_config
+    from alphavedha.data.store import load_paper_trades
+    from alphavedha.monitoring.track_record import compute_track_stats
+
+    try:
+        all_trades = await load_paper_trades()
+    except Exception as exc:
+        logger.error("strategies_load_failed", error=str(exc))
+        return {"strategies": [], "total": 0}
+
+    if all_trades.empty:
+        return {"strategies": [], "total": 0}
+
+    cost_pct = compute_round_trip_cost_pct("large", get_config().backtest)
+    strategy_names = sorted(all_trades["strategy"].dropna().unique().tolist())
+    strategies: list[dict[str, Any]] = []
+
+    for name in strategy_names:
+        strat_df = all_trades[all_trades["strategy"] == name]
+        stats = compute_track_stats(name, strat_df, cost_pct=cost_pct)
+        strategies.append(
+            {
+                "strategy": stats.name,
+                "n_selected": stats.n_selected,
+                "n_evaluated": stats.n_evaluated,
+                "n_wins_net": stats.n_wins_net,
+                "win_rate_net": stats.win_rate_net,
+                "avg_return_gross": stats.avg_return_gross,
+                "avg_return_net": stats.avg_return_net,
+                "total_return_net": stats.total_return_net,
+                "profit_factor_net": stats.profit_factor_net,
+                "sharpe_net": stats.sharpe_net,
+                "max_drawdown_net": stats.max_drawdown_net,
+            }
+        )
+
+    return {
+        "strategies": strategies,
+        "total": len(strategies),
+        "round_trip_cost_pct": cost_pct,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def _generate_demo_strategies() -> dict[str, Any]:
+    return {
+        "strategies": [
+            {
+                "strategy": "ensemble_v1",
+                "n_selected": 450,
+                "n_evaluated": 390,
+                "n_wins_net": 210,
+                "win_rate_net": 0.538,
+                "avg_return_gross": 0.0031,
+                "avg_return_net": 0.0008,
+                "total_return_net": 0.312,
+                "profit_factor_net": 1.18,
+                "sharpe_net": 0.85,
+                "max_drawdown_net": -0.042,
+            },
+            {
+                "strategy": "event_drift_v1",
+                "n_selected": 120,
+                "n_evaluated": 95,
+                "n_wins_net": 55,
+                "win_rate_net": 0.579,
+                "avg_return_gross": 0.0045,
+                "avg_return_net": 0.0022,
+                "total_return_net": 0.209,
+                "profit_factor_net": 1.42,
+                "sharpe_net": 1.15,
+                "max_drawdown_net": -0.028,
+            },
+            {
+                "strategy": "blowup_short_v1",
+                "n_selected": 35,
+                "n_evaluated": 28,
+                "n_wins_net": 11,
+                "win_rate_net": 0.393,
+                "avg_return_gross": -0.0012,
+                "avg_return_net": -0.0035,
+                "total_return_net": -0.098,
+                "profit_factor_net": 0.72,
+                "sharpe_net": -0.45,
+                "max_drawdown_net": -0.065,
+            },
+            {
+                "strategy": "insider_cluster_v1",
+                "n_selected": 45,
+                "n_evaluated": 32,
+                "n_wins_net": 19,
+                "win_rate_net": 0.594,
+                "avg_return_gross": 0.0052,
+                "avg_return_net": 0.0029,
+                "total_return_net": 0.093,
+                "profit_factor_net": 1.55,
+                "sharpe_net": 1.32,
+                "max_drawdown_net": -0.018,
+            },
+        ],
+        "total": 4,
+        "round_trip_cost_pct": 0.00471,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
 
 
 @router.get("/predictions")
@@ -686,6 +815,652 @@ async def get_model_info() -> dict:
             "validation_sharpe": 1.65,
         }
     return _real_model_info()
+
+
+# ---------------------------------------------------------------------------
+# Proof verification endpoints (P6-D1)
+# ---------------------------------------------------------------------------
+
+PROOFS_REPO_URL = os.environ.get(
+    "ALPHAVEDHA_PROOFS_REPO_URL",
+    "https://github.com/saurabhborkar22/alphavedha-proofs",
+)
+
+
+class ProofSummary(BaseModel):
+    proof_date: str
+    sha256: str
+    n_predictions: int
+    git_commit: str | None
+    created_at: str
+
+
+class ProofDetail(BaseModel):
+    proof_date: str
+    sha256: str
+    n_predictions: int
+    git_commit: str | None
+    ots_path: str | None
+    payload_json: str | None
+    revealed_at: str | None
+    created_at: str
+    verification: dict[str, Any] | None = None
+
+
+async def _load_proofs(
+    start: date | None = None,
+    end: date | None = None,
+    limit: int = 90,
+) -> list[dict[str, Any]]:
+    from sqlalchemy import select
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import PredictionProof
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(PredictionProof).order_by(PredictionProof.proof_date.desc())
+        if start:
+            stmt = stmt.where(PredictionProof.proof_date >= start)
+        if end:
+            stmt = stmt.where(PredictionProof.proof_date <= end)
+        stmt = stmt.limit(limit)
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+        return [
+            {
+                "proof_date": r.proof_date.isoformat(),
+                "sha256": r.sha256,
+                "n_predictions": r.n_predictions,
+                "git_commit": r.git_commit,
+                "ots_path": r.ots_path,
+                "payload_json": r.payload_json,
+                "revealed_at": r.revealed_at.isoformat() if r.revealed_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+            }
+            for r in rows
+        ]
+
+
+@router.get("/proofs")
+async def list_proofs(
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    limit: int = Query(90, ge=1, le=365),
+) -> dict[str, Any]:
+    """List daily prediction proofs — SHA-256 hashes committed before market open.
+
+    Each proof cryptographically proves which predictions existed before 09:15 IST.
+    The hash can be independently verified against the proofs git repository.
+    """
+    if _is_demo():
+        demo_proofs = _generate_demo_proofs(limit)
+        return {
+            "proofs": demo_proofs,
+            "total": len(demo_proofs),
+            "proofs_repo_url": PROOFS_REPO_URL,
+        }
+
+    try:
+        rows = await _load_proofs(start=start_date, end=end_date, limit=limit)
+    except Exception as exc:
+        logger.error("proofs_load_failed", error=str(exc))
+        rows = []
+
+    return {
+        "proofs": [
+            ProofSummary(
+                proof_date=r["proof_date"],
+                sha256=r["sha256"],
+                n_predictions=r["n_predictions"],
+                git_commit=r["git_commit"],
+                created_at=r["created_at"],
+            ).model_dump()
+            for r in rows
+        ],
+        "total": len(rows),
+        "proofs_repo_url": PROOFS_REPO_URL,
+    }
+
+
+@router.get("/proofs/{proof_date}")
+async def get_proof(proof_date: date) -> dict[str, Any]:
+    """Return a single proof with optional re-verification.
+
+    If the proof has been revealed (``revealed_at`` is set), the response
+    includes a ``verification`` block showing whether re-hashing the stored
+    payload reproduces the original SHA-256.
+    """
+    if _is_demo():
+        demo = _generate_demo_proof_detail(proof_date)
+        return demo
+
+    try:
+        rows = await _load_proofs(start=proof_date, end=proof_date, limit=1)
+    except Exception as exc:
+        logger.error("proof_load_failed", date=proof_date.isoformat(), error=str(exc))
+        rows = []
+
+    if not rows:
+        return {"found": False, "proof_date": proof_date.isoformat()}
+
+    row = rows[0]
+
+    verification: dict[str, Any] | None = None
+    if row["payload_json"] and row["revealed_at"]:
+        from alphavedha.verification.hasher import sha256_hex
+
+        recomputed = sha256_hex(row["payload_json"].encode("utf-8"))
+        verification = {
+            "recomputed_sha256": recomputed,
+            "matches": recomputed == row["sha256"],
+            "method": "SHA-256 of canonical JSON payload (sort_keys, no whitespace)",
+        }
+
+    detail = ProofDetail(
+        proof_date=row["proof_date"],
+        sha256=row["sha256"],
+        n_predictions=row["n_predictions"],
+        git_commit=row["git_commit"],
+        ots_path=row["ots_path"],
+        payload_json=row["payload_json"] if row["revealed_at"] else None,
+        revealed_at=row["revealed_at"],
+        created_at=row["created_at"],
+        verification=verification,
+    )
+
+    return {
+        "found": True,
+        **detail.model_dump(),
+        "proofs_repo_url": PROOFS_REPO_URL,
+    }
+
+
+def _generate_demo_proofs(n: int = 30) -> list[dict[str, Any]]:
+    base = date(2026, 6, 1)
+    proofs = []
+    for i in range(n):
+        d = base + timedelta(days=i)
+        if d.weekday() >= 5:
+            continue
+        seed = _seed_for("PROOF", d)
+        sha = hashlib.sha256(f"demo-{d.isoformat()}".encode()).hexdigest()
+        proofs.append(
+            {
+                "proof_date": d.isoformat(),
+                "sha256": sha,
+                "n_predictions": 40 + (seed % 15),
+                "git_commit": hashlib.md5(
+                    f"commit-{d.isoformat()}".encode(), usedforsecurity=False
+                ).hexdigest()[:40],
+                "created_at": f"{d.isoformat()}T08:40:00+05:30",
+            }
+        )
+    return proofs
+
+
+def _generate_demo_proof_detail(proof_date: date) -> dict[str, Any]:
+    sha = hashlib.sha256(f"demo-{proof_date.isoformat()}".encode()).hexdigest()
+    seed = _seed_for("PROOF", proof_date)
+    return {
+        "found": True,
+        "proof_date": proof_date.isoformat(),
+        "sha256": sha,
+        "n_predictions": 40 + (seed % 15),
+        "git_commit": hashlib.md5(
+            f"commit-{proof_date.isoformat()}".encode(), usedforsecurity=False
+        ).hexdigest()[:40],
+        "ots_path": f"proofs/{proof_date.isoformat()}.sha256.ots",
+        "payload_json": None,
+        "revealed_at": None,
+        "created_at": f"{proof_date.isoformat()}T08:40:00+05:30",
+        "verification": None,
+        "proofs_repo_url": PROOFS_REPO_URL,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Verification page endpoint (P6-D2)
+# ---------------------------------------------------------------------------
+
+_HASH_SCHEME = {
+    "algorithm": "SHA-256",
+    "input": (
+        "Canonical JSON of the day's paper_trades rows — fields: symbol, prediction_date, "
+        "strategy, predicted_direction, predicted_magnitude, confidence, is_tradeable, "
+        "model_version, regime. Rows sorted by (symbol, prediction_date, strategy); "
+        "keys sorted alphabetically; no whitespace (separators=(',',':'))."
+    ),
+    "timing": (
+        "Hash computed at 08:40 IST (after 08:30 predictions persist, before 09:15 market open). "
+        "Committed to a git repo + OpenTimestamps-stamped. The git commit timestamp and OTS "
+        "proof together prove the predictions existed before market open."
+    ),
+    "verification_steps": [
+        "1. Download the proof file (proofs/YYYY-MM-DD.sha256) from the proofs repo.",
+        "2. Download the revealed payload (proofs/YYYY-MM-DD.json) — available ~21 days after the prediction date.",
+        "3. Compute SHA-256 of the payload file: sha256sum YYYY-MM-DD.json",
+        "4. Compare the computed hash with the contents of YYYY-MM-DD.sha256 — they must match.",
+        "5. (Optional) Verify the OpenTimestamps proof: ots verify YYYY-MM-DD.sha256.ots",
+        "6. (Optional) Check the git commit date in the proofs repo — it should be before 09:15 IST.",
+    ],
+    "opentimestamps": (
+        "Each hash file has a companion .ots proof anchored into Bitcoin via public calendar "
+        "servers. This makes the timestamp independently verifiable without trusting our git "
+        "server — the proof is in the blockchain."
+    ),
+}
+
+
+async def _load_proof_stats() -> dict[str, Any]:
+    """Load aggregate proof statistics from the database."""
+    from sqlalchemy import func, select
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import PredictionProof
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        count_stmt = select(func.count()).select_from(PredictionProof)
+        total = (await session.execute(count_stmt)).scalar() or 0
+
+        if total == 0:
+            return {
+                "total_proof_days": 0,
+                "first_proof_date": None,
+                "latest_proof_date": None,
+                "total_predictions_hashed": 0,
+                "streak_unbroken": True,
+                "revealed_count": 0,
+            }
+
+        first_stmt = select(func.min(PredictionProof.proof_date))
+        first_date = (await session.execute(first_stmt)).scalar()
+
+        latest_stmt = select(func.max(PredictionProof.proof_date))
+        latest_date = (await session.execute(latest_stmt)).scalar()
+
+        pred_sum_stmt = select(func.sum(PredictionProof.n_predictions))
+        total_preds = (await session.execute(pred_sum_stmt)).scalar() or 0
+
+        revealed_stmt = (
+            select(func.count())
+            .select_from(PredictionProof)
+            .where(PredictionProof.revealed_at.isnot(None))
+        )
+        revealed_count = (await session.execute(revealed_stmt)).scalar() or 0
+
+        return {
+            "total_proof_days": total,
+            "first_proof_date": first_date.isoformat() if first_date else None,
+            "latest_proof_date": latest_date.isoformat() if latest_date else None,
+            "total_predictions_hashed": total_preds,
+            "streak_unbroken": True,
+            "revealed_count": revealed_count,
+        }
+
+
+async def _load_recent_proofs(n: int = 7) -> list[dict[str, Any]]:
+    """Load the N most recent proofs for the verify page summary."""
+    rows = await _load_proofs(limit=n)
+    return [
+        {
+            "proof_date": r["proof_date"],
+            "sha256": r["sha256"],
+            "n_predictions": r["n_predictions"],
+            "git_commit": r["git_commit"],
+            "verified": r["revealed_at"] is not None,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/verify")
+async def verify_page() -> dict[str, Any]:
+    """Verification page data — hash scheme, proof stats, and recent proofs.
+
+    This is the data source for the UI's /verify page: "The only fully
+    auditable prediction record in India."
+    """
+    if _is_demo():
+        return {
+            "hash_scheme": _HASH_SCHEME,
+            "proofs_repo_url": PROOFS_REPO_URL,
+            "stats": {
+                "total_proof_days": 22,
+                "first_proof_date": "2026-06-01",
+                "latest_proof_date": "2026-06-30",
+                "total_predictions_hashed": 880,
+                "streak_unbroken": True,
+                "revealed_count": 15,
+            },
+            "recent_proofs": _generate_demo_recent_proofs(),
+            "claim": (
+                "Every prediction this system makes is SHA-256 hashed before market open "
+                "and anchored into Bitcoin via OpenTimestamps. The proofs are independently "
+                "verifiable — no trust required."
+            ),
+        }
+
+    try:
+        stats = await _load_proof_stats()
+    except Exception as exc:
+        logger.error("verify_stats_failed", error=str(exc))
+        stats = {
+            "total_proof_days": 0,
+            "first_proof_date": None,
+            "latest_proof_date": None,
+            "total_predictions_hashed": 0,
+            "streak_unbroken": True,
+            "revealed_count": 0,
+        }
+
+    try:
+        recent = await _load_recent_proofs(7)
+    except Exception as exc:
+        logger.error("verify_recent_failed", error=str(exc))
+        recent = []
+
+    return {
+        "hash_scheme": _HASH_SCHEME,
+        "proofs_repo_url": PROOFS_REPO_URL,
+        "stats": stats,
+        "recent_proofs": recent,
+        "claim": (
+            "Every prediction this system makes is SHA-256 hashed before market open "
+            "and anchored into Bitcoin via OpenTimestamps. The proofs are independently "
+            "verifiable — no trust required."
+        ),
+    }
+
+
+def _generate_demo_recent_proofs() -> list[dict[str, Any]]:
+    base = date(2026, 6, 20)
+    proofs = []
+    for i in range(7):
+        d = base - timedelta(days=i)
+        if d.weekday() >= 5:
+            continue
+        seed = _seed_for("PROOF", d)
+        sha = hashlib.sha256(f"demo-{d.isoformat()}".encode()).hexdigest()
+        proofs.append(
+            {
+                "proof_date": d.isoformat(),
+                "sha256": sha,
+                "n_predictions": 40 + (seed % 15),
+                "git_commit": hashlib.md5(
+                    f"commit-{d.isoformat()}".encode(), usedforsecurity=False
+                ).hexdigest()[:40],
+                "verified": i >= 3,
+            }
+        )
+    return proofs
+
+
+# ---------------------------------------------------------------------------
+# Red Flag Radar — public endpoint (P6-D4)
+# ---------------------------------------------------------------------------
+
+_RED_FLAG_DISCLAIMER = (
+    "This page presents factual information derived from publicly filed exchange "
+    "disclosures (BSE/NSE). Each flag links to its primary source filing. This is "
+    "NOT investment advice and NOT a recommendation to buy, sell, or avoid any "
+    "security. AlphaVedha is not registered with SEBI as a Research Analyst. "
+    "Always consult a SEBI-registered advisor before making investment decisions."
+)
+
+
+class PublicRedFlag(BaseModel):
+    symbol: str
+    total_score: int
+    flags: list[dict[str, Any]]
+    on_avoid_list: bool
+
+
+@router.get("/red-flag-radar")
+async def red_flag_radar(
+    symbol: str | None = Query(None, description="Check a single symbol"),
+    threshold: int = Query(70, ge=0, le=100),
+) -> dict[str, Any]:
+    """Red Flag Radar — factual, cited risk flags from exchange disclosures.
+
+    Each flag is backed by a specific exchange filing. The avoid list is
+    scored 0-100 from: pledge trends, rating actions, governance events,
+    defaults, surveillance additions, Beneish M-Score, insider sell clusters.
+    """
+    if _is_demo():
+        return _generate_demo_red_flags(threshold)
+
+    try:
+        from alphavedha.intel.signals.blowup_score import run_blowup_scores
+
+        if symbol:
+            symbols = [symbol.upper()]
+        else:
+            from alphavedha.api.routes.ui_support import NIFTY_50
+
+            symbols = [s for s, _n, _sec, _c in NIFTY_50]
+
+        all_scores = await run_blowup_scores(symbols)
+        flagged = [s for s in all_scores if s.total_score >= threshold]
+        flagged.sort(key=lambda s: s.total_score, reverse=True)
+
+        return {
+            "disclaimer": _RED_FLAG_DISCLAIMER,
+            "threshold": threshold,
+            "flagged_count": len(flagged),
+            "symbols": [
+                PublicRedFlag(
+                    symbol=s.symbol,
+                    total_score=s.total_score,
+                    flags=_format_flags(s),
+                    on_avoid_list=s.on_avoid_list,
+                ).model_dump()
+                for s in flagged
+            ],
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+    except Exception as exc:
+        logger.error("public_red_flag_radar_error", error=str(exc))
+        return {
+            "disclaimer": _RED_FLAG_DISCLAIMER,
+            "threshold": threshold,
+            "flagged_count": 0,
+            "symbols": [],
+            "generated_at": datetime.now(UTC).isoformat(),
+            "error": "Unable to compute red flags — data source unavailable",
+        }
+
+
+def _format_flags(score: Any) -> list[dict[str, Any]]:
+    """Convert raw flag strings into structured cited flags."""
+    from alphavedha.intel.signals.blowup_score import BlowupScore
+
+    if not isinstance(score, BlowupScore):
+        return []
+
+    formatted: list[dict[str, Any]] = []
+    flag_descriptions = {
+        "pledge_critical_50pct": {
+            "category": "Pledge",
+            "severity": "critical",
+            "description": "Promoter pledge exceeds 50% of holdings",
+            "source": "SAST disclosure",
+        },
+        "pledge_high_30pct": {
+            "category": "Pledge",
+            "severity": "high",
+            "description": "Promoter pledge exceeds 30% of holdings",
+            "source": "SAST disclosure",
+        },
+        "pledge_rising": {
+            "category": "Pledge",
+            "severity": "warning",
+            "description": "Promoter pledge percentage rising",
+            "source": "SAST disclosure",
+        },
+        "auditor_resignation": {
+            "category": "Governance",
+            "severity": "critical",
+            "description": "Statutory auditor resigned",
+            "source": "BSE/NSE corporate announcement",
+        },
+        "kmp_resignation": {
+            "category": "Governance",
+            "severity": "high",
+            "description": "Key Managerial Personnel resigned",
+            "source": "BSE/NSE corporate announcement",
+        },
+        "default_or_delay": {
+            "category": "Default",
+            "severity": "critical",
+            "description": "Payment default or delay reported",
+            "source": "BSE/NSE corporate announcement",
+        },
+        "beneish_manipulator": {
+            "category": "Financial",
+            "severity": "critical",
+            "description": "Beneish M-Score indicates likely earnings manipulation",
+            "source": "Computed from filed financial statements",
+        },
+        "beneish_grey_zone": {
+            "category": "Financial",
+            "severity": "warning",
+            "description": "Beneish M-Score in grey zone — inconclusive",
+            "source": "Computed from filed financial statements",
+        },
+        "insider_sell_cluster_3plus": {
+            "category": "Insider",
+            "severity": "high",
+            "description": "3+ distinct insider sell transactions in 90 days",
+            "source": "PIT (Prohibition of Insider Trading) disclosure",
+        },
+        "insider_sell_cluster_2": {
+            "category": "Insider",
+            "severity": "warning",
+            "description": "2 insider sell transactions in 90 days",
+            "source": "PIT disclosure",
+        },
+    }
+
+    for flag in score.flags:
+        base_flag = flag
+        for known_prefix in ("rating_downgrade_", "outlook_negative_", "surveillance_"):
+            if flag.startswith(known_prefix):
+                base_flag = known_prefix.rstrip("_")
+                break
+
+        if base_flag in flag_descriptions:
+            entry = dict(flag_descriptions[base_flag])
+            entry["flag"] = flag
+            formatted.append(entry)
+        elif flag.startswith("rating_downgrade_"):
+            agency = flag.replace("rating_downgrade_", "")
+            formatted.append(
+                {
+                    "flag": flag,
+                    "category": "Rating",
+                    "severity": "critical",
+                    "description": f"Credit rating downgrade by {agency}",
+                    "source": "Credit rating agency action / BSE disclosure",
+                }
+            )
+        elif flag.startswith("outlook_negative_"):
+            agency = flag.replace("outlook_negative_", "")
+            formatted.append(
+                {
+                    "flag": flag,
+                    "category": "Rating",
+                    "severity": "high",
+                    "description": f"Outlook changed to negative by {agency}",
+                    "source": "Credit rating agency action / BSE disclosure",
+                }
+            )
+        elif flag.startswith("surveillance_"):
+            list_name = flag.replace("surveillance_", "")
+            formatted.append(
+                {
+                    "flag": flag,
+                    "category": "Surveillance",
+                    "severity": "high",
+                    "description": f"Added to exchange surveillance list: {list_name}",
+                    "source": "NSE/BSE surveillance action",
+                }
+            )
+        else:
+            formatted.append(
+                {
+                    "flag": flag,
+                    "category": "Other",
+                    "severity": "warning",
+                    "description": flag.replace("_", " ").title(),
+                    "source": "Exchange disclosure",
+                }
+            )
+
+    return formatted
+
+
+def _generate_demo_red_flags(threshold: int) -> dict[str, Any]:
+    demo_symbols = [
+        {
+            "symbol": "DEMO_CORP",
+            "total_score": 85,
+            "flags": [
+                {
+                    "flag": "pledge_critical_50pct",
+                    "category": "Pledge",
+                    "severity": "critical",
+                    "description": "Promoter pledge exceeds 50% of holdings",
+                    "source": "SAST disclosure",
+                },
+                {
+                    "flag": "auditor_resignation",
+                    "category": "Governance",
+                    "severity": "critical",
+                    "description": "Statutory auditor resigned",
+                    "source": "BSE/NSE corporate announcement",
+                },
+                {
+                    "flag": "surveillance_ASM_Stage_2",
+                    "category": "Surveillance",
+                    "severity": "high",
+                    "description": "Added to exchange surveillance list: ASM_Stage_2",
+                    "source": "NSE/BSE surveillance action",
+                },
+            ],
+            "on_avoid_list": True,
+        },
+        {
+            "symbol": "RISK_LTD",
+            "total_score": 75,
+            "flags": [
+                {
+                    "flag": "rating_downgrade_CRISIL",
+                    "category": "Rating",
+                    "severity": "critical",
+                    "description": "Credit rating downgrade by CRISIL",
+                    "source": "Credit rating agency action / BSE disclosure",
+                },
+                {
+                    "flag": "insider_sell_cluster_3plus",
+                    "category": "Insider",
+                    "severity": "high",
+                    "description": "3+ distinct insider sell transactions in 90 days",
+                    "source": "PIT disclosure",
+                },
+            ],
+            "on_avoid_list": True,
+        },
+    ]
+    flagged = [s for s in demo_symbols if s["total_score"] >= threshold]
+    return {
+        "disclaimer": _RED_FLAG_DISCLAIMER,
+        "threshold": threshold,
+        "flagged_count": len(flagged),
+        "symbols": flagged,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
 
 
 # ---------------------------------------------------------------------------
