@@ -539,6 +539,8 @@ class TestIsDemo:
         assert public._is_demo() is False
         monkeypatch.setenv("ALPHAVEDHA_DEMO", "0")
         assert public._is_demo() is False
+
+
 class TestWeeklyDigest:
     def test_demo_digest(self, demo_client: TestClient) -> None:
         resp = demo_client.get("/public/weekly-digest")
@@ -591,16 +593,3 @@ class TestInsightGenerator:
     def test_declining(self) -> None:
         result = public._generate_insight(0.55, 0.45, 30, 4, "declining")
         assert "Tough week" in result
-
-
-class TestIsDemo:
-    def test_env_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for value in ("1", "true", "YES"):
-            monkeypatch.setenv("ALPHAVEDHA_DEMO", value)
-            assert public._is_demo() is True
-
-    def test_env_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("ALPHAVEDHA_DEMO", raising=False)
-        assert public._is_demo() is False
-        monkeypatch.setenv("ALPHAVEDHA_DEMO", "0")
-        assert public._is_demo() is False
