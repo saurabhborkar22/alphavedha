@@ -203,30 +203,30 @@ async def ops_health() -> dict[str, Any]:
 
 @router.post("/trigger/{job_name}")
 async def trigger_job(job_name: str) -> dict[str, Any]:
-    """Trigger a scheduler job by name via Docker exec.
+    """Trigger a scheduler job by name in-process.
 
-    The API and scheduler run in separate containers. This endpoint
-    runs the job in the scheduler container via subprocess.
+    Both the API and scheduler containers share the same codebase and DB,
+    so jobs can run directly without Docker exec.
     """
     import asyncio
 
     allowed_jobs: dict[str, str] = {
-        "predictions": "alphavedha.scheduler:AlphaVedhaScheduler().run_daily_predictions()",
-        "signal_strategies": "alphavedha.scheduler:AlphaVedhaScheduler().run_signal_strategies()",
-        "prediction_hash": "alphavedha.scheduler:AlphaVedhaScheduler().run_prediction_hash()",
-        "evaluation": "alphavedha.scheduler:AlphaVedhaScheduler().run_daily_evaluation()",
-        "data_refresh": "alphavedha.scheduler:AlphaVedhaScheduler().run_data_refresh()",
-        "fii_dii": "alphavedha.scheduler:AlphaVedhaScheduler().run_fii_dii_ingestion()",
-        "bhavcopy": "alphavedha.scheduler:AlphaVedhaScheduler().run_bhavcopy_ingestion()",
-        "bse_announcements": "alphavedha.scheduler:AlphaVedhaScheduler().run_bse_ann_ingestion()",
-        "nse_announcements": "alphavedha.scheduler:AlphaVedhaScheduler().run_nse_ann_ingestion()",
-        "insider_trades": "alphavedha.scheduler:AlphaVedhaScheduler().run_insider_trades_ingestion()",
-        "surveillance": "alphavedha.scheduler:AlphaVedhaScheduler().run_surveillance_ingestion()",
-        "deals": "alphavedha.scheduler:AlphaVedhaScheduler().run_deals_ingestion()",
-        "credit_ratings": "alphavedha.scheduler:AlphaVedhaScheduler().run_credit_rating_ingestion()",
-        "transcripts": "alphavedha.scheduler:AlphaVedhaScheduler().run_transcript_ingestion()",
-        "intel_extraction": "alphavedha.scheduler:AlphaVedhaScheduler().run_intel_extraction()",
-        "quality_check": "alphavedha.scheduler:AlphaVedhaScheduler().run_quality_check()",
+        "predictions": "run_daily_predictions",
+        "signal_strategies": "run_signal_strategies",
+        "prediction_hash": "run_prediction_hash",
+        "evaluation": "run_daily_evaluation",
+        "data_refresh": "run_data_refresh",
+        "fii_dii": "run_fii_dii_ingestion",
+        "bhavcopy": "run_bhavcopy_ingestion",
+        "bse_announcements": "run_bse_ann_ingestion",
+        "nse_announcements": "run_nse_ann_ingestion",
+        "insider_trades": "run_insider_trades_ingestion",
+        "surveillance": "run_surveillance_ingestion",
+        "deals": "run_deals_ingestion",
+        "credit_ratings": "run_credit_rating_ingestion",
+        "transcripts": "run_transcript_ingestion",
+        "intel_extraction": "run_intel_extraction",
+        "quality_check": "run_quality_check",
     }
 
     if job_name not in allowed_jobs:
@@ -236,46 +236,36 @@ async def trigger_job(job_name: str) -> dict[str, Any]:
             "allowed_jobs": sorted(allowed_jobs.keys()),
         }
 
-    logger.info("ops_trigger_job", job=job_name, triggered_by="api")
-
-    snippet = allowed_jobs[job_name]
-    module_path, call = snippet.split(":")
-    python_code = (
-        f"from {module_path} import AlphaVedhaScheduler; "
-        f"r = AlphaVedhaScheduler().{call.split('().')[-1]}; "
-        f"print(f'success={{r.success}} symbols={{r.symbols_processed}} error={{r.error}}')"
-    )
+    method_name = allowed_jobs[job_name]
+    logger.info("ops_trigger_job", job=job_name, method=method_name, triggered_by="api")
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "exec",
-            "alphavedha-scheduler",
-            "python",
-            "-c",
-            python_code,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
-        output = stdout.decode().strip()
-        err_output = stderr.decode().strip()
+        from alphavedha.scheduler import AlphaVedhaScheduler
 
-        success = proc.returncode == 0 and "success=True" in output
-        logger.info(
-            "ops_trigger_complete",
-            job=job_name,
-            success=success,
-            returncode=proc.returncode,
-            output=output[:500],
+        def _run_job() -> dict[str, Any]:
+            import alphavedha.data.database as _db
+
+            # Reset DB singletons so asyncio.run() inside the scheduler
+            # creates fresh connections on its own event loop instead of
+            # reusing the engine bound to FastAPI's loop.
+            _db._engine = None
+            _db._session_factory = None
+
+            sched = AlphaVedhaScheduler()
+            result = getattr(sched, method_name)()
+            return {
+                "success": result.success,
+                "symbols_processed": result.symbols_processed,
+                "error": result.error,
+            }
+
+        job_result = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(None, _run_job),
+            timeout=300,
         )
-        return {
-            "success": success,
-            "job": job_name,
-            "output": output[:1000],
-            "stderr": err_output[:500] if err_output else None,
-            "returncode": proc.returncode,
-        }
+
+        logger.info("ops_trigger_complete", job=job_name, **job_result)
+        return {"success": job_result["success"], "job": job_name, **job_result}
     except TimeoutError:
         logger.error("ops_trigger_timeout", job=job_name)
         return {"success": False, "job": job_name, "error": "Job timed out (300s)"}
@@ -469,44 +459,37 @@ async def push_intel_events(payload: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/scheduler/status")
 async def scheduler_status() -> dict[str, Any]:
-    """Check if the scheduler container is running and responsive."""
-    import asyncio
+    """Check scheduler liveness via shared-volume heartbeat file.
 
+    The scheduler writes a JSON heartbeat to the shared logs volume every
+    ~60 seconds. If the heartbeat is missing or older than 5 minutes, the
+    scheduler is considered down.
+    """
+    import json
+    from pathlib import Path
+
+    heartbeat_path = (
+        Path(os.environ.get("ALPHAVEDHA_LOG_DIR", "/app/logs")) / "scheduler_heartbeat.json"
+    )
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "inspect",
-            "--format",
-            "{{.State.Status}}",
-            "alphavedha-scheduler",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
-        container_status = stdout.decode().strip()
+        if not heartbeat_path.exists():
+            return {"scheduler_running": False, "error": "No heartbeat file found"}
 
-        uptime_proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "inspect",
-            "--format",
-            "{{.State.StartedAt}}",
-            "alphavedha-scheduler",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        up_stdout, _ = await asyncio.wait_for(uptime_proc.communicate(), timeout=10)
-        started_at = up_stdout.decode().strip()
+        data = json.loads(heartbeat_path.read_text())
+        last_beat = datetime.fromisoformat(data["last_beat"])
+        age_seconds = (datetime.now(IST) - last_beat).total_seconds()
+        is_alive = age_seconds < 300
 
         return {
-            "scheduler_running": container_status == "running",
-            "container_status": container_status,
-            "started_at": started_at,
+            "scheduler_running": is_alive,
+            "last_heartbeat": data["last_beat"],
+            "heartbeat_age_seconds": int(age_seconds),
+            "pid": data.get("pid"),
+            "tier": data.get("tier"),
+            "demo": data.get("demo"),
         }
     except Exception as e:
-        return {
-            "scheduler_running": False,
-            "error": str(e),
-        }
+        return {"scheduler_running": False, "error": str(e)}
 
 
 @router.get("/predictions/summary")
@@ -567,12 +550,26 @@ async def predictions_summary() -> dict[str, Any]:
             "cumulative_return": round(float(latest["cumulative_return"]) * 100, 2),
         }
 
+    confidence_stats: dict[str, Any] = {}
+    if not trades_df.empty and "confidence" in trades_df:
+        confs = trades_df["confidence"].dropna()
+        if len(confs) > 0:
+            confidence_stats = {
+                "min": round(float(confs.min()), 4),
+                "max": round(float(confs.max()), 4),
+                "mean": round(float(confs.mean()), 4),
+                "median": round(float(confs.median()), 4),
+                "above_threshold": int((confs > 0.55).sum()),
+                "threshold": 0.55,
+            }
+
     return {
         "date": today.isoformat(),
         "predictions": n_predictions,
         "symbols": symbols,
         "n_tradeable": n_tradeable,
         "directions": directions,
+        "confidence": confidence_stats,
         "hash": hash_status,
         "latest_evaluation": yesterday_pnl,
     }

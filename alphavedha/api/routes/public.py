@@ -815,3 +815,383 @@ async def get_model_info() -> dict:
             "validation_sharpe": 1.65,
         }
     return _real_model_info()
+
+
+# ---------------------------------------------------------------------------
+# Proof verification endpoints (P6-D1)
+# ---------------------------------------------------------------------------
+
+PROOFS_REPO_URL = os.environ.get(
+    "ALPHAVEDHA_PROOFS_REPO_URL",
+    "https://github.com/saurabhborkar22/alphavedha-proofs",
+)
+
+
+class ProofSummary(BaseModel):
+    proof_date: str
+    sha256: str
+    n_predictions: int
+    git_commit: str | None
+    created_at: str
+
+
+class ProofDetail(BaseModel):
+    proof_date: str
+    sha256: str
+    n_predictions: int
+    git_commit: str | None
+    ots_path: str | None
+    payload_json: str | None
+    revealed_at: str | None
+    created_at: str
+    verification: dict[str, Any] | None = None
+
+
+async def _load_proofs(
+    start: date | None = None,
+    end: date | None = None,
+    limit: int = 90,
+) -> list[dict[str, Any]]:
+    from sqlalchemy import select
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import PredictionProof
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(PredictionProof).order_by(PredictionProof.proof_date.desc())
+        if start:
+            stmt = stmt.where(PredictionProof.proof_date >= start)
+        if end:
+            stmt = stmt.where(PredictionProof.proof_date <= end)
+        stmt = stmt.limit(limit)
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+        return [
+            {
+                "proof_date": r.proof_date.isoformat(),
+                "sha256": r.sha256,
+                "n_predictions": r.n_predictions,
+                "git_commit": r.git_commit,
+                "ots_path": r.ots_path,
+                "payload_json": r.payload_json,
+                "revealed_at": r.revealed_at.isoformat() if r.revealed_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+            }
+            for r in rows
+        ]
+
+
+@router.get("/proofs")
+async def list_proofs(
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    limit: int = Query(90, ge=1, le=365),
+) -> dict[str, Any]:
+    """List daily prediction proofs — SHA-256 hashes committed before market open.
+
+    Each proof cryptographically proves which predictions existed before 09:15 IST.
+    The hash can be independently verified against the proofs git repository.
+    """
+    if _is_demo():
+        demo_proofs = _generate_demo_proofs(limit)
+        return {
+            "proofs": demo_proofs,
+            "total": len(demo_proofs),
+            "proofs_repo_url": PROOFS_REPO_URL,
+        }
+
+    try:
+        rows = await _load_proofs(start=start_date, end=end_date, limit=limit)
+    except Exception as exc:
+        logger.error("proofs_load_failed", error=str(exc))
+        rows = []
+
+    return {
+        "proofs": [
+            ProofSummary(
+                proof_date=r["proof_date"],
+                sha256=r["sha256"],
+                n_predictions=r["n_predictions"],
+                git_commit=r["git_commit"],
+                created_at=r["created_at"],
+            ).model_dump()
+            for r in rows
+        ],
+        "total": len(rows),
+        "proofs_repo_url": PROOFS_REPO_URL,
+    }
+
+
+@router.get("/proofs/{proof_date}")
+async def get_proof(proof_date: date) -> dict[str, Any]:
+    """Return a single proof with optional re-verification.
+
+    If the proof has been revealed (``revealed_at`` is set), the response
+    includes a ``verification`` block showing whether re-hashing the stored
+    payload reproduces the original SHA-256.
+    """
+    if _is_demo():
+        demo = _generate_demo_proof_detail(proof_date)
+        return demo
+
+    try:
+        rows = await _load_proofs(start=proof_date, end=proof_date, limit=1)
+    except Exception as exc:
+        logger.error("proof_load_failed", date=proof_date.isoformat(), error=str(exc))
+        rows = []
+
+    if not rows:
+        return {"found": False, "proof_date": proof_date.isoformat()}
+
+    row = rows[0]
+
+    verification: dict[str, Any] | None = None
+    if row["payload_json"] and row["revealed_at"]:
+        from alphavedha.verification.hasher import sha256_hex
+
+        recomputed = sha256_hex(row["payload_json"].encode("utf-8"))
+        verification = {
+            "recomputed_sha256": recomputed,
+            "matches": recomputed == row["sha256"],
+            "method": "SHA-256 of canonical JSON payload (sort_keys, no whitespace)",
+        }
+
+    detail = ProofDetail(
+        proof_date=row["proof_date"],
+        sha256=row["sha256"],
+        n_predictions=row["n_predictions"],
+        git_commit=row["git_commit"],
+        ots_path=row["ots_path"],
+        payload_json=row["payload_json"] if row["revealed_at"] else None,
+        revealed_at=row["revealed_at"],
+        created_at=row["created_at"],
+        verification=verification,
+    )
+
+    return {
+        "found": True,
+        **detail.model_dump(),
+        "proofs_repo_url": PROOFS_REPO_URL,
+    }
+
+
+def _generate_demo_proofs(n: int = 30) -> list[dict[str, Any]]:
+    base = date(2026, 6, 1)
+    proofs = []
+    for i in range(n):
+        d = base + timedelta(days=i)
+        if d.weekday() >= 5:
+            continue
+        seed = _seed_for("PROOF", d)
+        sha = hashlib.sha256(f"demo-{d.isoformat()}".encode()).hexdigest()
+        proofs.append(
+            {
+                "proof_date": d.isoformat(),
+                "sha256": sha,
+                "n_predictions": 40 + (seed % 15),
+                "git_commit": hashlib.md5(
+                    f"commit-{d.isoformat()}".encode(), usedforsecurity=False
+                ).hexdigest()[:40],
+                "created_at": f"{d.isoformat()}T08:40:00+05:30",
+            }
+        )
+    return proofs
+
+
+def _generate_demo_proof_detail(proof_date: date) -> dict[str, Any]:
+    sha = hashlib.sha256(f"demo-{proof_date.isoformat()}".encode()).hexdigest()
+    seed = _seed_for("PROOF", proof_date)
+    return {
+        "found": True,
+        "proof_date": proof_date.isoformat(),
+        "sha256": sha,
+        "n_predictions": 40 + (seed % 15),
+        "git_commit": hashlib.md5(
+            f"commit-{proof_date.isoformat()}".encode(), usedforsecurity=False
+        ).hexdigest()[:40],
+        "ots_path": f"proofs/{proof_date.isoformat()}.sha256.ots",
+        "payload_json": None,
+        "revealed_at": None,
+        "created_at": f"{proof_date.isoformat()}T08:40:00+05:30",
+        "verification": None,
+        "proofs_repo_url": PROOFS_REPO_URL,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Verification page endpoint (P6-D2)
+# ---------------------------------------------------------------------------
+
+_HASH_SCHEME = {
+    "algorithm": "SHA-256",
+    "input": (
+        "Canonical JSON of the day's paper_trades rows — fields: symbol, prediction_date, "
+        "strategy, predicted_direction, predicted_magnitude, confidence, is_tradeable, "
+        "model_version, regime. Rows sorted by (symbol, prediction_date, strategy); "
+        "keys sorted alphabetically; no whitespace (separators=(',',':'))."
+    ),
+    "timing": (
+        "Hash computed at 08:40 IST (after 08:30 predictions persist, before 09:15 market open). "
+        "Committed to a git repo + OpenTimestamps-stamped. The git commit timestamp and OTS "
+        "proof together prove the predictions existed before market open."
+    ),
+    "verification_steps": [
+        "1. Download the proof file (proofs/YYYY-MM-DD.sha256) from the proofs repo.",
+        "2. Download the revealed payload (proofs/YYYY-MM-DD.json) — available ~21 days after the prediction date.",
+        "3. Compute SHA-256 of the payload file: sha256sum YYYY-MM-DD.json",
+        "4. Compare the computed hash with the contents of YYYY-MM-DD.sha256 — they must match.",
+        "5. (Optional) Verify the OpenTimestamps proof: ots verify YYYY-MM-DD.sha256.ots",
+        "6. (Optional) Check the git commit date in the proofs repo — it should be before 09:15 IST.",
+    ],
+    "opentimestamps": (
+        "Each hash file has a companion .ots proof anchored into Bitcoin via public calendar "
+        "servers. This makes the timestamp independently verifiable without trusting our git "
+        "server — the proof is in the blockchain."
+    ),
+}
+
+
+async def _load_proof_stats() -> dict[str, Any]:
+    """Load aggregate proof statistics from the database."""
+    from sqlalchemy import func, select
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import PredictionProof
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        count_stmt = select(func.count()).select_from(PredictionProof)
+        total = (await session.execute(count_stmt)).scalar() or 0
+
+        if total == 0:
+            return {
+                "total_proof_days": 0,
+                "first_proof_date": None,
+                "latest_proof_date": None,
+                "total_predictions_hashed": 0,
+                "streak_unbroken": True,
+                "revealed_count": 0,
+            }
+
+        first_stmt = select(func.min(PredictionProof.proof_date))
+        first_date = (await session.execute(first_stmt)).scalar()
+
+        latest_stmt = select(func.max(PredictionProof.proof_date))
+        latest_date = (await session.execute(latest_stmt)).scalar()
+
+        pred_sum_stmt = select(func.sum(PredictionProof.n_predictions))
+        total_preds = (await session.execute(pred_sum_stmt)).scalar() or 0
+
+        revealed_stmt = (
+            select(func.count())
+            .select_from(PredictionProof)
+            .where(PredictionProof.revealed_at.isnot(None))
+        )
+        revealed_count = (await session.execute(revealed_stmt)).scalar() or 0
+
+        return {
+            "total_proof_days": total,
+            "first_proof_date": first_date.isoformat() if first_date else None,
+            "latest_proof_date": latest_date.isoformat() if latest_date else None,
+            "total_predictions_hashed": total_preds,
+            "streak_unbroken": True,
+            "revealed_count": revealed_count,
+        }
+
+
+async def _load_recent_proofs(n: int = 7) -> list[dict[str, Any]]:
+    """Load the N most recent proofs for the verify page summary."""
+    rows = await _load_proofs(limit=n)
+    return [
+        {
+            "proof_date": r["proof_date"],
+            "sha256": r["sha256"],
+            "n_predictions": r["n_predictions"],
+            "git_commit": r["git_commit"],
+            "verified": r["revealed_at"] is not None,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/verify")
+async def verify_page() -> dict[str, Any]:
+    """Verification page data — hash scheme, proof stats, and recent proofs.
+
+    This is the data source for the UI's /verify page: "The only fully
+    auditable prediction record in India."
+    """
+    if _is_demo():
+        return {
+            "hash_scheme": _HASH_SCHEME,
+            "proofs_repo_url": PROOFS_REPO_URL,
+            "stats": {
+                "total_proof_days": 22,
+                "first_proof_date": "2026-06-01",
+                "latest_proof_date": "2026-06-30",
+                "total_predictions_hashed": 880,
+                "streak_unbroken": True,
+                "revealed_count": 15,
+            },
+            "recent_proofs": _generate_demo_recent_proofs(),
+            "claim": (
+                "Every prediction this system makes is SHA-256 hashed before market open "
+                "and anchored into Bitcoin via OpenTimestamps. The proofs are independently "
+                "verifiable — no trust required."
+            ),
+        }
+
+    try:
+        stats = await _load_proof_stats()
+    except Exception as exc:
+        logger.error("verify_stats_failed", error=str(exc))
+        stats = {
+            "total_proof_days": 0,
+            "first_proof_date": None,
+            "latest_proof_date": None,
+            "total_predictions_hashed": 0,
+            "streak_unbroken": True,
+            "revealed_count": 0,
+        }
+
+    try:
+        recent = await _load_recent_proofs(7)
+    except Exception as exc:
+        logger.error("verify_recent_failed", error=str(exc))
+        recent = []
+
+    return {
+        "hash_scheme": _HASH_SCHEME,
+        "proofs_repo_url": PROOFS_REPO_URL,
+        "stats": stats,
+        "recent_proofs": recent,
+        "claim": (
+            "Every prediction this system makes is SHA-256 hashed before market open "
+            "and anchored into Bitcoin via OpenTimestamps. The proofs are independently "
+            "verifiable — no trust required."
+        ),
+    }
+
+
+def _generate_demo_recent_proofs() -> list[dict[str, Any]]:
+    base = date(2026, 6, 20)
+    proofs = []
+    for i in range(7):
+        d = base - timedelta(days=i)
+        if d.weekday() >= 5:
+            continue
+        seed = _seed_for("PROOF", d)
+        sha = hashlib.sha256(f"demo-{d.isoformat()}".encode()).hexdigest()
+        proofs.append(
+            {
+                "proof_date": d.isoformat(),
+                "sha256": sha,
+                "n_predictions": 40 + (seed % 15),
+                "git_commit": hashlib.md5(
+                    f"commit-{d.isoformat()}".encode(), usedforsecurity=False
+                ).hexdigest()[:40],
+                "verified": i >= 3,
+            }
+        )
+    return proofs

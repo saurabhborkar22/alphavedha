@@ -388,6 +388,79 @@ class TestModelInfo:
         assert isinstance(info["base_models"], list)
 
 
+class TestProofs:
+    def test_demo_list_proofs(self, demo_client: TestClient) -> None:
+        resp = demo_client.get("/public/proofs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "proofs" in data
+        assert data["total"] > 0
+        assert "proofs_repo_url" in data
+        proof = data["proofs"][0]
+        assert "proof_date" in proof
+        assert "sha256" in proof
+        assert "n_predictions" in proof
+
+    def test_demo_single_proof(self, demo_client: TestClient) -> None:
+        resp = demo_client.get("/public/proofs/2026-06-02")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["found"] is True
+        assert data["proof_date"] == "2026-06-02"
+        assert len(data["sha256"]) == 64
+        assert data["proofs_repo_url"]
+
+    def test_demo_limit(self, demo_client: TestClient) -> None:
+        resp = demo_client.get("/public/proofs?limit=5")
+        data = resp.json()
+        assert data["total"] <= 5
+
+    def test_full_app_proofs(self, client: TestClient) -> None:
+        resp = client.get("/public/proofs")
+        assert resp.status_code == 200
+
+
+class TestProofVerification:
+    def test_verify_proof_helper(self) -> None:
+        from alphavedha.verification.hasher import sha256_hex, verify_proof
+
+        payload = '{"test": "data"}'
+        digest = sha256_hex(payload.encode("utf-8"))
+        assert verify_proof(digest, payload) is True
+        assert verify_proof("wrong_hash", payload) is False
+
+
+class TestVerifyPage:
+    def test_demo_verify_page(self, demo_client: TestClient) -> None:
+        resp = demo_client.get("/public/verify")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "hash_scheme" in data
+        assert data["hash_scheme"]["algorithm"] == "SHA-256"
+        assert "verification_steps" in data["hash_scheme"]
+        assert len(data["hash_scheme"]["verification_steps"]) >= 4
+        assert "proofs_repo_url" in data
+        assert "stats" in data
+        assert data["stats"]["total_proof_days"] > 0
+        assert "recent_proofs" in data
+        assert len(data["recent_proofs"]) > 0
+        assert "claim" in data
+
+    def test_demo_verify_recent_proofs_structure(self, demo_client: TestClient) -> None:
+        data = demo_client.get("/public/verify").json()
+        proof = data["recent_proofs"][0]
+        assert "proof_date" in proof
+        assert "sha256" in proof
+        assert "n_predictions" in proof
+        assert "verified" in proof
+
+    def test_full_app_verify(self, client: TestClient) -> None:
+        resp = client.get("/public/verify")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "hash_scheme" in data
+
+
 class TestIsDemo:
     def test_env_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for value in ("1", "true", "YES"):

@@ -68,3 +68,8 @@ def hash_daily_trades(trades: list[dict[str, Any]]) -> tuple[str, bytes]:
     """
     payload = canonical_payload(trades)
     return sha256_hex(payload), payload
+
+
+def verify_proof(stored_sha256: str, payload_json: str) -> bool:
+    """Re-hash a stored payload and compare against the stored digest."""
+    return sha256_hex(payload_json.encode("utf-8")) == stored_sha256

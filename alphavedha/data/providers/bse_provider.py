@@ -59,7 +59,7 @@ class BSEProvider:
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
 
     def _nse_to_bse_code(self, nse_symbol: str) -> str | None:
-        return _BSE_SYMBOL_MAP.get(nse_symbol)
+        return _BSE_SYMBOL_MAP.get(nse_symbol.removesuffix(".NS"))
 
     def _parse_event_type(self, category: str) -> str:
         cat_lower = category.lower()
