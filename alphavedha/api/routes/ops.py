@@ -6,6 +6,7 @@ cloud Routines for automated monitoring and auto-healing.
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -31,6 +32,9 @@ from alphavedha.data.models import (
     SurveillanceFlag,
     Transcript,
 )
+from alphavedha.intel.extraction.batcher import get_unprocessed_disclosures
+from alphavedha.intel.extraction.extractor import is_boilerplate
+from alphavedha.intel.store import mark_disclosures_processed, store_disclosure_events
 
 logger = structlog.get_logger(__name__)
 
@@ -70,7 +74,7 @@ async def _table_freshness(
 
     now = datetime.now(IST)
     cutoff = now - timedelta(days=lookback_days)
-    if not is_tz_aware and not isinstance(cutoff, date):
+    if not is_tz_aware:
         cutoff = cutoff.replace(tzinfo=None)
 
     latest_stmt = select(func.max(col))
@@ -199,30 +203,30 @@ async def ops_health() -> dict[str, Any]:
 
 @router.post("/trigger/{job_name}")
 async def trigger_job(job_name: str) -> dict[str, Any]:
-    """Trigger a scheduler job by name via Docker exec.
+    """Trigger a scheduler job by name in-process.
 
-    The API and scheduler run in separate containers. This endpoint
-    runs the job in the scheduler container via subprocess.
+    Both the API and scheduler containers share the same codebase and DB,
+    so jobs can run directly without Docker exec.
     """
     import asyncio
 
     allowed_jobs: dict[str, str] = {
-        "predictions": "alphavedha.scheduler:AlphaVedhaScheduler().run_daily_predictions()",
-        "signal_strategies": "alphavedha.scheduler:AlphaVedhaScheduler().run_signal_strategies()",
-        "prediction_hash": "alphavedha.scheduler:AlphaVedhaScheduler().run_prediction_hash()",
-        "evaluation": "alphavedha.scheduler:AlphaVedhaScheduler().run_daily_evaluation()",
-        "data_refresh": "alphavedha.scheduler:AlphaVedhaScheduler().run_data_refresh()",
-        "fii_dii": "alphavedha.scheduler:AlphaVedhaScheduler().run_fii_dii_ingestion()",
-        "bhavcopy": "alphavedha.scheduler:AlphaVedhaScheduler().run_bhavcopy_ingestion()",
-        "bse_announcements": "alphavedha.scheduler:AlphaVedhaScheduler().run_bse_ann_ingestion()",
-        "nse_announcements": "alphavedha.scheduler:AlphaVedhaScheduler().run_nse_ann_ingestion()",
-        "insider_trades": "alphavedha.scheduler:AlphaVedhaScheduler().run_insider_trades_ingestion()",
-        "surveillance": "alphavedha.scheduler:AlphaVedhaScheduler().run_surveillance_ingestion()",
-        "deals": "alphavedha.scheduler:AlphaVedhaScheduler().run_deals_ingestion()",
-        "credit_ratings": "alphavedha.scheduler:AlphaVedhaScheduler().run_credit_rating_ingestion()",
-        "transcripts": "alphavedha.scheduler:AlphaVedhaScheduler().run_transcript_ingestion()",
-        "intel_extraction": "alphavedha.scheduler:AlphaVedhaScheduler().run_intel_extraction()",
-        "quality_check": "alphavedha.scheduler:AlphaVedhaScheduler().run_quality_check()",
+        "predictions": "run_daily_predictions",
+        "signal_strategies": "run_signal_strategies",
+        "prediction_hash": "run_prediction_hash",
+        "evaluation": "run_daily_evaluation",
+        "data_refresh": "run_data_refresh",
+        "fii_dii": "run_fii_dii_ingestion",
+        "bhavcopy": "run_bhavcopy_ingestion",
+        "bse_announcements": "run_bse_ann_ingestion",
+        "nse_announcements": "run_nse_ann_ingestion",
+        "insider_trades": "run_insider_trades_ingestion",
+        "surveillance": "run_surveillance_ingestion",
+        "deals": "run_deals_ingestion",
+        "credit_ratings": "run_credit_rating_ingestion",
+        "transcripts": "run_transcript_ingestion",
+        "intel_extraction": "run_intel_extraction",
+        "quality_check": "run_quality_check",
     }
 
     if job_name not in allowed_jobs:
@@ -232,46 +236,28 @@ async def trigger_job(job_name: str) -> dict[str, Any]:
             "allowed_jobs": sorted(allowed_jobs.keys()),
         }
 
-    logger.info("ops_trigger_job", job=job_name, triggered_by="api")
-
-    snippet = allowed_jobs[job_name]
-    module_path, call = snippet.split(":")
-    python_code = (
-        f"from {module_path} import AlphaVedhaScheduler; "
-        f"r = AlphaVedhaScheduler().{call.split('().')[-1]}; "
-        f"print(f'success={{r.success}} symbols={{r.symbols_processed}} error={{r.error}}')"
-    )
+    method_name = allowed_jobs[job_name]
+    logger.info("ops_trigger_job", job=job_name, method=method_name, triggered_by="api")
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "exec",
-            "alphavedha-scheduler",
-            "python",
-            "-c",
-            python_code,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
-        output = stdout.decode().strip()
-        err_output = stderr.decode().strip()
+        from alphavedha.scheduler import AlphaVedhaScheduler
 
-        success = proc.returncode == 0 and "success=True" in output
-        logger.info(
-            "ops_trigger_complete",
-            job=job_name,
-            success=success,
-            returncode=proc.returncode,
-            output=output[:500],
+        def _run_job() -> dict[str, Any]:
+            sched = AlphaVedhaScheduler()
+            result = getattr(sched, method_name)()
+            return {
+                "success": result.success,
+                "symbols_processed": result.symbols_processed,
+                "error": result.error,
+            }
+
+        job_result = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(None, _run_job),
+            timeout=300,
         )
-        return {
-            "success": success,
-            "job": job_name,
-            "output": output[:1000],
-            "stderr": err_output[:500] if err_output else None,
-            "returncode": proc.returncode,
-        }
+
+        logger.info("ops_trigger_complete", job=job_name, **job_result)
+        return {"success": job_result["success"], "job": job_name, **job_result}
     except TimeoutError:
         logger.error("ops_trigger_timeout", job=job_name)
         return {"success": False, "job": job_name, "error": "Job timed out (300s)"}
@@ -346,43 +332,403 @@ async def table_counts() -> dict[str, Any]:
     return {"counts": counts, "checked_at": datetime.now(IST).isoformat()}
 
 
+@router.get("/intel/pending")
+async def intel_pending(limit: int = 100) -> dict[str, Any]:
+    """Return unprocessed disclosures for Claude Routine extraction.
+
+    The Routine calls this, extracts events with Claude, and pushes
+    results back via POST /api/ops/intel/events. The VPS scheduler's
+    Gemini/Groq extraction acts as fallback for anything left over.
+    """
+    limit = min(limit, 500)
+
+    disclosures = await get_unprocessed_disclosures(limit=limit)
+
+    pending: list[dict[str, Any]] = []
+    boilerplate_ids: list[int] = []
+
+    for disc in disclosures:
+        if is_boilerplate(disc.get("category", ""), disc.get("headline", "")):
+            boilerplate_ids.append(disc["id"])
+            continue
+        pending.append(
+            {
+                "id": disc["id"],
+                "symbol": disc["symbol"],
+                "category": disc.get("category", ""),
+                "headline": disc.get("headline", ""),
+                "text": disc.get("text"),
+                "filed_at": filed.isoformat() if (filed := disc.get("filed_at")) else None,
+            }
+        )
+
+    if boilerplate_ids:
+        await mark_disclosures_processed(boilerplate_ids, datetime.now(IST))
+
+    logger.info(
+        "ops_intel_pending",
+        total=len(disclosures),
+        pending=len(pending),
+        boilerplate_skipped=len(boilerplate_ids),
+    )
+
+    return {
+        "pending": pending,
+        "count": len(pending),
+        "boilerplate_skipped": len(boilerplate_ids),
+    }
+
+
+@router.post("/intel/events")
+async def push_intel_events(payload: dict[str, Any]) -> dict[str, Any]:
+    """Accept extracted disclosure events from Claude Routine.
+
+    Payload format:
+    {
+        "events": [
+            {
+                "disclosure_id": 123,
+                "symbol": "TCS",
+                "event_type": "order_win",
+                "direction": 1,
+                "materiality": 7,
+                "confidence": 0.95,
+                "summary": "Won Rs 100 Cr order from Indian Railways",
+                "red_flags": []
+            },
+            ...
+        ],
+        "processed_ids": [123, 124, 125]
+    }
+    """
+
+    events = payload.get("events", [])
+    processed_ids = payload.get("processed_ids", [])
+
+    if not events and not processed_ids:
+        return {"success": False, "error": "Missing 'events' and 'processed_ids'"}
+
+    now = datetime.now(IST)
+
+    event_rows: list[dict[str, Any]] = []
+    for evt in events:
+        event_rows.append(
+            {
+                "disclosure_id": evt["disclosure_id"],
+                "symbol": evt["symbol"],
+                "event_type": evt["event_type"],
+                "direction": evt.get("direction", 0),
+                "materiality": evt.get("materiality", 0),
+                "confidence": evt.get("confidence", 0.5),
+                "summary": evt.get("summary", ""),
+                "red_flags": evt.get("red_flags"),
+                "llm_model": "anthropic/claude-routine",
+                "prompt_version": "v1",
+                "extracted_at": now,
+            }
+        )
+
+    stored = 0
+    if event_rows:
+        stored = await store_disclosure_events(event_rows)
+
+    marked = 0
+    if processed_ids:
+        marked = await mark_disclosures_processed(processed_ids, now)
+
+    logger.info(
+        "ops_intel_events_pushed",
+        events_stored=stored,
+        ids_marked=marked,
+    )
+
+    return {
+        "success": True,
+        "events_stored": stored,
+        "ids_marked_processed": marked,
+    }
+
+
 @router.get("/scheduler/status")
 async def scheduler_status() -> dict[str, Any]:
-    """Check if the scheduler container is running and responsive."""
-    import asyncio
+    """Check scheduler liveness via shared-volume heartbeat file.
 
+    The scheduler writes a JSON heartbeat to the shared logs volume every
+    ~60 seconds. If the heartbeat is missing or older than 5 minutes, the
+    scheduler is considered down.
+    """
+    import json
+    from pathlib import Path
+
+    heartbeat_path = (
+        Path(os.environ.get("ALPHAVEDHA_LOG_DIR", "/app/logs")) / "scheduler_heartbeat.json"
+    )
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "inspect",
-            "--format",
-            "{{.State.Status}}",
-            "alphavedha-scheduler",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
-        container_status = stdout.decode().strip()
+        if not heartbeat_path.exists():
+            return {"scheduler_running": False, "error": "No heartbeat file found"}
 
-        uptime_proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "inspect",
-            "--format",
-            "{{.State.StartedAt}}",
-            "alphavedha-scheduler",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        up_stdout, _ = await asyncio.wait_for(uptime_proc.communicate(), timeout=10)
-        started_at = up_stdout.decode().strip()
+        data = json.loads(heartbeat_path.read_text())
+        last_beat = datetime.fromisoformat(data["last_beat"])
+        age_seconds = (datetime.now(IST) - last_beat).total_seconds()
+        is_alive = age_seconds < 300
 
         return {
-            "scheduler_running": container_status == "running",
-            "container_status": container_status,
-            "started_at": started_at,
+            "scheduler_running": is_alive,
+            "last_heartbeat": data["last_beat"],
+            "heartbeat_age_seconds": int(age_seconds),
+            "pid": data.get("pid"),
+            "tier": data.get("tier"),
+            "demo": data.get("demo"),
         }
     except Exception as e:
-        return {
-            "scheduler_running": False,
-            "error": str(e),
+        return {"scheduler_running": False, "error": str(e)}
+
+
+@router.get("/predictions/summary")
+async def predictions_summary() -> dict[str, Any]:
+    """Today's prediction pipeline summary — count, coverage, hash status."""
+    from alphavedha.data.store import load_daily_pnl, load_paper_trades
+
+    today = date.today()
+    trades_df = await load_paper_trades(start=today, end=today)
+
+    n_predictions = len(trades_df)
+    symbols: list[str] = []
+    n_tradeable = 0
+    directions: dict[str, int] = {"bullish": 0, "bearish": 0, "neutral": 0}
+
+    if not trades_df.empty:
+        symbols = sorted(trades_df["symbol"].unique().tolist())
+        n_tradeable = int(trades_df["is_tradeable"].sum()) if "is_tradeable" in trades_df else 0
+        for _, row in trades_df.iterrows():
+            d = row.get("predicted_direction", 0)
+            if d == 1:
+                directions["bullish"] += 1
+            elif d == -1:
+                directions["bearish"] += 1
+            else:
+                directions["neutral"] += 1
+
+    hash_status: dict[str, Any] = {"published": False}
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            proof_stmt = select(PredictionProof).where(PredictionProof.proof_date == today)
+            proof_row = await session.execute(proof_stmt)
+            proof = proof_row.scalar()
+            if proof:
+                hash_status = {
+                    "published": True,
+                    "sha256": proof.sha256[:16] + "...",
+                    "n_predictions": proof.n_predictions,
+                }
+    except Exception:
+        hash_status["error"] = "db_unavailable"
+
+    yesterday_pnl: dict[str, Any] = {}
+    pnl_df = await load_daily_pnl(
+        start=today - timedelta(days=7),
+        end=today,
+    )
+    if not pnl_df.empty:
+        latest = pnl_df.iloc[-1]
+        yesterday_pnl = {
+            "date": str(latest["date"]),
+            "n_correct": int(latest["n_correct"]),
+            "n_positions": int(latest["n_positions"]),
+            "accuracy": round(latest["n_correct"] / latest["n_positions"] * 100, 1)
+            if latest["n_positions"] > 0
+            else 0,
+            "cumulative_return": round(float(latest["cumulative_return"]) * 100, 2),
         }
+
+    confidence_stats: dict[str, Any] = {}
+    if not trades_df.empty and "confidence" in trades_df:
+        confs = trades_df["confidence"].dropna()
+        if len(confs) > 0:
+            confidence_stats = {
+                "min": round(float(confs.min()), 4),
+                "max": round(float(confs.max()), 4),
+                "mean": round(float(confs.mean()), 4),
+                "median": round(float(confs.median()), 4),
+                "above_threshold": int((confs > 0.55).sum()),
+                "threshold": 0.55,
+            }
+
+    return {
+        "date": today.isoformat(),
+        "predictions": n_predictions,
+        "symbols": symbols,
+        "n_tradeable": n_tradeable,
+        "directions": directions,
+        "confidence": confidence_stats,
+        "hash": hash_status,
+        "latest_evaluation": yesterday_pnl,
+    }
+
+
+@router.get("/models/status")
+async def models_status() -> dict[str, Any]:
+    """Model artifact ages, versions, and staleness."""
+    import json as json_mod
+    from pathlib import Path
+
+    artifact_dir = Path(os.environ.get("ALPHAVEDHA_MODEL_DIR", "models/artifacts"))
+    required_models = [
+        "xgboost",
+        "lstm",
+        "tft",
+        "regime",
+        "ensemble",
+        "meta_labeling",
+        "conformal",
+    ]
+
+    now = datetime.now(IST)
+    models: dict[str, Any] = {}
+
+    for name in required_models:
+        meta_path = artifact_dir / name / "latest" / "metadata.json"
+        if not meta_path.exists():
+            models[name] = {"status": "missing", "age_days": None}
+            continue
+
+        try:
+            metadata = json_mod.loads(meta_path.read_text())
+            created_str = metadata.get("created_at", "")
+            created = datetime.fromisoformat(created_str)
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=IST)
+            age_days = (now - created).days
+
+            models[name] = {
+                "status": "stale" if age_days > 30 else "ok",
+                "age_days": age_days,
+                "created_at": created_str,
+                "metrics": {
+                    k: round(v, 4) if isinstance(v, float) else v
+                    for k, v in metadata.get("metrics", {}).items()
+                },
+            }
+        except Exception as e:
+            models[name] = {"status": "error", "error": str(e)}
+
+    n_ok = sum(1 for m in models.values() if m.get("status") == "ok")
+    n_stale = sum(1 for m in models.values() if m.get("status") == "stale")
+    n_missing = sum(1 for m in models.values() if m.get("status") == "missing")
+
+    return {
+        "summary": f"{n_ok} ok, {n_stale} stale, {n_missing} missing",
+        "models": models,
+        "checked_at": now.isoformat(),
+    }
+
+
+@router.get("/tables/deltas")
+async def table_deltas() -> dict[str, Any]:
+    """Row count deltas: today vs yesterday for each critical table."""
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    deltas: dict[str, Any] = {}
+
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            for table_name, model, date_col, _desc in _CRITICAL_TABLES:
+                col = getattr(model, date_col)
+                col_type = getattr(col, "type", None)
+                is_tz_aware = getattr(col_type, "timezone", False) if col_type else False
+
+                try:
+                    today_start: Any = datetime(today.year, today.month, today.day, tzinfo=IST)
+                    yest_start: Any = datetime(
+                        yesterday.year, yesterday.month, yesterday.day, tzinfo=IST
+                    )
+                    if not is_tz_aware:
+                        today_start = today
+                        yest_start = yesterday
+
+                    today_stmt = select(func.count()).where(col >= today_start)
+                    yest_stmt = select(func.count()).where(col >= yest_start, col < today_start)
+
+                    today_row = await session.execute(today_stmt)
+                    today_count = today_row.scalar() or 0
+                    yest_row = await session.execute(yest_stmt)
+                    yest_count = yest_row.scalar() or 0
+
+                    deltas[table_name] = {
+                        "today": today_count,
+                        "yesterday": yest_count,
+                        "delta": today_count - yest_count,
+                    }
+                except Exception as e:
+                    deltas[table_name] = {"error": str(e)}
+    except Exception:
+        deltas["error"] = "db_unavailable"
+
+    return {"date": today.isoformat(), "deltas": deltas}
+
+
+@router.get("/weekly/report")
+async def weekly_report() -> dict[str, Any]:
+    """Weekly summary: accuracy, P&L, ingestion health, model status."""
+    from alphavedha.data.store import load_daily_pnl, load_paper_trades
+
+    today = date.today()
+    week_start = today - timedelta(days=7)
+
+    pnl_df = await load_daily_pnl(start=week_start, end=today)
+
+    weekly_pnl: dict[str, Any] = {"trading_days": 0}
+    if not pnl_df.empty:
+        total_correct = int(pnl_df["n_correct"].sum())
+        total_positions = int(pnl_df["n_positions"].sum())
+        weekly_pnl = {
+            "trading_days": len(pnl_df),
+            "total_predictions_evaluated": total_positions,
+            "total_correct": total_correct,
+            "accuracy_pct": round(total_correct / total_positions * 100, 1)
+            if total_positions > 0
+            else 0,
+            "cumulative_return_pct": round(float(pnl_df.iloc[-1]["cumulative_return"]) * 100, 2),
+            "best_day_return": round(float(pnl_df["daily_return"].max()) * 100, 2),
+            "worst_day_return": round(float(pnl_df["daily_return"].min()) * 100, 2),
+        }
+
+    trades_df = await load_paper_trades(start=week_start, end=today)
+    n_predictions = len(trades_df)
+    unique_symbols = len(trades_df["symbol"].unique()) if not trades_df.empty else 0
+
+    ingestion: dict[str, int] = {}
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            for table_name, model, date_col, _desc in _CRITICAL_TABLES:
+                col = getattr(model, date_col)
+                col_type = getattr(col, "type", None)
+                is_tz_aware = getattr(col_type, "timezone", False) if col_type else False
+
+                try:
+                    cutoff: Any = datetime(
+                        week_start.year, week_start.month, week_start.day, tzinfo=IST
+                    )
+                    if not is_tz_aware:
+                        cutoff = week_start
+                    stmt = select(func.count()).where(col >= cutoff)
+                    row = await session.execute(stmt)
+                    ingestion[table_name] = row.scalar() or 0
+                except Exception:
+                    ingestion[table_name] = -1
+    except Exception:
+        pass
+
+    return {
+        "period": f"{week_start.isoformat()} to {today.isoformat()}",
+        "predictions": {
+            "total": n_predictions,
+            "unique_symbols": unique_symbols,
+        },
+        "performance": weekly_pnl,
+        "ingestion_rows": ingestion,
+    }

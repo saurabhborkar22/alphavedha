@@ -3,23 +3,24 @@
 #   ./deploy/deploy.sh
 set -euo pipefail
 
-COMPOSE="docker compose -f docker-compose.vps.yml"
+COMPOSE="docker compose -f docker-compose.vps.yml --env-file .env.vps"
 
 echo "==> Pulling latest code"
-git pull origin main
-cd ../alphavedha-ui && git pull origin main && cd ../alphavedha
+git pull --ff-only origin main
+export GIT_SHA=$(git rev-parse HEAD)
+(cd ../alphavedha-ui && git pull --ff-only origin main)
 
 echo "==> Rebuilding containers"
-$COMPOSE build --no-cache api scheduler ui
+$COMPOSE build api scheduler ui
+
+echo "==> Running DB migrations (before restart)"
+$COMPOSE run --rm -T api alembic upgrade head
 
 echo "==> Restarting services"
-$COMPOSE up -d
-
-echo "==> Running DB migrations"
-$COMPOSE exec api alembic upgrade head
+$COMPOSE up -d --force-recreate api scheduler
+$COMPOSE restart nginx
 
 echo "==> Checking service health"
-sleep 5
 $COMPOSE ps
 
 echo ""
