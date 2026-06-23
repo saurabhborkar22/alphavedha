@@ -1,4 +1,4 @@
-.PHONY: setup docker-up docker-down lint test test-unit test-integration test-integration-up test-integration-down test-backtest serve train predict scan backtest validate data-refresh data-backfill coverage
+.PHONY: setup docker-up docker-down lint format test test-unit test-integration test-integration-up test-integration-down test-backtest serve serve-prod train train-xgboost train-lstm train-tft train-regime train-meta predict scan backtest validate data-refresh data-backfill coverage vps-up vps-down vps-restart vps-logs vps-status vps-migrate vps-shell-api vps-shell-db
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
