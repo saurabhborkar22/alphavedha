@@ -89,8 +89,8 @@ class TestSchedulerConfig:
 
     def test_prediction_before_market_open(self) -> None:
         hour, minute = map(int, PREDICTION_TIME.split(":"))
-        assert hour == 8
-        assert minute == 30
+        assert hour == 6
+        assert minute == 0
 
     def test_evaluation_after_market_close(self) -> None:
         hour, minute = map(int, EVALUATION_TIME.split(":"))
