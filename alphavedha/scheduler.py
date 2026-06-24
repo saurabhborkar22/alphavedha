@@ -28,9 +28,9 @@ logger = structlog.get_logger(__name__)
 
 IST = ZoneInfo("Asia/Kolkata")
 
-PREDICTION_TIME = "08:30"
-SIGNAL_STRATEGIES_TIME = "08:35"  # signal strategies after ensemble, before hash
-PREDICTION_HASH_TIME = "08:40"  # hash daily predictions after 08:30 persist, before 09:15 open
+PREDICTION_TIME = "06:00"
+SIGNAL_STRATEGIES_TIME = "06:05"  # signal strategies after ensemble, before hash
+PREDICTION_HASH_TIME = "06:10"  # hash daily predictions after 06:00 persist, before 09:15 open
 EVALUATION_TIME = "15:45"
 DATA_REFRESH_TIME = "17:00"  # daily OHLCV ingestion after market close (15:30 IST)
 FII_DII_INGESTION_TIME = "18:30"  # NSE publishes FII/DII participation data by ~17:30 IST

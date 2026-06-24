@@ -34,7 +34,7 @@ class _FakeEventSignal:
 
 class TestSignalStrategiesConfig:
     def test_time_between_prediction_and_hash(self) -> None:
-        assert SIGNAL_STRATEGIES_TIME == "08:35"
+        assert SIGNAL_STRATEGIES_TIME == "06:05"
 
 
 class TestPersistSignalPaperTrades:
