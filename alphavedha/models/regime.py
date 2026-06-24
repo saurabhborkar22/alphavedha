@@ -122,6 +122,13 @@ class RegimeDetector:
         X = self._prepare_input(returns, volatility, extra_features)
         if X.shape[0] == 0:
             raise InsufficientDataError("Cannot predict with empty input")
+        if X.shape[1] > self._n_features:
+            logger.warning(
+                "regime_feature_count_mismatch",
+                expected=self._n_features,
+                got=X.shape[1],
+            )
+            X = X[:, : self._n_features]
         if np.any(~np.isfinite(X)):
             raise DataQualityError("Input contains NaN or Inf values")
         if self._feature_mean is not None and self._feature_std is not None:
