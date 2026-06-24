@@ -99,7 +99,15 @@ class SchedulerState:
 
 
 def _run_async(coro: object) -> object:
-    """Run an async coroutine from sync context."""
+    """Run an async coroutine from sync context.
+
+    Resets DB engine singletons so each asyncio.run() gets a fresh
+    connection pool on its own event loop.
+    """
+    import alphavedha.data.database as _db
+
+    _db._engine = None
+    _db._session_factory = None
     return asyncio.run(coro)  # type: ignore[arg-type]
 
 
