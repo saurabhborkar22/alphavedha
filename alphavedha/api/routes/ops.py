@@ -243,14 +243,6 @@ async def trigger_job(job_name: str) -> dict[str, Any]:
         from alphavedha.scheduler import AlphaVedhaScheduler
 
         def _run_job() -> dict[str, Any]:
-            import alphavedha.data.database as _db
-
-            # Reset DB singletons so asyncio.run() inside the scheduler
-            # creates fresh connections on its own event loop instead of
-            # reusing the engine bound to FastAPI's loop.
-            _db._engine = None
-            _db._session_factory = None
-
             sched = AlphaVedhaScheduler()
             result = getattr(sched, method_name)()
             return {
