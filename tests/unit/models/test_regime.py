@@ -238,3 +238,25 @@ class TestRegimeDetectorExtraFeatures:
         detector.fit(returns, volatility)
         result = detector.predict(returns, volatility, extra_features=None)
         assert isinstance(result, RegimeResult)
+
+    def test_predict_with_extra_when_trained_without(
+        self,
+        synthetic_regime_data: tuple[pd.Series, pd.Series],
+        regime_config: RegimeConfig,
+    ) -> None:
+        """Regression: trained on 2 features but called with 4 at serving time."""
+        returns, volatility = synthetic_regime_data
+        detector = RegimeDetector(config=regime_config)
+        detector.fit(returns, volatility)
+        assert detector._n_features == 2
+
+        rng = np.random.default_rng(99)
+        extra = pd.DataFrame(
+            {
+                "india_vix": rng.normal(18.0, 5.0, size=len(returns)).clip(8.0),
+                "fii_net": rng.normal(0.0, 1000.0, size=len(returns)),
+            }
+        )
+        result = detector.predict(returns, volatility, extra_features=extra)
+        assert isinstance(result, RegimeResult)
+        assert result.state_probabilities.shape == (4,)
