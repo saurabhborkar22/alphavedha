@@ -934,7 +934,14 @@ class AlphaVedhaScheduler:
                                     "value_lakhs": r.value_lakhs,
                                 }
                             )
-                    return await store_insider_trades(all_rows) if all_rows else 0
+                    if not all_rows:
+                        logger.warning(
+                            "insider_trades_zero_records",
+                            symbols_tried=len(symbols),
+                            msg="0 records across all symbols — NSE PIT API may be inaccessible",
+                        )
+                        return 0
+                    return await store_insider_trades(all_rows)
 
                 count: int = _run_async(_task())  # type: ignore[assignment]
                 result.symbols_processed = int(count)

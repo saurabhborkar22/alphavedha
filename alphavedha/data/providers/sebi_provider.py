@@ -195,17 +195,24 @@ class SebiProvider:
     ) -> list[InsiderTradeRecord]:
         """Fetch insider (PIT) trading disclosures from NSE.
 
-        Uses NSE's corporates-pit API which requires a session cookie.
-        Returns list of insider buy/sell records filtered to the date range.
+        Uses curl_cffi with Chrome TLS impersonation to bypass NSE anti-bot.
+        The standard requests library gets 403 from non-Indian / datacenter IPs
+        because NSE fingerprints TLS client-hello.
         """
         symbol = symbol.removesuffix(".NS")
         today = date.today()
         from_date = today - timedelta(days=days_back)
 
         def _fetch() -> list[InsiderTradeRecord]:
-            from alphavedha.data.providers.nse_provider import NSESession
+            from curl_cffi.requests import Session
 
-            session = NSESession()
+            session = Session(impersonate="chrome120")  # type: ignore[var-annotated]
+            try:
+                session.get("https://www.nseindia.com", timeout=10)
+            except Exception as exc:
+                logger.warning("nse_cookie_acquire_failed", symbol=symbol, error=str(exc))
+                return []
+
             url = (
                 f"https://www.nseindia.com/api/corporates-pit"
                 f"?index=equities&symbol={symbol}"
@@ -213,10 +220,11 @@ class SebiProvider:
                 f"&to_date={today.strftime('%d-%m-%Y')}"
             )
             try:
-                resp = session.get(url)
+                resp = session.get(url, timeout=15)
+                resp.raise_for_status()
                 data = resp.json()
-            except Exception:
-                logger.debug("nse_pit_fetch_failed", symbol=symbol)
+            except Exception as exc:
+                logger.warning("nse_pit_fetch_failed", symbol=symbol, error=str(exc))
                 return []
 
             records: list[InsiderTradeRecord] = []
