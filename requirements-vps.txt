@@ -50,7 +50,7 @@ structlog>=24.1
 
 # LLM extraction (Phase 2)
 google-genai>=1.0
-groq>=0.9
+groq>=1.5.0
 
 # PDF extraction (transcripts, credit rating PDFs)
 PyMuPDF>=1.24
