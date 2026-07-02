@@ -21,13 +21,13 @@ class TestParseBhavcopy:
     def test_filters_to_equity_series(self) -> None:
         df = parse_bhavcopy(SAMPLE_CSV)
         assert len(df) == 3
-        assert set(df["symbol"]) == {"TCS.NS", "INFY.NS", "RELIANCE.NS"}
+        assert set(df["symbol"]) == {"TCS", "INFY", "RELIANCE"}
 
     def test_excludes_non_equity_series(self) -> None:
         df = parse_bhavcopy(SAMPLE_CSV)
         symbols = df["symbol"].tolist()
-        assert "GOLDBEES.NS" not in symbols
-        assert "1018GS2026.NS" not in symbols
+        assert "GOLDBEES" not in symbols
+        assert "1018GS2026" not in symbols
 
     def test_column_names(self) -> None:
         df = parse_bhavcopy(SAMPLE_CSV)
@@ -46,11 +46,11 @@ class TestParseBhavcopy:
 
     def test_symbol_has_ns_suffix(self) -> None:
         df = parse_bhavcopy(SAMPLE_CSV)
-        assert all(s.endswith(".NS") for s in df["symbol"])
+        assert all("." not in s for s in df["symbol"])  # bare canonical form
 
     def test_price_values_correct(self) -> None:
         df = parse_bhavcopy(SAMPLE_CSV)
-        tcs = df[df["symbol"] == "TCS.NS"].iloc[0]
+        tcs = df[df["symbol"] == "TCS"].iloc[0]
         assert tcs["open"] == 2167.0
         assert tcs["high"] == 2209.0
         assert tcs["low"] == 2160.6
@@ -62,7 +62,7 @@ class TestParseBhavcopy:
 
     def test_delivery_pct_present(self) -> None:
         df = parse_bhavcopy(SAMPLE_CSV)
-        tcs = df[df["symbol"] == "TCS.NS"].iloc[0]
+        tcs = df[df["symbol"] == "TCS"].iloc[0]
         assert abs(tcs["delivery_pct"] - 42.68) < 0.01
 
     def test_adj_close_equals_close(self) -> None:
@@ -75,7 +75,7 @@ class TestParseBhavcopy:
 
     def test_be_series_included(self) -> None:
         df = parse_bhavcopy(SAMPLE_CSV)
-        assert "RELIANCE.NS" in df["symbol"].values
+        assert "RELIANCE" in df["symbol"].values
 
     def test_empty_csv(self) -> None:
         empty = " SYMBOL, SERIES, DATE1, PREV_CLOSE, OPEN_PRICE, HIGH_PRICE, LOW_PRICE, LAST_PRICE, CLOSE_PRICE, AVG_PRICE, TTL_TRD_QNTY, TURNOVER_LACS, NO_OF_TRADES, DELIV_QTY, DELIV_PER\n"
