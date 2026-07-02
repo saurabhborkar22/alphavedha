@@ -517,8 +517,14 @@ async def predictions_summary() -> dict[str, Any]:
             proof_row = await session.execute(proof_stmt)
             proof = proof_row.scalar()
             if proof:
+                # "published" means the hash reached the proofs git repo.
+                # A DB row alone proves nothing (rows can be rewritten) —
+                # reporting it as published hid a two-week publish outage.
                 hash_status = {
-                    "published": True,
+                    "published": proof.git_commit is not None,
+                    "hash_in_db": True,
+                    "committed_to_git": proof.git_commit is not None,
+                    "ots_stamped": proof.ots_path is not None,
                     "sha256": proof.sha256[:16] + "...",
                     "n_predictions": proof.n_predictions,
                 }
