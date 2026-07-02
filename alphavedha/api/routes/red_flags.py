@@ -42,9 +42,9 @@ async def get_red_flags(
         if symbol:
             symbols = [symbol]
         else:
-            from alphavedha.api.routes.ui_support import NIFTY_50
+            from alphavedha.data.universe import get_strategy_universe
 
-            symbols = [s for s, _n, _sec, _c in NIFTY_50]
+            symbols = await get_strategy_universe()
 
         all_scores = await run_blowup_scores(symbols)
         flagged = [s for s in all_scores if s.total_score >= threshold]

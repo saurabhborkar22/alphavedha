@@ -55,3 +55,53 @@ class TestConfig:
         cfg = get_config()
         assert cfg.risk.position_sizing.max_single_stock_pct == 10.0
         assert cfg.risk.circuit_breaker.level_3_drawdown == 20.0
+
+
+class TestGetStrategyUniverse:
+    """Strategies must scan live index membership, not a stale hardcoded list."""
+
+    @pytest.mark.asyncio
+    async def test_uses_db_constituents(self) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        from alphavedha.data.universe import get_strategy_universe
+
+        with patch(
+            "alphavedha.data.universe.get_symbols_for_tier",
+            new_callable=AsyncMock,
+            return_value=["tcs ", "TMPV", "RELIANCE"],
+        ):
+            symbols = await get_strategy_universe()
+
+        assert symbols == ["TCS", "TMPV", "RELIANCE"]
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_hardcoded_on_empty(self) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        from alphavedha.data.universe import get_strategy_universe
+
+        with patch(
+            "alphavedha.data.universe.get_symbols_for_tier",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            symbols = await get_strategy_universe()
+
+        assert len(symbols) >= 20
+        assert "TCS" in symbols
+
+    @pytest.mark.asyncio
+    async def test_falls_back_on_error(self) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        from alphavedha.data.universe import get_strategy_universe
+
+        with patch(
+            "alphavedha.data.universe.get_symbols_for_tier",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("db down"),
+        ):
+            symbols = await get_strategy_universe()
+
+        assert len(symbols) >= 20

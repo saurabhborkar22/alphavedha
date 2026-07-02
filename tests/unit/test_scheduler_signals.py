@@ -118,6 +118,7 @@ class TestRunSignalStrategies:
             patch(
                 "alphavedha.scheduler._run_async",
                 side_effect=[
+                    ["TCS", "INFY", "HDFCBANK", "YESBANK"],
                     [fake_blowup],
                     1,
                     [fake_event],
@@ -146,6 +147,7 @@ class TestRunSignalStrategies:
         fake_event = _FakeEventSignal(symbol="TCS.NS", direction=1, confidence=0.7)
 
         run_async_results = [
+            ["TCS"],
             [fake_blowup],
             1,
             [fake_event],
