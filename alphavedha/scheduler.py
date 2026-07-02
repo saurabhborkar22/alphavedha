@@ -55,6 +55,7 @@ LSTM_TFT_RETRAIN_TIME = "22:30"  # weekly, after drift check
 REBALANCE_CHECK_DAY = "monday"
 REBALANCE_CHECK_TIME = "07:00"
 QUALITY_CHECK_TIME = "15:50"
+STOP_LOSS_CHECK_TIME = "17:30"  # after 17:00 data refresh lands the day's OHLCV
 BSE_INGESTION_DAY = "sunday"
 BSE_INGESTION_TIME = "21:00"
 TRENDS_INGESTION_TIME = "21:30"
@@ -737,6 +738,46 @@ class AlphaVedhaScheduler:
         except Exception as e:
             result.error = str(e)
             logger.error("scheduler_job_failed", job="daily_evaluation", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_stop_loss_check(self) -> JobResult:
+        """Close open paper trades whose ATR stop or target was hit today.
+
+        Runs after the 17:00 data refresh so the day's high/low is in the
+        OHLCV store. Without this job the engine's stop/target levels are
+        display-only and every trade rides the full 15-day hold (FIX-08).
+        """
+        result = JobResult(job_name="stop_loss_check", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("stop_loss_check_skipped", reason="weekend")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="stop_loss_check")
+
+        try:
+            if self._demo:
+                logger.info("stop_loss_check_skipped", reason="demo mode")
+            else:
+                from alphavedha.services.stop_evaluation import evaluate_stop_hits
+
+                summary: dict[str, int] = _run_async(  # type: ignore[assignment]
+                    evaluate_stop_hits(_now_ist().date())
+                )
+                result.symbols_processed = summary.get("evaluated", 0)
+                logger.info("scheduler_job_complete", job="stop_loss_check", **summary)
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="stop_loss_check", error=str(e))
 
         result.finished_at = _now_ist()
         self._record_job(result)
@@ -1604,6 +1645,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
         schedule.every().day.at(DATA_REFRESH_TIME).do(self.run_data_refresh)
+        schedule.every().day.at(STOP_LOSS_CHECK_TIME).do(self.run_stop_loss_check)
         schedule.every().day.at(FII_DII_INGESTION_TIME).do(self.run_fii_dii_ingestion)
         schedule.every().day.at(BHAVCOPY_INGESTION_TIME).do(self.run_bhavcopy_ingestion)
         schedule.every().day.at(BSE_ANN_INGESTION_TIME).do(self.run_bse_ann_ingestion)
