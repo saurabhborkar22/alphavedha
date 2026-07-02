@@ -60,6 +60,17 @@ class XGBoostModel(BaseModel):
         y_cls_train = y_train.map(_LABEL_MAP).astype(int)
         weight_arr = sample_weight.values if sample_weight is not None else None
 
+        # Asymmetric triple-barrier labels skew toward -1 (the lower barrier
+        # sits closer than the upper one), and an unweighted multi-class fit
+        # collapses to the majority class. Balance classes for the direction
+        # head unless the caller supplies explicit sample weights.
+        cls_weight_arr = weight_arr
+        if cls_weight_arr is None:
+            counts = y_cls_train.value_counts()
+            total = float(len(y_cls_train))
+            class_w = {cls: total / (len(counts) * cnt) for cls, cnt in counts.items()}
+            cls_weight_arr = y_cls_train.map(class_w).to_numpy()
+
         self._classifier = XGBClassifier(
             objective="multi:softprob",
             num_class=3,
@@ -78,7 +89,7 @@ class XGBoostModel(BaseModel):
             X_train,
             y_cls_train,
             eval_set=eval_set_cls or None,
-            sample_weight=weight_arr,
+            sample_weight=cls_weight_arr,
             verbose=False,
         )
 

@@ -40,11 +40,22 @@ DEFAULT_MONTHLY_BUDGET_USD = 50.0
 
 
 async def get_unprocessed_disclosures(limit: int = 500) -> list[dict[str, Any]]:
-    """Fetch disclosures that haven't been through LLM extraction."""
+    """Fetch disclosures that haven't been through LLM extraction.
+
+    NULL columns (e.g. text for scanned PDFs) come back from pandas as float
+    NaN — normalize them to None so downstream string operations never see
+    a float where they expect str | None.
+    """
+    import pandas as pd
+
     df = await load_disclosures(unprocessed_only=True, limit=limit)
     if df.empty:
         return []
     records: list[dict[str, Any]] = df.to_dict("records")
+    for record in records:
+        for key, value in record.items():
+            if isinstance(value, float) and pd.isna(value):
+                record[key] = None
     return records
 
 
@@ -88,48 +99,62 @@ async def run_extraction_batch(
 
     for disc in disclosures:
         disc_id = disc["id"]
-        symbol = disc["symbol"]
-        category = disc.get("category", "")
-        headline = disc.get("headline", "")
+        symbol = str(disc["symbol"])
+        category = disc.get("category") or ""
+        headline = disc.get("headline") or ""
         text = disc.get("text")
+        if not isinstance(text, str) or not text.strip():
+            text = None
         text_hash = disc.get("text_hash")
 
-        if is_boilerplate(category, headline):
-            skipped += 1
+        # One malformed disclosure must never abort the whole batch — a crash
+        # here loses the batch's stored events AND its processed markers, so
+        # the same rows get re-extracted (and re-billed) every night.
+        try:
+            if is_boilerplate(category, headline):
+                skipped += 1
+                processed_ids.append(disc_id)
+                continue
+
+            if text_hash and text_hash in seen_hashes:
+                prior = seen_hashes[text_hash]
+                events.append({**prior, "disclosure_id": disc_id, "symbol": symbol})
+                processed_ids.append(disc_id)
+                deduped += 1
+                continue
+
+            extraction = extract_one(provider, symbol, category, headline, text, prompt_version)
+
+            if extraction is None:
+                failed += 1
+                continue
+
+            event_dict = {
+                "disclosure_id": disc_id,
+                "symbol": symbol,
+                "event_type": extraction.event_type.value,
+                "direction": extraction.direction,
+                "materiality": extraction.materiality,
+                "confidence": extraction.confidence,
+                "summary": extraction.summary,
+                "red_flags": extraction.red_flags if extraction.red_flags else None,
+                "llm_model": provider.name,
+                "prompt_version": prompt_version,
+                "extracted_at": datetime.now(IST),
+            }
+            events.append(event_dict)
             processed_ids.append(disc_id)
-            continue
 
-        if text_hash and text_hash in seen_hashes:
-            prior = seen_hashes[text_hash]
-            events.append({**prior, "disclosure_id": disc_id, "symbol": symbol})
-            processed_ids.append(disc_id)
-            deduped += 1
-            continue
-
-        extraction = extract_one(provider, symbol, category, headline, text, prompt_version)
-
-        if extraction is None:
+            if text_hash:
+                seen_hashes[text_hash] = event_dict
+        except Exception as e:
             failed += 1
-            continue
-
-        event_dict = {
-            "disclosure_id": disc_id,
-            "symbol": symbol,
-            "event_type": extraction.event_type.value,
-            "direction": extraction.direction,
-            "materiality": extraction.materiality,
-            "confidence": extraction.confidence,
-            "summary": extraction.summary,
-            "red_flags": extraction.red_flags if extraction.red_flags else None,
-            "llm_model": provider.name,
-            "prompt_version": prompt_version,
-            "extracted_at": datetime.now(IST),
-        }
-        events.append(event_dict)
-        processed_ids.append(disc_id)
-
-        if text_hash:
-            seen_hashes[text_hash] = event_dict
+            logger.error(
+                "extraction_row_failed",
+                disclosure_id=disc_id,
+                symbol=symbol,
+                error=str(e),
+            )
 
     stored = 0
     if events:

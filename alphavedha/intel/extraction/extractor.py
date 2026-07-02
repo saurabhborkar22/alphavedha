@@ -68,7 +68,9 @@ def build_user_prompt(
         f"Filing category: {category}",
         f"Headline: {headline}",
     ]
-    if text:
+    # text can arrive as float NaN when a NULL DB column passes through
+    # pandas — only str is sliceable here.
+    if isinstance(text, str) and text:
         truncated = text[:8000]
         parts.append(f"Filing text:\n{truncated}")
     return "\n\n".join(parts)

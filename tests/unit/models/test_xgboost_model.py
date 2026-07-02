@@ -285,3 +285,58 @@ class TestXGBoostModel:
         model = XGBoostModel(config=config)
         assert model._xgb_params["learning_rate"] == 0.05
         assert model._xgb_params["max_depth"] == 6
+
+
+class TestClassBalance:
+    """Regression: unweighted multi-class fit collapses to the majority class.
+
+    Production failure Jun 2026: asymmetric triple-barrier labels are ~45% -1,
+    and the nightly retrain produced a model predicting -1 for every symbol
+    every day. With auto-balanced class weights the direction head must not
+    collapse when the features carry no majority-class shortcut.
+    """
+
+    def test_imbalanced_noise_does_not_collapse_to_one_class(
+        self, xgb_config: XGBoostConfig
+    ) -> None:
+        rng = np.random.default_rng(7)
+        n, f = 900, 8
+        X = pd.DataFrame(rng.standard_normal((n, f)), columns=[f"f{i}" for i in range(f)])
+        # 60/25/15 imbalance with pure-noise features — the exact conditions
+        # under which the unweighted fit predicted the majority class always.
+        labels = pd.Series(rng.choice([-1, 0, 1], size=n, p=[0.60, 0.25, 0.15]), name="label")
+
+        returns = pd.Series(rng.normal(0, 0.02, size=n), name="return_pct")
+        model = XGBoostModel(config=xgb_config)
+        model.fit(
+            X_train=X[:700],
+            y_train=labels[:700],
+            X_val=X[700:],
+            y_val=labels[700:],
+            return_train=returns[:700],
+            return_val=returns[700:],
+        )
+
+        pred = model.predict(X[700:])
+        distinct = set(int(d) for d in pred.direction)
+        assert len(distinct) >= 2, f"direction head collapsed to {distinct}"
+
+    def test_explicit_sample_weight_still_respected(self, xgb_config: XGBoostConfig) -> None:
+        rng = np.random.default_rng(11)
+        n, f = 300, 6
+        X = pd.DataFrame(rng.standard_normal((n, f)), columns=[f"f{i}" for i in range(f)])
+        labels = pd.Series(rng.choice([-1, 0, 1], size=n), name="label")
+        weights = pd.Series(np.ones(n), name="w")
+
+        returns = pd.Series(rng.normal(0, 0.02, size=n), name="return_pct")
+        model = XGBoostModel(config=xgb_config)
+        result = model.fit(
+            X_train=X[:240],
+            y_train=labels[:240],
+            X_val=X[240:],
+            y_val=labels[240:],
+            sample_weight=weights[:240],
+            return_train=returns[:240],
+            return_val=returns[240:],
+        )
+        assert "accuracy" in result.train_metrics
