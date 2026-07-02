@@ -55,6 +55,8 @@ LSTM_TFT_RETRAIN_TIME = "22:30"  # weekly, after drift check
 REBALANCE_CHECK_DAY = "monday"
 REBALANCE_CHECK_TIME = "07:00"
 QUALITY_CHECK_TIME = "15:50"
+SHADOW_EXECUTION_TIME = "09:20"  # full loop vs market open, no real orders (P4-D3)
+_SHADOW_POSITION_PCT = 5.0  # default sizing for ghost fills (OMS caps at 5%)
 STOP_LOSS_CHECK_TIME = "17:30"  # after 17:00 data refresh lands the day's OHLCV
 BSE_INGESTION_DAY = "sunday"
 BSE_INGESTION_TIME = "21:00"
@@ -348,10 +350,10 @@ def _send_strategy_summary(as_of: date) -> None:
         trades = _run_async(load_paper_trades())
         avoid_symbols: list[str] = []
         try:
-            from alphavedha.api.routes.ui_support import NIFTY_50
+            from alphavedha.data.universe import get_strategy_universe
             from alphavedha.intel.signals.blowup_score import compute_avoid_list, run_blowup_scores
 
-            symbols = [s for s, _n, _sec, _c in NIFTY_50]
+            symbols: list[str] = _run_async(get_strategy_universe())  # type: ignore[assignment]
             scores = _run_async(run_blowup_scores(symbols, as_of=as_of))
             avoid_symbols = [s.symbol for s in compute_avoid_list(scores)]
         except Exception:
@@ -366,6 +368,99 @@ def _send_strategy_summary(as_of: date) -> None:
         )
     except Exception as e:
         logger.warning("strategy_summary_failed", error=str(e))
+
+
+async def _run_shadow_cycle(run_date: date) -> dict[str, Any]:
+    """Shadow-execute today's tradeable signals and persist ghost fills."""
+    from pandas import isna as pd_isna
+
+    from alphavedha.data.store import (
+        count_shadow_fills,
+        load_paper_trades,
+        store_shadow_fills,
+    )
+    from alphavedha.execution.shadow import ShadowRunner, ShadowSignal, shadow_fills_to_rows
+
+    if await count_shadow_fills(run_date) > 0:
+        logger.info("shadow_already_ran", date=str(run_date))
+        return {"status": "already_ran", "fills": 0}
+
+    trades = await load_paper_trades(start=run_date, end=run_date)
+    if trades.empty:
+        return {"status": "no_signals", "fills": 0}
+
+    tradeable = trades[trades["is_tradeable"].fillna(False)]
+    if tradeable.empty:
+        return {"status": "no_tradeable_signals", "fills": 0}
+
+    signals: list[ShadowSignal] = []
+    for _, row in tradeable.iterrows():
+        entry = row.get("entry_price")
+        if entry is None or pd_isna(entry) or float(entry) <= 0:
+            continue
+        sl = row.get("stop_loss_price")
+        tp = row.get("take_profit_price")
+        signals.append(
+            ShadowSignal(
+                symbol=str(row["symbol"]),
+                direction=int(row["predicted_direction"]),
+                magnitude=float(row["predicted_magnitude"]),
+                position_size_pct=_SHADOW_POSITION_PCT,
+                entry_price=float(entry),
+                # OMS synthesizes barriers from magnitude when levels are 0
+                stop_loss_price=0.0 if sl is None or pd_isna(sl) else float(sl),
+                take_profit_price=0.0 if tp is None or pd_isna(tp) else float(tp),
+                strategy=str(row.get("strategy", "ensemble_v1")),
+            )
+        )
+
+    if not signals:
+        return {"status": "no_priced_signals", "fills": 0}
+
+    open_prices = await _load_open_prices([s.symbol for s in signals], run_date)
+
+    runner = ShadowRunner()
+    shadow_result = await runner.run(signals, open_prices)
+
+    stored = 0
+    if shadow_result.fills:
+        stored = await store_shadow_fills(shadow_fills_to_rows(shadow_result.fills, run_date))
+
+    return {
+        "status": "ok",
+        "signals": shadow_result.signals_received,
+        "plans": shadow_result.plans_created,
+        "placed": shadow_result.orders_placed,
+        "blocked": shadow_result.orders_blocked,
+        "fills": stored,
+        "slippage": runner.slippage_report(),
+    }
+
+
+async def _load_open_prices(symbols: list[str], run_date: date) -> dict[str, float]:
+    """Today's open per symbol from the intraday poll, latest close fallback."""
+    from sqlalchemy import select
+
+    from alphavedha.data.database import get_session_factory
+    from alphavedha.data.models import IntradayOHLCV
+
+    prices: dict[str, float] = {}
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(IntradayOHLCV.symbol, IntradayOHLCV.open).where(
+            IntradayOHLCV.symbol.in_(symbols),
+            IntradayOHLCV.date == run_date,
+        )
+        result = await session.execute(stmt)
+        for symbol, open_price in result.all():
+            prices[str(symbol)] = float(open_price)
+
+    for symbol in symbols:
+        if symbol not in prices:
+            close = await _latest_close(symbol, run_date)
+            if close is not None:
+                prices[symbol] = close
+    return prices
 
 
 class AlphaVedhaScheduler:
@@ -502,7 +597,7 @@ class AlphaVedhaScheduler:
                 prediction_date = _now_ist().date()
                 total_persisted = 0
 
-                from alphavedha.api.routes.ui_support import NIFTY_50
+                from alphavedha.data.universe import get_strategy_universe
                 from alphavedha.intel.signals.blowup_score import (
                     STRATEGY_NAME as BLOWUP_STRATEGY,
                 )
@@ -533,7 +628,9 @@ class AlphaVedhaScheduler:
                     run_insider_cluster_signals,
                 )
 
-                symbols = [s for s, _n, _sec, _c in NIFTY_50]
+                symbols: list[str] = _run_async(  # type: ignore[assignment]
+                    get_strategy_universe(self._tier)
+                )
 
                 # 1. Blowup scores → avoid list
                 scores: list[BlowupScore] = _run_async(  # type: ignore[assignment]
@@ -698,6 +795,45 @@ class AlphaVedhaScheduler:
         except Exception as e:
             result.error = str(e)
             logger.error("scheduler_job_failed", job="proof_reveal", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_shadow_execution(self) -> JobResult:
+        """Exercise the full execution loop against today's signals (P4-D3).
+
+        Signals -> OMS plans -> kill-switch checks -> PaperBroker ghost
+        fills at market open. No real orders ever leave this path; the
+        measured slippage distribution replaces the flat 0.1%/side cost
+        assumption once enough fills accrue.
+        """
+        result = JobResult(job_name="shadow_execution", started_at=_now_ist())
+
+        if _now_ist().weekday() >= 5:
+            logger.info("shadow_execution_skipped", reason="weekend")
+            result.success = True
+            result.error = "skipped: weekend"
+            result.finished_at = _now_ist()
+            self._record_job(result)
+            return result
+
+        logger.info("scheduler_job_start", job="shadow_execution")
+
+        try:
+            if self._demo:
+                logger.info("shadow_execution_skipped", reason="demo mode")
+            else:
+                summary: dict[str, Any] = _run_async(  # type: ignore[assignment]
+                    _run_shadow_cycle(_now_ist().date())
+                )
+                result.symbols_processed = int(summary.get("fills", 0))
+                logger.info("scheduler_job_complete", job="shadow_execution", **summary)
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="shadow_execution", error=str(e))
 
         result.finished_at = _now_ist()
         self._record_job(result)
@@ -1636,6 +1772,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
         schedule.every().day.at(DATA_REFRESH_TIME).do(self.run_data_refresh)
         schedule.every().day.at(STOP_LOSS_CHECK_TIME).do(self.run_stop_loss_check)
+        schedule.every().day.at(SHADOW_EXECUTION_TIME).do(self.run_shadow_execution)
         schedule.every().day.at(FII_DII_INGESTION_TIME).do(self.run_fii_dii_ingestion)
         schedule.every().day.at(BHAVCOPY_INGESTION_TIME).do(self.run_bhavcopy_ingestion)
         schedule.every().day.at(BSE_ANN_INGESTION_TIME).do(self.run_bse_ann_ingestion)

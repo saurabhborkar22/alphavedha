@@ -27,6 +27,7 @@ from alphavedha.data.models import (
     NewsArticle,
     PaperTrade,
     PromoterHolding,
+    ShadowFill,
 )
 
 logger = structlog.get_logger(__name__)
@@ -164,19 +165,36 @@ async def store_ohlcv(
     return stored
 
 
+def normalize_nse_symbol(symbol: str) -> str:
+    """Canonical bare NSE symbol — strips provider suffixes, uppercases.
+
+    The store's canonical convention is the bare exchange code ("TCS").
+    yfinance uses "TCS.NS"; the bhavcopy collector historically appended
+    ".NS" too, so the table carries both forms.
+    """
+    return symbol.strip().upper().removesuffix(".NS").removesuffix(".BO")
+
+
 async def load_ohlcv(
     symbol: str,
     start: date,
     end: date,
 ) -> pd.DataFrame:
-    """Load OHLCV data for a symbol and date range from the database."""
+    """Load OHLCV data for a symbol and date range from the database.
+
+    Format-agnostic on the split-brain table: matches both the canonical
+    bare form and the legacy ".NS" rows written by the bhavcopy collector
+    before it was normalized. When both forms carry the same date, the
+    bare (yfinance, split-adjusted) row wins.
+    """
     session_factory = get_session_factory()
 
+    bare = normalize_nse_symbol(symbol)
     async with session_factory() as session:
         stmt = (
             select(DailyOHLCV)
             .where(
-                DailyOHLCV.symbol == symbol,
+                DailyOHLCV.symbol.in_((bare, f"{bare}.NS")),
                 DailyOHLCV.date >= start,
                 DailyOHLCV.date <= end,
             )
@@ -191,6 +209,7 @@ async def load_ohlcv(
     records = [
         {
             "date": r.date,
+            "_bare": r.symbol == bare,
             "open": r.open,
             "high": r.high,
             "low": r.low,
@@ -206,6 +225,8 @@ async def load_ohlcv(
     ]
 
     df = pd.DataFrame(records)
+    df = df.sort_values(["date", "_bare"]).drop_duplicates("date", keep="last")
+    df = df.drop(columns="_bare")
     df["date"] = pd.to_datetime(df["date"])
     df = df.set_index("date").sort_index()
 
@@ -747,7 +768,9 @@ async def store_paper_trade(row: dict) -> int:
 
     async with session_factory() as session:
         values = {
-            "symbol": row["symbol"],
+            # Intel strategies emit whatever form the disclosure carried
+            # ("BASML.NS") — normalize so evaluation joins never miss.
+            "symbol": normalize_nse_symbol(str(row["symbol"])),
             "prediction_date": row["prediction_date"],
             "strategy": row.get("strategy", "ensemble_v1"),
             "predicted_direction": row["predicted_direction"],
@@ -919,3 +942,29 @@ async def load_daily_pnl(
             for r in rows
         ]
     )
+
+
+async def store_shadow_fills(rows: list[dict]) -> int:
+    """Append shadow execution fills (ghost fills from the paper broker)."""
+    if not rows:
+        return 0
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        for row in rows:
+            session.add(ShadowFill(**row))
+        await session.commit()
+
+    logger.info("shadow_fills_stored", rows=len(rows))
+    return len(rows)
+
+
+async def count_shadow_fills(fill_date: date) -> int:
+    """Count fills already recorded for a date (rerun guard)."""
+    from sqlalchemy import func
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(func.count()).where(ShadowFill.fill_date == fill_date)
+        result = await session.execute(stmt)
+        return int(result.scalar() or 0)

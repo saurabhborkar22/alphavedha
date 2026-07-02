@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import pandas as pd
 import pytest
 
 from alphavedha.execution.broker import OrderSide, PaperBroker
@@ -49,24 +50,32 @@ class TestShadowRunnerBasic:
         assert result.fills_simulated == 0
 
     @pytest.mark.asyncio
-    async def test_single_signal_blocked_by_default(self, runner: ShadowRunner) -> None:
+    async def test_fills_without_arming_master_flag(self, runner: ShadowRunner) -> None:
+        """Ghost fills must not require EXECUTION_ENABLED — the broker is a
+        PaperBroker; only the master check is bypassed, caps stay live."""
         signals = [_make_signal()]
         result = await runner.run(signals, {"TCS.NS": 3500.0})
-        assert result.orders_blocked == 1
-        assert result.fills_simulated == 0
-        assert "MASTER_DISABLED" in result.block_reasons[0]
+        assert result.signals_received == 1
+        assert result.plans_created == 1
+        assert result.orders_placed == 1
+        assert result.fills_simulated == 1
+        assert len(result.fills) == 1
 
     @pytest.mark.asyncio
-    async def test_single_signal_fills_when_enabled(self) -> None:
-        with patch.dict(os.environ, {"EXECUTION_ENABLED": "1"}):
-            runner = ShadowRunner(initial_capital=1_000_000.0)
+    async def test_non_ghost_kill_switch_still_blocks(self) -> None:
+        """An explicitly injected real kill switch keeps the master gate."""
+        from alphavedha.execution.kill_switch import KillSwitch
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("EXECUTION_ENABLED", None)
+            runner = ShadowRunner(
+                initial_capital=1_000_000.0, kill_switch=KillSwitch(ghost_mode=False)
+            )
             signals = [_make_signal()]
             result = await runner.run(signals, {"TCS.NS": 3500.0})
-            assert result.signals_received == 1
-            assert result.plans_created == 1
-            assert result.orders_placed == 1
-            assert result.fills_simulated == 1
-            assert len(result.fills) == 1
+            assert result.orders_blocked == 1
+            assert result.fills_simulated == 0
+            assert "MASTER_DISABLED" in result.block_reasons[0]
 
     @pytest.mark.asyncio
     async def test_fill_has_slippage(self) -> None:
@@ -196,3 +205,102 @@ class TestShadowFillModel:
             "created_at",
         }
         assert expected.issubset(cols)
+
+
+class TestRunShadowCycle:
+    """Scheduler glue: today's tradeable paper trades → ghost fills."""
+
+    @staticmethod
+    def _trades_df(rows: list[dict[str, object]]) -> pd.DataFrame:
+        base: dict[str, object] = {
+            "symbol": "TCS",
+            "prediction_date": date(2026, 7, 2),
+            "strategy": "event_drift_v1",
+            "predicted_direction": 1,
+            "predicted_magnitude": 0.01,
+            "confidence": 0.7,
+            "model_version": "event_drift_v1",
+            "is_tradeable": True,
+            "entry_price": 3500.0,
+            "stop_loss_price": None,
+            "take_profit_price": None,
+            "exit_price": None,
+        }
+        return pd.DataFrame([{**base, **r} for r in rows])
+
+    @pytest.mark.asyncio
+    async def test_already_ran_guard(self) -> None:
+        from alphavedha.scheduler import _run_shadow_cycle
+
+        with patch(
+            "alphavedha.data.store.count_shadow_fills",
+            new_callable=AsyncMock,
+            return_value=3,
+        ):
+            summary = await _run_shadow_cycle(date(2026, 7, 2))
+
+        assert summary == {"status": "already_ran", "fills": 0}
+
+    @pytest.mark.asyncio
+    async def test_no_tradeable_signals(self) -> None:
+        from alphavedha.scheduler import _run_shadow_cycle
+
+        trades = self._trades_df([{"is_tradeable": False}])
+        with (
+            patch(
+                "alphavedha.data.store.count_shadow_fills",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+            patch(
+                "alphavedha.data.store.load_paper_trades",
+                new_callable=AsyncMock,
+                return_value=trades,
+            ),
+        ):
+            summary = await _run_shadow_cycle(date(2026, 7, 2))
+
+        assert summary["status"] == "no_tradeable_signals"
+
+    @pytest.mark.asyncio
+    async def test_happy_path_persists_fills(self) -> None:
+        from alphavedha.scheduler import _run_shadow_cycle
+
+        trades = self._trades_df([{}])
+        stored: list[dict[str, object]] = []
+
+        async def fake_store(rows: list[dict[str, object]]) -> int:
+            stored.extend(rows)
+            return len(rows)
+
+        with (
+            patch(
+                "alphavedha.data.store.count_shadow_fills",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+            patch(
+                "alphavedha.data.store.load_paper_trades",
+                new_callable=AsyncMock,
+                return_value=trades,
+            ),
+            patch(
+                "alphavedha.data.store.store_shadow_fills",
+                side_effect=fake_store,
+            ),
+            patch(
+                "alphavedha.scheduler._load_open_prices",
+                new_callable=AsyncMock,
+                return_value={"TCS": 3510.0},
+            ),
+        ):
+            summary = await _run_shadow_cycle(date(2026, 7, 2))
+
+        assert summary["status"] == "ok"
+        assert summary["fills"] == 1
+        assert len(stored) == 1
+        fill = stored[0]
+        assert fill["symbol"] == "TCS"
+        assert fill["strategy"] == "event_drift_v1"
+        assert fill["decision_price"] == 3510.0
+        assert float(str(fill["slippage_bps"])) > 0
