@@ -357,3 +357,208 @@ class TestRunNightlyExtraction:
             result = await run_nightly_extraction(max_batches=5)
             assert result["status"] == "budget_exceeded"
             assert result["batches_run"] == 1
+
+
+class TestNanSafety:
+    """Regression tests: NULL text columns arrive from pandas as float NaN.
+
+    Production failure 2026-06-29..07-01: `'float' object is not subscriptable`
+    crashed the nightly job at the first scanned-PDF disclosure, losing the
+    whole batch's events and processed markers every night.
+    """
+
+    @staticmethod
+    def _row(disc_id: int, **overrides: object) -> dict[str, object]:
+        row: dict[str, object] = {
+            "id": disc_id,
+            "symbol": "TCS.NS",
+            "source": "nse",
+            "category": "Press Release",
+            "headline": "TCS wins deal",
+            "filed_at": "2026-06-19",
+            "url": None,
+            "text": None,
+            "text_hash": None,
+            "processed_at": None,
+        }
+        row.update(overrides)
+        return row
+
+    @pytest.mark.asyncio
+    async def test_nan_text_does_not_crash(self) -> None:
+        import pandas as pd
+
+        from alphavedha.intel.extraction.schemas import DisclosureExtraction
+        from alphavedha.intel.extraction.taxonomy import EventType
+
+        mock_df = pd.DataFrame([self._row(1, text=float("nan"), headline=float("nan"))])
+
+        mock_extraction = DisclosureExtraction(
+            event_type=EventType.ORDER_WIN,
+            direction=1,
+            materiality=7,
+            confidence=0.9,
+            summary="TCS wins deal",
+        )
+
+        seen_texts: list[object] = []
+
+        def fake_extract(
+            provider: object,
+            symbol: str,
+            category: str,
+            headline: str,
+            text: object = None,
+            prompt_version: str = "v1",
+        ) -> DisclosureExtraction:
+            seen_texts.append(text)
+            return mock_extraction
+
+        with (
+            patch(
+                "alphavedha.intel.extraction.batcher.load_disclosures",
+                new_callable=AsyncMock,
+                return_value=mock_df,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.extract_one",
+                side_effect=fake_extract,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.store_disclosure_events",
+                new_callable=AsyncMock,
+                return_value=1,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.mark_disclosures_processed",
+                new_callable=AsyncMock,
+            ) as mock_mark,
+            patch("alphavedha.intel.extraction.batcher.CostLedger") as MockLedger,
+        ):
+            mock_ledger = MagicMock()
+            mock_ledger.is_over_budget.return_value = False
+            mock_ledger.estimate_batch_cost.return_value = 0.001
+            mock_ledger.current_month_usd.return_value = 0.001
+            MockLedger.return_value = mock_ledger
+
+            result = await run_extraction_batch()
+
+            assert result["status"] == "ok"
+            assert result["extracted"] == 1
+            assert result["failed"] == 0
+            assert seen_texts == [None]
+            mock_mark.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_poisoned_row_does_not_abort_batch(self) -> None:
+        import pandas as pd
+
+        from alphavedha.intel.extraction.schemas import DisclosureExtraction
+        from alphavedha.intel.extraction.taxonomy import EventType
+
+        mock_df = pd.DataFrame(
+            [
+                self._row(1, headline="Poisoned filing"),
+                self._row(2, symbol="INFY.NS", headline="INFY wins deal"),
+            ]
+        )
+
+        mock_extraction = DisclosureExtraction(
+            event_type=EventType.ORDER_WIN,
+            direction=1,
+            materiality=7,
+            confidence=0.9,
+            summary="INFY wins deal",
+        )
+
+        calls: list[str] = []
+
+        def fake_extract(
+            provider: object,
+            symbol: str,
+            category: str,
+            headline: str,
+            text: object = None,
+            prompt_version: str = "v1",
+        ) -> DisclosureExtraction:
+            calls.append(symbol)
+            if symbol == "TCS.NS":
+                raise TypeError("'float' object is not subscriptable")
+            return mock_extraction
+
+        with (
+            patch(
+                "alphavedha.intel.extraction.batcher.load_disclosures",
+                new_callable=AsyncMock,
+                return_value=mock_df,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.extract_one",
+                side_effect=fake_extract,
+            ),
+            patch(
+                "alphavedha.intel.extraction.batcher.store_disclosure_events",
+                new_callable=AsyncMock,
+                return_value=1,
+            ) as mock_store,
+            patch(
+                "alphavedha.intel.extraction.batcher.mark_disclosures_processed",
+                new_callable=AsyncMock,
+            ) as mock_mark,
+            patch("alphavedha.intel.extraction.batcher.CostLedger") as MockLedger,
+        ):
+            mock_ledger = MagicMock()
+            mock_ledger.is_over_budget.return_value = False
+            mock_ledger.estimate_batch_cost.return_value = 0.001
+            mock_ledger.current_month_usd.return_value = 0.001
+            MockLedger.return_value = mock_ledger
+
+            result = await run_extraction_batch()
+
+            assert result["status"] == "ok"
+            assert result["failed"] == 1
+            assert result["extracted"] == 1
+            assert calls == ["TCS.NS", "INFY.NS"]
+            mock_store.assert_awaited_once()
+            marked_ids = mock_mark.await_args.args[0]
+            assert marked_ids == [2]
+
+
+class TestGetUnprocessedNormalizesNan:
+    @pytest.mark.asyncio
+    async def test_nan_becomes_none(self) -> None:
+        import pandas as pd
+
+        from alphavedha.intel.extraction.batcher import get_unprocessed_disclosures
+
+        df = pd.DataFrame(
+            [
+                {
+                    "id": 1,
+                    "symbol": "TCS.NS",
+                    "category": "Press Release",
+                    "headline": "TCS wins deal",
+                    "text": None,
+                    "text_hash": None,
+                },
+                {
+                    "id": 2,
+                    "symbol": "INFY.NS",
+                    "category": "Press Release",
+                    "headline": "INFY update",
+                    "text": "real text",
+                    "text_hash": "abc",
+                },
+            ]
+        )
+
+        with patch(
+            "alphavedha.intel.extraction.batcher.load_disclosures",
+            new_callable=AsyncMock,
+            return_value=df,
+        ):
+            records = await get_unprocessed_disclosures()
+
+        assert records[0]["text"] is None
+        assert records[0]["text_hash"] is None
+        assert records[1]["text"] == "real text"
