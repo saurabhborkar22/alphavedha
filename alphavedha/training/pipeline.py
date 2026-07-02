@@ -410,6 +410,44 @@ def _fill_nan_for_torch(df: pd.DataFrame) -> pd.DataFrame:
     return df.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
 
+_DEGENERATE_MAX_CLASS_SHARE = 0.90
+_DEGENERATE_MIN_VAL_ACCURACY = 0.40
+
+
+def _check_degenerate_direction_model(
+    model: XGBoostModel,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+) -> str | None:
+    """Return a rejection reason when a direction model is unusable, else None.
+
+    Two failure modes are checked on the validation set:
+    - collapse: one class dominates the predictions (> 90%), which is how a
+      majority-class model looks — it scores near the class prior but carries
+      zero signal;
+    - accuracy floor: worse than 0.40 on three classes means the artifact
+      would degrade whatever is currently serving.
+
+    An empty validation set skips the gate rather than blocking the train.
+    """
+    if X_val.empty or y_val.empty:
+        return None
+
+    pred = model.predict(X_val)
+    directions = pd.Series(pred.direction)
+    shares = directions.value_counts(normalize=True)
+    top_class = int(shares.index[0])
+    top_share = float(shares.iloc[0])
+    if top_share > _DEGENERATE_MAX_CLASS_SHARE:
+        return f"{top_share:.0%} of val predictions are class {top_class}"
+
+    accuracy = float((directions.to_numpy() == y_val.to_numpy()).mean())
+    if accuracy < _DEGENERATE_MIN_VAL_ACCURACY:
+        return f"val accuracy {accuracy:.3f} below floor {_DEGENERATE_MIN_VAL_ACCURACY}"
+
+    return None
+
+
 async def train_xgboost(
     tier: str = "large",
     val_ratio: float = 0.2,
@@ -446,6 +484,21 @@ async def train_xgboost(
     except Exception:
         pass
 
+    # Load macro exactly like _load_tier_data does — without it the nightly
+    # retrain fits on a different feature distribution than the weekly full
+    # pipeline, and serving computes macro features the model never saw.
+    macro_df: pd.DataFrame | None = None
+    try:
+        import asyncio
+
+        from alphavedha.features.macro import fetch_macro_data
+
+        macro_df = await asyncio.to_thread(fetch_macro_data, str(start_date), str(end_date))
+        if macro_df is not None and not macro_df.empty:
+            logger.info("train_macro_loaded", rows=len(macro_df))
+    except Exception as e:
+        logger.warning("train_macro_load_failed", error=str(e))
+
     for symbol in symbols:
         try:
             ohlcv_df = await load_ohlcv(symbol, start_date, end_date)
@@ -453,7 +506,7 @@ async def train_xgboost(
                 result.errors[symbol] = "no data in DB"
                 continue
 
-            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df)
+            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df, macro_df)
             if prepared is None:
                 continue
 
@@ -521,6 +574,23 @@ async def train_xgboost(
         return_val=ret_val,
     )
     result.train_result = train_result
+
+    # Promotion gate: this function feeds the unattended nightly retrain,
+    # which would otherwise overwrite the production artifact with whatever
+    # came out of the fit. A degenerate model (all-short, Jun 2026) must
+    # never replace a working one; leaving artifact_path=None makes the
+    # scheduler record the run as failed and alert.
+    degeneracy = _check_degenerate_direction_model(model, X_val, y_val)
+    if degeneracy is not None:
+        result.total_time_seconds = time.perf_counter() - start_time
+        logger.error(
+            "train_rejected_degenerate",
+            model="xgboost",
+            reason=degeneracy,
+            val_accuracy=train_result.val_metrics.get("accuracy"),
+            val_f1=train_result.val_metrics.get("f1_weighted"),
+        )
+        return result
 
     artifact_dir = ARTIFACTS_DIR / "xgboost" / "latest"
     artifact = model.save(artifact_dir)
