@@ -3,11 +3,14 @@
 # Hardcoded stock maps used across the system. Update when Nifty 50
 # rebalances (semi-annually: March, September).
 #
-# Last updated: 2026-05-20
+# Last updated: 2026-07-02 — synced to current NSE constituents:
+# out INDUSINDBK/LTIM/BPCL/HEROMOTOCO/DIVISLAB/BRITANNIA;
+# in BEL/ETERNAL/INDIGO/JIOFIN/MAXHEALTH/TITAN/TRENT/ASIANPAINT;
+# TATAMOTORS renamed TMPV after the CV/PV demerger.
 
 # ─── Sector Classification ───────────────────────────────
 # Maps sectors to their constituent NSE symbols.
-# Used by: GNN graph builder (stock_graph.py)
+# Used by: GNN graph builder (stock_graph.py), intraday poller
 sectors:
   banking:
     - HDFCBANK
@@ -15,40 +18,40 @@ sectors:
     - SBIN
     - KOTAKBANK
     - AXISBANK
-    - INDUSINDBK
   it:
     - TCS
     - INFY
     - WIPRO
     - HCLTECH
     - TECHM
-    - LTIM
   energy:
     - RELIANCE
     - ONGC
     - NTPC
     - POWERGRID
-    - BPCL
     - COALINDIA
   auto:
     - MARUTI
-    - TATAMOTORS
+    - TMPV
     - "M&M"
     - BAJAJ-AUTO
-    - HEROMOTOCO
     - EICHERMOT
   pharma:
     - SUNPHARMA
     - DRREDDY
     - CIPLA
-    - DIVISLAB
     - APOLLOHOSP
+    - MAXHEALTH
   fmcg:
     - HINDUNILVR
     - ITC
     - NESTLEIND
-    - BRITANNIA
     - TATACONSUM
+    - ASIANPAINT
+  consumer:
+    - TITAN
+    - TRENT
+    - ETERNAL
   metals:
     - TATASTEEL
     - JSWSTEEL
@@ -59,12 +62,16 @@ sectors:
     - BAJAJFINSV
     - SBILIFE
     - HDFCLIFE
+    - JIOFIN
+    - SHRIRAMFIN
   infra:
     - LT
     - ADANIPORTS
     - ULTRACEMCO
     - GRASIM
-    - SHRIRAMFIN
+    - BEL
+  aviation:
+    - INDIGO
   telecom:
     - BHARTIARTL
   conglomerate:
@@ -78,9 +85,11 @@ sectors:
 promoter_groups:
   tata:
     - TCS
-    - TATAMOTORS
+    - TMPV
     - TATASTEEL
     - TATACONSUM
+    - TITAN
+    - TRENT
   adani:
     - ADANIENT
     - ADANIPORTS
@@ -120,7 +129,7 @@ screener_symbols:
   MARUTI: MARUTI
   SUNPHARMA: SUNPHARMA
   TITAN: TITAN
-  TATAMOTORS: TATAMOTORS
+  TMPV: TMPV
   ULTRACEMCO: ULTRACEMCO
   NTPC: NTPC
   TATASTEEL: TATASTEEL
@@ -128,7 +137,6 @@ screener_symbols:
   ONGC: ONGC
   NESTLEIND: NESTLEIND
   BAJAJFINSV: BAJAJFINSV
-  INDUSINDBK: INDUSINDBK
   "M&M": "M&M"
   ADANIENT: ADANIENT
   ADANIPORTS: ADANIPORTS
@@ -137,11 +145,7 @@ screener_symbols:
   TECHM: TECHM
   BAJAJ-AUTO: BAJAJ-AUTO
   GRASIM: GRASIM
-  BPCL: BPCL
-  HEROMOTOCO: HEROMOTOCO
-  DIVISLAB: DIVISLAB
   DRREDDY: DRREDDY
-  BRITANNIA: BRITANNIA
   CIPLA: CIPLA
   EICHERMOT: EICHERMOT
   APOLLOHOSP: APOLLOHOSP
@@ -150,3 +154,9 @@ screener_symbols:
   HDFCLIFE: HDFCLIFE
   HINDALCO: HINDALCO
   SHRIRAMFIN: SHRIRAMFIN
+  BEL: BEL
+  ETERNAL: ETERNAL
+  INDIGO: INDIGO
+  JIOFIN: JIOFIN
+  MAXHEALTH: MAXHEALTH
+  TRENT: TRENT

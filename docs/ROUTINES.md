@@ -33,7 +33,10 @@ Cloud-hosted scheduled agents running on Anthropic infrastructure, configured vi
 ## VPS Connection Details
 
 - **VPS IP**: `178.105.237.174` (Hetzner CX23, Germany)
-- **API Key Header**: `X-API-Key: alphavedha-a8dc623569bff5391ba0ae31d5dee52a`
+- **API Key Header**: `X-API-Key: <ALPHAVEDHA_API_KEY>` — the actual key lives ONLY in
+  `.env.vps` on the server and in each routine's configuration on claude.ai. Never
+  commit it: this repo is public, and a key that lands in git history stays there
+  even after the file is edited (rotate immediately if that happens).
 
 ### API URL Prefix Rules
 
