@@ -935,7 +935,16 @@ class AlphaVedhaScheduler:
         return result
 
     def run_insider_trades_ingestion(self) -> JobResult:
-        """Ingest insider (SAST) trades from BSE API for Nifty 50 symbols."""
+        """Derive insider trades from classified disclosure events.
+
+        NSE discontinued the corporates-pit JSON API (~2026-04-28): it
+        returns 200 with an empty dataset for any recent window, so the
+        old per-symbol fetch loop produced nothing while burning ~100s of
+        rate-limited calls nightly. The PIT/SAST filings still arrive
+        through the disclosures pipeline, where the LLM layer classifies
+        them into insider_buy/insider_sell events — those events are now
+        the source of record (see intel/insider_derivation.py).
+        """
         result = JobResult(job_name="daily_insider_trades_ingestion", started_at=_now_ist())
 
         if _now_ist().weekday() >= 5:
@@ -952,39 +961,9 @@ class AlphaVedhaScheduler:
             if self._demo:
                 logger.info("insider_trades_ingestion_skipped", reason="demo mode")
             else:
-                from alphavedha.data.providers.sebi_provider import SebiProvider
-                from alphavedha.data.store import store_insider_trades
+                from alphavedha.intel.insider_derivation import derive_insider_trades
 
-                async def _task() -> int:
-                    from alphavedha.api.routes.ui_support import NIFTY_50
-
-                    provider = SebiProvider()
-                    symbols = [s for s, _n, _sec, _c in NIFTY_50]
-                    all_rows: list[dict[str, Any]] = []
-                    for symbol in symbols:
-                        records = await provider.fetch_insider_trades(symbol, days_back=90)
-                        for r in records:
-                            all_rows.append(
-                                {
-                                    "symbol": r.symbol,
-                                    "trade_date": r.trade_date,
-                                    "person_name": r.person_name,
-                                    "person_category": r.person_category,
-                                    "trade_type": r.trade_type,
-                                    "shares": r.shares,
-                                    "value_lakhs": r.value_lakhs,
-                                }
-                            )
-                    if not all_rows:
-                        logger.warning(
-                            "insider_trades_zero_records",
-                            symbols_tried=len(symbols),
-                            msg="0 records across all symbols — NSE PIT API may be inaccessible",
-                        )
-                        return 0
-                    return await store_insider_trades(all_rows)
-
-                count: int = _run_async(_task())  # type: ignore[assignment]
+                count: int = _run_async(derive_insider_trades())  # type: ignore[assignment]
                 result.symbols_processed = int(count)
                 logger.info(
                     "scheduler_job_complete",
@@ -1256,6 +1235,17 @@ class AlphaVedhaScheduler:
 
                 summary = _run_async(run_nightly_extraction())
                 logger.info("scheduler_job_complete", job="intel_extraction", **summary)
+
+                # Freshly extracted insider_buy/sell events become
+                # insider_trades rows the same night, so tomorrow's 06:05
+                # signal run sees them (idempotent with the 19:20 pass).
+                try:
+                    from alphavedha.intel.insider_derivation import derive_insider_trades
+
+                    derived: int = _run_async(derive_insider_trades())  # type: ignore[assignment]
+                    logger.info("intel_extraction_insider_derivation", rows=derived)
+                except Exception as e:
+                    logger.warning("intel_extraction_insider_derivation_failed", error=str(e))
 
             result.success = True
         except Exception as e:
