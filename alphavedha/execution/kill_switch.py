@@ -56,12 +56,21 @@ class KillSwitchState:
 
 
 class KillSwitch:
-    """Enforces hard risk caps on every order attempt."""
+    """Enforces hard risk caps on every order attempt.
 
-    def __init__(self, config: KillSwitchConfig | None = None) -> None:
+    ghost_mode skips ONLY the master-enable check — every risk cap stays
+    live. It exists for the shadow runner, whose PaperBroker cannot place
+    real orders by construction; the daily shadow loop must exercise the
+    caps without arming EXECUTION_ENABLED globally. The real execution
+    path never sets it: arming real orders remains exclusively the
+    EXECUTION_ENABLED env flag.
+    """
+
+    def __init__(self, config: KillSwitchConfig | None = None, ghost_mode: bool = False) -> None:
         self._config = config or KillSwitchConfig()
         self._state = KillSwitchState()
         self._manually_halted = False
+        self._ghost_mode = ghost_mode
 
     @property
     def state(self) -> KillSwitchState:
@@ -69,6 +78,8 @@ class KillSwitch:
 
     @property
     def is_enabled(self) -> bool:
+        if self._ghost_mode:
+            return True
         return os.environ.get("EXECUTION_ENABLED", "0") == "1"
 
     def check(
