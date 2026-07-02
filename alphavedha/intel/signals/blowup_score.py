@@ -8,7 +8,7 @@ Combines multiple red-flag signals into a single score:
 - ASM/GSM surveillance addition
 - Beneish M-Score red zone
 - Insider sell clusters
-- Volume + price pump signature (not yet implemented — placeholder 0)
+- Volume + price pump signature (20d runup + volume spike)
 
 Symbols scoring >= AVOID_THRESHOLD land on the daily avoid list, exposed
 at ``/api/intel/red-flags``. Ensemble and event_drift signals on avoid-listed
@@ -25,6 +25,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -59,6 +60,7 @@ def compute_blowup_score(
     pledge_snapshots: list[dict[str, Any]],
     surveillance_flags: list[dict[str, Any]],
     beneish_result: dict[str, Any] | None = None,
+    ohlcv: pd.DataFrame | None = None,
 ) -> BlowupScore:
     """Compute composite blowup score for a single symbol."""
     flags: list[str] = []
@@ -70,6 +72,7 @@ def compute_blowup_score(
     surveillance_score = _score_surveillance(surveillance_flags, flags)
     beneish_score_val = _score_beneish(beneish_result, flags)
     insider_sell_score = _score_insider_sells(disclosure_events, flags)
+    pump_score = _score_pump(ohlcv, flags)
 
     total = min(
         100,
@@ -79,7 +82,8 @@ def compute_blowup_score(
         + default_score
         + surveillance_score
         + beneish_score_val
-        + insider_sell_score,
+        + insider_sell_score
+        + pump_score,
     )
 
     return BlowupScore(
@@ -92,7 +96,7 @@ def compute_blowup_score(
         surveillance_score=surveillance_score,
         beneish_score=beneish_score_val,
         insider_sell_score=insider_sell_score,
-        pump_score=0,
+        pump_score=pump_score,
         flags=flags,
         on_avoid_list=total >= AVOID_THRESHOLD,
     )
@@ -195,6 +199,44 @@ def _score_insider_sells(events: list[dict[str, Any]], flags: list[str]) -> int:
     return 0
 
 
+_PUMP_RETURN_WINDOW = 20
+_PUMP_RETURN_THRESHOLD = 0.25
+_PUMP_VOLUME_BASELINE = 40
+_PUMP_VOLUME_RECENT = 5
+_PUMP_VOLUME_ZSCORE = 3.0
+
+
+def _score_pump(ohlcv: pd.DataFrame | None, flags: list[str]) -> int:
+    """Volume + price pump signature → 0-15 points.
+
+    Fires when the 20-day return exceeds +25% AND recent volume runs
+    >= 3 sigma above its prior baseline — the classic operator-driven
+    runup that precedes smallcap blowups.
+    """
+    min_rows = _PUMP_VOLUME_BASELINE + _PUMP_VOLUME_RECENT
+    if ohlcv is None or ohlcv.empty or len(ohlcv) < min_rows:
+        return 0
+
+    closes = ohlcv["close"].astype(float)
+    runup = float(closes.iloc[-1] / closes.iloc[-_PUMP_RETURN_WINDOW] - 1.0)
+    if runup < _PUMP_RETURN_THRESHOLD:
+        return 0
+
+    volumes = ohlcv["volume"].astype(float)
+    baseline = volumes.iloc[-min_rows:-_PUMP_VOLUME_RECENT]
+    recent_mean = float(volumes.iloc[-_PUMP_VOLUME_RECENT:].mean())
+    base_mean = float(baseline.mean())
+    base_std = float(baseline.std())
+    if base_std <= 0:
+        return 0
+
+    zscore = (recent_mean - base_mean) / base_std
+    if zscore >= _PUMP_VOLUME_ZSCORE:
+        flags.append("volume_price_pump")
+        return 15
+    return 0
+
+
 def compute_avoid_list(scores: list[BlowupScore]) -> list[BlowupScore]:
     """Filter scores to only those on the avoid list (score >= threshold)."""
     return [s for s in scores if s.on_avoid_list]
@@ -210,8 +252,10 @@ async def run_blowup_scores(
     as_of: date | None = None,
 ) -> list[BlowupScore]:
     """Compute blowup scores for a list of symbols using stored intel data."""
+    from alphavedha.data.store import load_ohlcv
     from alphavedha.intel.store import (
         load_disclosure_events,
+        load_pledge_snapshots,
         load_rating_events,
         load_surveillance_flags,
     )
@@ -233,12 +277,18 @@ async def run_blowup_scores(
             surv_df = await load_surveillance_flags(symbol=symbol)
             surveillance = surv_df.to_dict("records") if not surv_df.empty else []
 
+            pledge_df = await load_pledge_snapshots(symbol)
+            pledges = pledge_df.to_dict("records") if not pledge_df.empty else []
+
+            ohlcv = await load_ohlcv(symbol, as_of - timedelta(days=LOOKBACK_DAYS), as_of)
+
             score = compute_blowup_score(
                 symbol=symbol,
                 disclosure_events=events,
                 rating_events=rating_events,
-                pledge_snapshots=[],
+                pledge_snapshots=pledges,
                 surveillance_flags=surveillance,
+                ohlcv=ohlcv,
             )
             scores.append(score)
         except Exception as e:

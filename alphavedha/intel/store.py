@@ -336,6 +336,43 @@ async def store_pledge_snapshots(rows: list[dict[str, Any]]) -> int:
     return stored
 
 
+async def load_pledge_snapshots(
+    symbol: str,
+    limit: int = 8,
+) -> pd.DataFrame:
+    """Load recent pledge snapshots for a symbol, newest first.
+
+    The blowup scorer reads snapshots[0] as latest and snapshots[-1] as
+    the oldest in the window, so descending order is part of the contract.
+    """
+    session_factory = get_session_factory()
+
+    async with session_factory() as session:
+        stmt = (
+            select(PledgeSnapshot)
+            .where(PledgeSnapshot.symbol == symbol)
+            .order_by(PledgeSnapshot.as_of.desc())
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(
+        [
+            {
+                "symbol": r.symbol,
+                "as_of": r.as_of,
+                "promoter_pledge_pct": r.promoter_pledge_pct,
+                "change_pct": r.change_pct,
+            }
+            for r in rows
+        ]
+    )
+
+
 # ---------------------------------------------------------------------------
 # Surveillance Flags
 # ---------------------------------------------------------------------------
