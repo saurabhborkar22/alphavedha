@@ -66,7 +66,10 @@ class ShadowRunner:
         kill_switch: KillSwitch | None = None,
     ) -> None:
         self._broker = broker or PaperBroker(initial_capital=initial_capital)
-        self._kill_switch = kill_switch or KillSwitch()
+        # ghost_mode bypasses only the EXECUTION_ENABLED master flag —
+        # the broker here is a PaperBroker (cannot place real orders),
+        # and every other risk cap stays enforced daily.
+        self._kill_switch = kill_switch or KillSwitch(ghost_mode=True)
         self._oms = OrderManager(
             broker=self._broker,
             kill_switch=self._kill_switch,

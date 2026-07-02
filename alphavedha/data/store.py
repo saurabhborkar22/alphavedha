@@ -27,6 +27,7 @@ from alphavedha.data.models import (
     NewsArticle,
     PaperTrade,
     PromoterHolding,
+    ShadowFill,
 )
 
 logger = structlog.get_logger(__name__)
@@ -941,3 +942,29 @@ async def load_daily_pnl(
             for r in rows
         ]
     )
+
+
+async def store_shadow_fills(rows: list[dict]) -> int:
+    """Append shadow execution fills (ghost fills from the paper broker)."""
+    if not rows:
+        return 0
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        for row in rows:
+            session.add(ShadowFill(**row))
+        await session.commit()
+
+    logger.info("shadow_fills_stored", rows=len(rows))
+    return len(rows)
+
+
+async def count_shadow_fills(fill_date: date) -> int:
+    """Count fills already recorded for a date (rerun guard)."""
+    from sqlalchemy import func
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(func.count()).where(ShadowFill.fill_date == fill_date)
+        result = await session.execute(stmt)
+        return int(result.scalar() or 0)
