@@ -348,10 +348,10 @@ def _send_strategy_summary(as_of: date) -> None:
         trades = _run_async(load_paper_trades())
         avoid_symbols: list[str] = []
         try:
-            from alphavedha.api.routes.ui_support import NIFTY_50
+            from alphavedha.data.universe import get_strategy_universe
             from alphavedha.intel.signals.blowup_score import compute_avoid_list, run_blowup_scores
 
-            symbols = [s for s, _n, _sec, _c in NIFTY_50]
+            symbols: list[str] = _run_async(get_strategy_universe())  # type: ignore[assignment]
             scores = _run_async(run_blowup_scores(symbols, as_of=as_of))
             avoid_symbols = [s.symbol for s in compute_avoid_list(scores)]
         except Exception:
@@ -502,7 +502,7 @@ class AlphaVedhaScheduler:
                 prediction_date = _now_ist().date()
                 total_persisted = 0
 
-                from alphavedha.api.routes.ui_support import NIFTY_50
+                from alphavedha.data.universe import get_strategy_universe
                 from alphavedha.intel.signals.blowup_score import (
                     STRATEGY_NAME as BLOWUP_STRATEGY,
                 )
@@ -533,7 +533,9 @@ class AlphaVedhaScheduler:
                     run_insider_cluster_signals,
                 )
 
-                symbols = [s for s, _n, _sec, _c in NIFTY_50]
+                symbols: list[str] = _run_async(  # type: ignore[assignment]
+                    get_strategy_universe(self._tier)
+                )
 
                 # 1. Blowup scores → avoid list
                 scores: list[BlowupScore] = _run_async(  # type: ignore[assignment]
