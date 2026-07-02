@@ -173,100 +173,15 @@ async def record_outcome(req: TradeOutcomeRequest) -> dict[str, str]:
 async def evaluate_stops(evaluation_date: str | None = None) -> dict[str, Any]:
     """Check open paper trades for stop-loss or take-profit hits.
 
-    Compares each trade's stop_loss_price and take_profit_price against
-    the day's OHLCV high/low. For long trades, a low <= stop_loss triggers
-    a stop-out; for shorts, a high >= stop_loss triggers it. Similarly for
-    take-profit (high >= target for longs, low <= target for shorts).
+    Delegates to the shared stop-evaluation service — the scheduler runs the
+    same check daily after the market-close data refresh; this endpoint
+    exists for manual/backfill runs.
     """
-    from alphavedha.data.store import load_ohlcv, load_paper_trades, update_paper_trade_outcome
+    from alphavedha.services.stop_evaluation import evaluate_stop_hits
 
-    eval_date = date.fromisoformat(evaluation_date) if evaluation_date else date.today()
-    trades_df = await load_paper_trades()
-
-    if trades_df.empty:
-        return {"evaluated": 0, "stopped_out": 0, "target_hit": 0}
-
-    open_trades = trades_df[trades_df["exit_price"].isna()].copy()
-    if open_trades.empty:
-        return {"evaluated": 0, "stopped_out": 0, "target_hit": 0}
-
-    stopped = 0
-    target_hit = 0
-    evaluated = 0
-
-    for _, trade in open_trades.iterrows():
-        symbol = trade["symbol"]
-        entry = trade.get("entry_price")
-        sl = trade.get("stop_loss_price")
-        tp = trade.get("take_profit_price")
-        direction = trade["predicted_direction"]
-
-        if entry is None or (sl is None and tp is None):
-            continue
-
-        try:
-            from datetime import timedelta
-
-            ohlcv = await load_ohlcv(symbol, eval_date - timedelta(days=5), eval_date)
-        except Exception:
-            continue
-
-        if ohlcv.empty:
-            continue
-
-        day_row = (
-            ohlcv[ohlcv.index.date == eval_date] if hasattr(ohlcv.index, "date") else ohlcv.tail(1)
-        )
-        if day_row.empty:
-            continue
-
-        day_low = float(day_row["low"].iloc[-1])
-        day_high = float(day_row["high"].iloc[-1])
-
-        exit_price: float | None = None
-        exit_reason: str | None = None
-
-        if direction == 1:
-            if sl is not None and day_low <= sl:
-                exit_price = sl
-                exit_reason = "stop_loss"
-                stopped += 1
-            elif tp is not None and day_high >= tp:
-                exit_price = tp
-                exit_reason = "take_profit"
-                target_hit += 1
-        elif direction == -1:
-            if sl is not None and day_high >= sl:
-                exit_price = sl
-                exit_reason = "stop_loss"
-                stopped += 1
-            elif tp is not None and day_low <= tp:
-                exit_price = tp
-                exit_reason = "take_profit"
-                target_hit += 1
-
-        if exit_price is not None:
-            actual_return = (exit_price - entry) / entry * direction
-            is_correct = actual_return > 0
-            pred_date = trade["prediction_date"]
-            if not isinstance(pred_date, date):
-                pred_date = date.fromisoformat(str(pred_date))
-
-            try:
-                await update_paper_trade_outcome(
-                    symbol=symbol,
-                    prediction_date=pred_date,
-                    exit_price=exit_price,
-                    actual_return=actual_return,
-                    is_correct=is_correct,
-                    exit_reason=exit_reason,
-                    strategy=str(trade.get("strategy", "ensemble_v1")),
-                )
-                evaluated += 1
-            except Exception as e:
-                logger.error("stop_eval_update_failed", symbol=symbol, error=str(e))
-
-    return {"evaluated": evaluated, "stopped_out": stopped, "target_hit": target_hit}
+    eval_date = date.fromisoformat(evaluation_date) if evaluation_date else None
+    result: dict[str, Any] = dict(await evaluate_stop_hits(eval_date))
+    return result
 
 
 def _track_stats_out(stats: TrackStats) -> TrackStatsOut:
