@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import date
+
+import pandas as pd
+import pytest
+
 from alphavedha.intel.signals.blowup_score import (
     AVOID_THRESHOLD,
     STRATEGY_NAME,
@@ -160,3 +165,123 @@ class TestConstants:
 
     def test_avoid_threshold(self) -> None:
         assert AVOID_THRESHOLD == 70
+
+
+class TestScorePump:
+    """Volume + price pump signature (was a hardcoded 0 placeholder)."""
+
+    @staticmethod
+    def _ohlcv(closes: list[float], volumes: list[float]) -> pd.DataFrame:
+        return pd.DataFrame({"close": closes, "volume": volumes})
+
+    def test_flat_stock_scores_zero(self) -> None:
+        from alphavedha.intel.signals.blowup_score import _score_pump
+
+        df = self._ohlcv([100.0] * 60, [1000.0 + i for i in range(60)])
+        flags: list[str] = []
+        assert _score_pump(df, flags) == 0
+        assert flags == []
+
+    def test_pump_pattern_scores_15(self) -> None:
+        from alphavedha.intel.signals.blowup_score import _score_pump
+
+        # 40 quiet days, then a 20-day +40% runup with a 10x volume spike
+        # in the final 5 sessions.
+        closes = [100.0] * 40 + [100.0 + i * 2.0 for i in range(20)]
+        volumes = [1000.0 + (i % 7) * 30 for i in range(55)] + [12000.0] * 5
+        df = self._ohlcv(closes, volumes)
+
+        flags: list[str] = []
+        assert _score_pump(df, flags) == 15
+        assert "volume_price_pump" in flags
+
+    def test_runup_without_volume_scores_zero(self) -> None:
+        from alphavedha.intel.signals.blowup_score import _score_pump
+
+        closes = [100.0] * 40 + [100.0 + i * 2.0 for i in range(20)]
+        volumes = [1000.0 + (i % 7) * 30 for i in range(60)]
+        df = self._ohlcv(closes, volumes)
+
+        flags: list[str] = []
+        assert _score_pump(df, flags) == 0
+
+    def test_short_history_scores_zero(self) -> None:
+        from alphavedha.intel.signals.blowup_score import _score_pump
+
+        df = self._ohlcv([100.0] * 10, [1000.0] * 10)
+        assert _score_pump(df, []) == 0
+
+    def test_none_scores_zero(self) -> None:
+        from alphavedha.intel.signals.blowup_score import _score_pump
+
+        assert _score_pump(None, []) == 0
+
+    def test_pump_contributes_to_total(self) -> None:
+        closes = [100.0] * 40 + [100.0 + i * 2.0 for i in range(20)]
+        volumes = [1000.0 + (i % 7) * 30 for i in range(55)] + [12000.0] * 5
+        df = self._ohlcv(closes, volumes)
+
+        score = compute_blowup_score(
+            symbol="PUMPY",
+            disclosure_events=[],
+            rating_events=[],
+            pledge_snapshots=[],
+            surveillance_flags=[],
+            ohlcv=df,
+        )
+        assert score.pump_score == 15
+        assert score.total_score == 15
+
+
+class TestRunBlowupScoresWiring:
+    """run_blowup_scores must feed pledge snapshots and OHLCV to the scorer."""
+
+    @pytest.mark.asyncio
+    async def test_pledge_snapshots_reach_scorer(self) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        from alphavedha.intel.signals.blowup_score import run_blowup_scores
+
+        pledges = pd.DataFrame(
+            [
+                {
+                    "symbol": "RISKY",
+                    "as_of": date(2026, 7, 1),
+                    "promoter_pledge_pct": 55.0,
+                    "change_pct": 5.0,
+                }
+            ]
+        )
+
+        with (
+            patch(
+                "alphavedha.intel.store.load_disclosure_events",
+                new_callable=AsyncMock,
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "alphavedha.intel.store.load_rating_events",
+                new_callable=AsyncMock,
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "alphavedha.intel.store.load_surveillance_flags",
+                new_callable=AsyncMock,
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "alphavedha.intel.store.load_pledge_snapshots",
+                new_callable=AsyncMock,
+                return_value=pledges,
+            ),
+            patch(
+                "alphavedha.data.store.load_ohlcv",
+                new_callable=AsyncMock,
+                return_value=pd.DataFrame(),
+            ),
+        ):
+            scores = await run_blowup_scores(["RISKY"], as_of=date(2026, 7, 2))
+
+        assert len(scores) == 1
+        assert scores[0].pledge_score == 25  # >= 50% pledge is critical
+        assert "pledge_critical_50pct" in scores[0].flags
