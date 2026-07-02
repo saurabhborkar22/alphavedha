@@ -157,3 +157,77 @@ class TestTierData:
         )
         assert data.X_train.empty
         assert data.n_symbols == 0
+
+
+class TestDegeneracyGate:
+    """The nightly retrain must never promote a collapsed direction model."""
+
+    @staticmethod
+    def _fit_model(labels: pd.Series, X: pd.DataFrame) -> object:
+        from alphavedha.models.xgboost_model import XGBoostModel
+
+        rng = np.random.default_rng(0)
+        returns = pd.Series(rng.normal(0, 0.02, size=len(X)), name="return_pct")
+        split = int(len(X) * 0.8)
+        model = XGBoostModel()
+        model.fit(
+            X_train=X[:split],
+            y_train=labels[:split],
+            X_val=X[split:],
+            y_val=labels[split:],
+            return_train=returns[:split],
+            return_val=returns[split:],
+        )
+        return model
+
+    def test_rejects_single_class_model(self) -> None:
+        from alphavedha.models.base import PredictionResult
+        from alphavedha.training.pipeline import _check_degenerate_direction_model
+
+        class AllShortModel:
+            """Mimics the Jun-2026 production failure: -1 for every input."""
+
+            def predict(self, X: pd.DataFrame) -> PredictionResult:
+                n = len(X)
+                return PredictionResult(
+                    direction=np.full(n, -1, dtype=int),
+                    magnitude=np.zeros(n),
+                    probabilities=np.tile([0.45, 0.30, 0.25], (n, 1)),
+                    confidence=np.full(n, 0.45),
+                )
+
+        rng = np.random.default_rng(3)
+        X = pd.DataFrame(rng.standard_normal((100, 6)), columns=[f"f{i}" for i in range(6)])
+        y = pd.Series(rng.choice([-1, 0, 1], size=100), name="label")
+
+        reason = _check_degenerate_direction_model(AllShortModel(), X, y)  # type: ignore[arg-type]
+        assert reason is not None
+        assert "class -1" in reason
+
+    def test_accepts_healthy_model(self) -> None:
+        from alphavedha.training.pipeline import _check_degenerate_direction_model
+
+        rng = np.random.default_rng(5)
+        n = 600
+        X = pd.DataFrame(rng.standard_normal((n, 6)), columns=[f"f{i}" for i in range(6)])
+        # Separable: sign of f0 determines the class.
+        labels = pd.Series(
+            np.where(X["f0"] > 0.5, 1, np.where(X["f0"] < -0.5, -1, 0)), name="label"
+        )
+        model = self._fit_model(labels[:450], X[:450])
+
+        reason = _check_degenerate_direction_model(model, X[450:], labels[450:])  # type: ignore[arg-type]
+        assert reason is None
+
+    def test_empty_validation_skips_gate(self) -> None:
+        from alphavedha.training.pipeline import _check_degenerate_direction_model
+
+        rng = np.random.default_rng(9)
+        X = pd.DataFrame(rng.standard_normal((100, 4)), columns=[f"f{i}" for i in range(4)])
+        labels = pd.Series([-1] * 100, name="label")
+        model = self._fit_model(labels, X)
+
+        empty_X = X.iloc[0:0]
+        empty_y = labels.iloc[0:0]
+        reason = _check_degenerate_direction_model(model, empty_X, empty_y)  # type: ignore[arg-type]
+        assert reason is None
