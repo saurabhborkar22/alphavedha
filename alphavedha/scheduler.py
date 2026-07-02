@@ -31,6 +31,7 @@ IST = ZoneInfo("Asia/Kolkata")
 PREDICTION_TIME = "06:00"
 SIGNAL_STRATEGIES_TIME = "06:05"  # signal strategies after ensemble, before hash
 PREDICTION_HASH_TIME = "06:10"  # hash daily predictions after 06:00 persist, before 09:15 open
+PROOF_REVEAL_TIME = "16:00"  # reveal canonical payloads for proofs >= 21 days old
 EVALUATION_TIME = "15:45"
 DATA_REFRESH_TIME = "17:00"  # daily OHLCV ingestion after market close (15:30 IST)
 FII_DII_INGESTION_TIME = "18:30"  # NSE publishes FII/DII participation data by ~17:30 IST
@@ -647,17 +648,55 @@ class AlphaVedhaScheduler:
         try:
             if self._demo:
                 logger.info("prediction_hash_skipped", reason="demo mode")
+                result.success = True
             else:
                 from alphavedha.verification.publisher import publish_daily_proof
 
-                proof = _run_async(publish_daily_proof())
+                proof: dict[str, Any] = _run_async(publish_daily_proof())  # type: ignore[assignment]
                 result.symbols_processed = proof.get("n_predictions", 0)
                 logger.info("prediction_hash_complete", **proof)
+
+                # A proof that never reached the git repo is not a proof —
+                # anything short of "published" is a job failure so the
+                # alerting path fires instead of two silent weeks.
+                status = str(proof.get("status", "unknown"))
+                if status in ("published", "skipped_no_trades"):
+                    result.success = True
+                else:
+                    result.error = proof.get("publish_error") or f"proof status: {status}"
+                    logger.error("scheduler_job_failed", job="prediction_hash", error=result.error)
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="prediction_hash", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
+    def run_proof_reveal(self) -> JobResult:
+        """Reveal canonical payloads for proofs at least 21 days old (P0-D2).
+
+        The reveal is what makes the hash record independently checkable:
+        anyone can re-hash the revealed JSON and compare it to the hash that
+        was committed before market open weeks earlier.
+        """
+        result = JobResult(job_name="proof_reveal", started_at=_now_ist())
+        logger.info("scheduler_job_start", job="proof_reveal")
+
+        try:
+            if self._demo:
+                logger.info("proof_reveal_skipped", reason="demo mode")
+            else:
+                from alphavedha.verification.publisher import reveal_due_proofs
+
+                summary: dict[str, Any] = _run_async(reveal_due_proofs())  # type: ignore[assignment]
+                result.symbols_processed = int(summary.get("revealed", 0))
+                logger.info("scheduler_job_complete", job="proof_reveal", **summary)
 
             result.success = True
         except Exception as e:
             result.error = str(e)
-            logger.error("scheduler_job_failed", job="prediction_hash", error=str(e))
+            logger.error("scheduler_job_failed", job="proof_reveal", error=str(e))
 
         result.finished_at = _now_ist()
         self._record_job(result)
@@ -1561,6 +1600,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
         schedule.every().day.at(SIGNAL_STRATEGIES_TIME).do(self.run_signal_strategies)
         schedule.every().day.at(PREDICTION_HASH_TIME).do(self.run_prediction_hash)
+        schedule.every().day.at(PROOF_REVEAL_TIME).do(self.run_proof_reveal)
         schedule.every().day.at(EVALUATION_TIME).do(self.run_daily_evaluation)
         schedule.every().day.at(QUALITY_CHECK_TIME).do(self.run_quality_check)
         schedule.every().day.at(DATA_REFRESH_TIME).do(self.run_data_refresh)
