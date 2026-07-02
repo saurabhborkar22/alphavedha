@@ -54,7 +54,9 @@ def parse_bhavcopy(raw_csv: str) -> pd.DataFrame:
 
     result = pd.DataFrame(
         {
-            "symbol": df["SYMBOL"].apply(lambda s: f"{s}.NS"),
+            # Bare NSE code is the store's canonical symbol form — the old
+            # ".NS" suffix created a split-brain table vs yfinance rows.
+            "symbol": df["SYMBOL"],
             "date": df["date"],
             "open": pd.to_numeric(df["OPEN_PRICE"], errors="coerce"),
             "high": pd.to_numeric(df["HIGH_PRICE"], errors="coerce"),
