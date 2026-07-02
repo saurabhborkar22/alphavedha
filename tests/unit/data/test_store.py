@@ -266,3 +266,96 @@ class TestStorePaperTrade:
         }
         result = await store.store_paper_trade(row)
         assert result == 1
+
+
+class TestNormalizeNseSymbol:
+    def test_strips_ns_suffix(self) -> None:
+        assert store.normalize_nse_symbol("TCS.NS") == "TCS"
+
+    def test_strips_bo_suffix(self) -> None:
+        assert store.normalize_nse_symbol("500325.BO") == "500325"
+
+    def test_bare_passthrough(self) -> None:
+        assert store.normalize_nse_symbol("TCS") == "TCS"
+
+    def test_uppercases_and_trims(self) -> None:
+        assert store.normalize_nse_symbol(" tcs.ns ") == "TCS"
+
+    def test_ampersand_symbol_untouched(self) -> None:
+        assert store.normalize_nse_symbol("M&M") == "M&M"
+
+
+def _ohlcv_row(symbol: str, d: date, close: float) -> MagicMock:
+    row = MagicMock()
+    row.symbol = symbol
+    row.date = d
+    row.open = close
+    row.high = close
+    row.low = close
+    row.close = close
+    row.adj_close = close
+    row.volume = 100
+    row.delivery_pct = 40.0
+    row.circuit_hit = None
+    row.is_adjusted = True
+    row.is_filled = False
+    return row
+
+
+class TestLoadOHLCVDualFormat:
+    """The table carries both bare (yfinance) and legacy .NS (bhavcopy) rows."""
+
+    async def test_merges_both_formats(self, mock_session_factory) -> None:
+        rows = [
+            _ohlcv_row("TCS", date(2024, 1, 1), 100.0),
+            _ohlcv_row("TCS.NS", date(2024, 1, 2), 105.0),
+        ]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = rows
+        mock_session_factory.execute.return_value = mock_result
+
+        df = await store.load_ohlcv("TCS", date(2024, 1, 1), date(2024, 1, 31))
+        assert len(df) == 2
+
+    async def test_bare_row_wins_on_same_date(self, mock_session_factory) -> None:
+        d = date(2024, 1, 1)
+        rows = [
+            _ohlcv_row("TCS.NS", d, 999.0),
+            _ohlcv_row("TCS", d, 100.0),
+        ]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = rows
+        mock_session_factory.execute.return_value = mock_result
+
+        df = await store.load_ohlcv("TCS", d, date(2024, 1, 31))
+        assert len(df) == 1
+        assert float(df["close"].iloc[0]) == 100.0
+
+    async def test_dotns_caller_normalized(self, mock_session_factory) -> None:
+        rows = [_ohlcv_row("TCS", date(2024, 1, 1), 100.0)]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = rows
+        mock_session_factory.execute.return_value = mock_result
+
+        df = await store.load_ohlcv("TCS.NS", date(2024, 1, 1), date(2024, 1, 31))
+        assert len(df) == 1
+
+
+class TestStorePaperTradeNormalizesSymbol:
+    async def test_dotns_symbol_stored_bare(self, mock_session_factory) -> None:
+        row = {
+            "symbol": "BASML.NS",
+            "prediction_date": date(2026, 7, 2),
+            "predicted_direction": 1,
+            "predicted_magnitude": 0.0,
+            "confidence": 0.6,
+            "model_version": "event_drift_v1",
+        }
+        result = await store.store_paper_trade(row)
+        assert result == 1
+
+        stmt = mock_session_factory.execute.await_args.args[0]
+        from sqlalchemy.dialects import postgresql
+
+        compiled = stmt.compile(dialect=postgresql.dialect())
+        assert compiled.params["symbol"] == "BASML"

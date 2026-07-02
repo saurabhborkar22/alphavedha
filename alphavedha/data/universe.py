@@ -171,3 +171,25 @@ async def refresh_universe() -> dict[str, int]:
 
     logger.info("universe_refresh_complete", counts=counts)
     return counts
+
+
+async def get_strategy_universe(tier: str = "large") -> list[str]:
+    """Symbols the intel strategies scan — live index membership.
+
+    The blowup/insider strategies used a hardcoded 20-name list
+    (ui_support.NIFTY_50, misnamed) and silently scanned 40% of the
+    index. Live constituents are the source of truth; the hardcoded
+    list remains only as a fallback when the DB has no composition.
+    """
+    symbols: list[str] = []
+    try:
+        symbols = await get_symbols_for_tier(tier)
+    except Exception as e:
+        logger.warning("strategy_universe_fallback", tier=tier, error=str(e))
+
+    if symbols:
+        return [s.strip().upper() for s in symbols]
+
+    from alphavedha.api.routes.ui_support import NIFTY_50
+
+    return [s for s, _n, _sec, _c in NIFTY_50]
