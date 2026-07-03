@@ -124,3 +124,32 @@ class TestBatchConcurrent:
         service.predict_single = AsyncMock(side_effect=_mock_predict)
         results = await service.predict_batch(["A", "B", "C"])
         assert [r.symbol for r in results] == ["A", "B", "C"]
+
+
+class TestMissingSymbolData:
+    """Regression: unknown/delisted symbols surfaced as unhandled 500s.
+
+    The morning-briefing routine requested BPCL and TATAMOTORS (both out
+    of the universe) on 2026-07-03; the bare ValueError from the feature
+    path bypassed the app's exception handlers. SymbolNotFoundError maps
+    to a clean 404.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_features_raises_symbol_not_found(
+        self, service: PredictionService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import pandas as pd
+
+        from alphavedha.exceptions import SymbolNotFoundError
+
+        async def _empty_features(*args: object, **kwargs: object) -> pd.DataFrame:
+            return pd.DataFrame()
+
+        monkeypatch.setattr("alphavedha.data.store.load_features", _empty_features)
+        monkeypatch.setattr(
+            service, "_compute_features_on_the_fly", AsyncMock(return_value=pd.DataFrame())
+        )
+
+        with pytest.raises(SymbolNotFoundError, match="TATAMOTORS"):
+            await service._load_real_features("TATAMOTORS")

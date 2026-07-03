@@ -10,6 +10,7 @@ import pandas as pd
 import structlog
 
 from alphavedha.config import AppConfig
+from alphavedha.exceptions import SymbolNotFoundError
 from alphavedha.prediction.engine import StockPrediction
 from alphavedha.prediction.ranker import RankingResult, StockRanker
 from alphavedha.services.cache import PredictionCache
@@ -89,9 +90,12 @@ class PredictionService:
                 features_df = computed
 
         if features_df.empty:
-            raise ValueError(
-                f"No features available for {symbol}. "
-                "Run `alphavedha data refresh` to populate the feature store."
+            # SymbolNotFoundError maps to a clean 404 at the app level — a
+            # bare ValueError here surfaced as an unhandled 500 whenever a
+            # delisted/ex-universe symbol (BPCL, TATAMOTORS) was requested.
+            raise SymbolNotFoundError(
+                f"No feature data available for {symbol} — not in the data store "
+                "(delisted, renamed, or never ingested)."
             )
 
         return features_df.tail(n_rows)
