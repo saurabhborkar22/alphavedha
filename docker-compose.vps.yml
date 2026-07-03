@@ -67,6 +67,10 @@ services:
       - model-artifacts:/app/models/artifacts
       - app-logs:/app/logs
       - proofs-repo:/app/alphavedha-proofs
+      # Deploy key for pushing proofs to GitHub. Lives OUTSIDE the repo
+      # checkout on the host so it can never be committed; the publisher
+      # uses it via GIT_SSH_COMMAND in .env.vps.
+      - /opt/alphavedha/secrets:/secrets:ro
 
   trainer:
     build:
