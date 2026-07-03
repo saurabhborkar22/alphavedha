@@ -34,6 +34,12 @@ services:
     volumes:
       - model-artifacts:/app/models/artifacts
       - app-logs:/app/logs
+      # The ops trigger endpoint runs scheduler jobs in-process in THIS
+      # container — prediction_hash needs the same proofs repo and deploy
+      # key the scheduler has, or manual triggers commit to an ephemeral
+      # repo and report committed_not_pushed.
+      - proofs-repo:/app/alphavedha-proofs
+      - /opt/alphavedha/secrets:/secrets:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
