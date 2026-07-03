@@ -41,7 +41,12 @@ def _ensure_git_repo(repo_dir: Path) -> None:
 
     if not (repo_dir / ".git").exists():
         try:
-            subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+            # -b main: a bare `git init` defaults to master, and the first
+            # push then lands on a branch GitHub doesn't show by default
+            # (the repo was created with main).
+            subprocess.run(
+                ["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True
+            )
             subprocess.run(
                 ["git", "config", "user.email", "scheduler@alphavedha.local"],
                 cwd=repo_dir,
@@ -189,6 +194,29 @@ def _git_commit_and_push(
         )
         return None, False
 
+    if _push_head(repo_dir):
+        return sha, True
+
+    # Rejected push usually means the remote branch has commits this local
+    # clone lacks (fresh volume init while the GitHub repo already has its
+    # README). Replay our proofs on top and push again — original commit
+    # author dates survive the rebase.
+    if _rebase_onto_origin(repo_dir):
+        pushed = _push_head(repo_dir)
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+        )
+        if head.returncode == 0:
+            sha = head.stdout.strip()
+        return sha, pushed
+
+    return sha, False
+
+
+def _push_head(repo_dir: Path) -> bool:
     try:
         subprocess.run(
             ["git", "push", "-u", "origin", "HEAD"],
@@ -196,14 +224,46 @@ def _git_commit_and_push(
             check=True,
             capture_output=True,
         )
-        return sha, True
+        return True
     except subprocess.CalledProcessError as e:
         logger.error(
             "proof_git_push_failed",
             returncode=e.returncode,
             stderr=e.stderr.decode() if e.stderr else "",
         )
-        return sha, False
+        return False
+
+
+def _rebase_onto_origin(repo_dir: Path) -> bool:
+    """Fetch origin's branch and replay local commits on top of it."""
+    try:
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "fetch", "origin", branch],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "rebase", f"origin/{branch}"],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        subprocess.run(["git", "rebase", "--abort"], cwd=repo_dir, capture_output=True)
+        logger.warning(
+            "proof_git_rebase_failed",
+            stderr=e.stderr.decode() if e.stderr else "",
+        )
+        return False
 
 
 async def _store_proof(

@@ -198,3 +198,67 @@ class TestRevealDueProofs:
             summary = await reveal_due_proofs(date(2026, 7, 2), proofs_repo=tmp_path)
 
         assert summary == {"revealed": 0, "status": "nothing_due"}
+
+
+class TestBranchAndPushRetry:
+    """Fresh inits must land on main and survive a non-fast-forward push."""
+
+    def test_fresh_init_uses_main_branch(self, tmp_path: Path) -> None:
+        _init_repo(tmp_path)
+        branch = subprocess.run(
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert branch == "main"
+
+    def test_rejected_push_rebases_and_retries(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Simulates the production incident: the GitHub repo already had a
+        README commit on main, a fresh volume init pushed disjoint history."""
+        # Bare origin with an existing README commit on main.
+        origin = tmp_path / "origin.git"
+        subprocess.run(
+            ["git", "init", "--bare", "-b", "main", str(origin)], check=True, capture_output=True
+        )
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=seed, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@t"], cwd=seed, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "t"], cwd=seed, check=True, capture_output=True
+        )
+        (seed / "README.md").write_text("proofs repo\n")
+        subprocess.run(["git", "add", "-A"], cwd=seed, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init: README"], cwd=seed, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "push", str(origin), "main"], cwd=seed, check=True, capture_output=True
+        )
+
+        # Fresh publisher repo, disjoint history, origin pointing at the bare repo.
+        repo = tmp_path / "proofs"
+        repo.mkdir()
+        monkeypatch.setenv("ALPHAVEDHA_PROOFS_REMOTE", str(origin))
+        _ensure_git_repo(repo)
+        _write_proof_file(repo, PROOF_DATE, "ee" * 32, b"{}")
+
+        sha, pushed = _git_commit_and_push(repo, "proof: retry test")
+
+        assert pushed is True
+        assert sha is not None
+        log = subprocess.run(
+            ["git", "log", "--format=%s", "main"],
+            cwd=origin,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert "proof: retry test" in log
+        assert "init: README" in log
