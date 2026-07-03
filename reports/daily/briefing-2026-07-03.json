@@ -1,0 +1,272 @@
+{
+  "date": "2026-07-03",
+  "generated_at": "2026-07-03T06:38:00+05:30",
+  "model_version": "v0.1.0",
+  "market_context": {
+    "regime": "bull",
+    "total_predictions": 64,
+    "total_symbols": 58,
+    "nifty50_scanned": 50,
+    "directions": {"bullish": 12, "bearish": 52, "neutral": 0},
+    "nifty50_directions": {"bullish": 0, "bearish": 50, "neutral": 0},
+    "tradeable_signals": 14,
+    "meta_confidence_threshold": 0.55,
+    "confidence_stats": {"min": 0.0833, "max": 0.95, "mean": 0.4013, "median": 0.2582},
+    "hash_published": false,
+    "system_status": "degraded",
+    "stale_tables": ["daily_ohlcv", "institutional_flows", "insider_trades", "surveillance_flags", "bulk_block_deals"]
+  },
+  "anomalies": [
+    {
+      "severity": "critical",
+      "type": "model_degenerate_output",
+      "detail": "ALL 50 Nifty stocks predicted DOWN in bull regime. Top feature for every stock is cal_doy (calendar day-of-year). Composite scores compressed in 36.0-37.2 range with no meaningful differentiation. Model is expressing calendar bias, not stock-specific analysis."
+    },
+    {
+      "severity": "critical",
+      "type": "data_pipeline_failure",
+      "detail": "daily_ohlcv: 0 rows ingested today vs 2,727 yesterday. Data refresh job at 17:00 did not run or failed. Predictions generated on stale T-1 price data."
+    },
+    {
+      "severity": "warning",
+      "type": "endpoint_error",
+      "detail": "predict/{symbol} returns 500 Internal Server Error for non-Nifty-50 symbols (BPCL, TATAMOTORS, DIAMINESQ, etc.)"
+    },
+    {
+      "severity": "warning",
+      "type": "hash_not_published",
+      "detail": "SHA256 hash in DB but not committed to git or OTS-stamped. Proof chain incomplete."
+    }
+  ],
+  "red_flags": [
+    {"symbol": "AXISBANK", "total_score": 15, "governance_score": 15, "flags": ["kmp_resignation x4"], "on_avoid_list": false},
+    {"symbol": "ONGC", "total_score": 15, "governance_score": 15, "flags": ["kmp_resignation"], "on_avoid_list": false},
+    {"symbol": "POWERGRID", "total_score": 15, "governance_score": 15, "flags": ["kmp_resignation x4"], "on_avoid_list": false},
+    {"symbol": "WIPRO", "total_score": 15, "insider_sell_score": 15, "flags": ["insider_sell_cluster_3plus"], "on_avoid_list": false}
+  ],
+  "sector_patterns": [
+    {
+      "pattern": "blanket_bearish",
+      "detail": "All 50 Nifty stocks DOWN across every sector — not sector rotation, but model-wide calendar bias from cal_doy feature dominance."
+    },
+    {
+      "pattern": "it_sector_bounce",
+      "sectors": ["IT"],
+      "stocks": ["INFY", "TCS", "HCLTECH", "WIPRO", "TECHM"],
+      "detail": "5/5 IT stocks predicted DOWN but all posted +4-6% bounces yesterday after multi-week selling. WIPRO flagged for insider sell cluster. Q1 FY27 results imminent."
+    },
+    {
+      "pattern": "metals_weakness",
+      "sectors": ["Metals"],
+      "stocks": ["ADANIENT", "HINDALCO", "JSWSTEEL", "TATASTEEL"],
+      "detail": "4/4 metals stocks DOWN. HINDALCO -13%, TATASTEEL -9% from 20-day highs. Only sector where bearish call aligns with visible price momentum."
+    },
+    {
+      "pattern": "financials_all_down",
+      "sectors": ["Banking", "Financial"],
+      "stocks": ["AXISBANK", "KOTAKBANK", "SBIN", "ICICIBANK", "HDFCBANK", "SHRIRAMFIN", "BAJAJFINSV", "JIOFIN", "BAJFINANCE", "HDFCLIFE", "SBILIFE"],
+      "detail": "10/10 financial stocks DOWN. AXISBANK flagged with 4 KMP resignations. SHRIRAMFIN has highest meta-confidence (54.9%)."
+    },
+    {
+      "pattern": "energy_declining",
+      "sectors": ["Energy"],
+      "stocks": ["NTPC", "ONGC", "COALINDIA", "POWERGRID", "RELIANCE"],
+      "detail": "5/5 energy stocks DOWN. ONGC -11%, COALINDIA -7% from highs. ONGC and POWERGRID flagged for KMP resignations."
+    }
+  ],
+  "top_10_reviews": [
+    {
+      "symbol": "SHRIRAMFIN",
+      "price": 1066.70,
+      "change_pct": 1.77,
+      "sector": "Financial",
+      "ml_direction": -1,
+      "ml_score": 36.49,
+      "meta_confidence": 0.5486,
+      "magnitude": -0.0008,
+      "analyst_direction": 0,
+      "analyst_adjustment": 0,
+      "conviction": "low",
+      "reasoning": "Highest confidence Nifty prediction but near-zero magnitude (-0.08%). Stock rallied +20% in 20 days. cal_doy dominance and compressed composite score undermine confidence. No red flags.",
+      "key_risk": "Strong momentum could continue; shorting a +20% rally without catalyst is high-risk."
+    },
+    {
+      "symbol": "APOLLOHOSP",
+      "price": 8696.00,
+      "change_pct": 0.90,
+      "sector": "Pharma",
+      "ml_direction": -1,
+      "ml_score": 36.40,
+      "meta_confidence": 0.5155,
+      "magnitude": 0.0008,
+      "analyst_direction": 0,
+      "analyst_adjustment": 5,
+      "conviction": "low",
+      "reasoning": "ML predicts DOWN but magnitude is positive (+0.08%) — direction and magnitude contradict. Steady uptrend. No red flags. Upgrading toward neutral.",
+      "key_risk": "Earnings season volatility; hospital sector regulatory news."
+    },
+    {
+      "symbol": "ASIANPAINT",
+      "price": 2744.50,
+      "change_pct": 1.03,
+      "sector": "FMCG",
+      "ml_direction": -1,
+      "ml_score": 36.41,
+      "meta_confidence": 0.455,
+      "magnitude": 0.0006,
+      "analyst_direction": 0,
+      "analyst_adjustment": 5,
+      "conviction": "low",
+      "reasoning": "Range-bound. Positive magnitude contradicts DOWN direction. No material qualitative catalyst. Adjusting toward neutral.",
+      "key_risk": "Monsoon season paint demand; input cost pressure from crude."
+    },
+    {
+      "symbol": "AXISBANK",
+      "price": 1362.60,
+      "change_pct": -0.45,
+      "sector": "Banking",
+      "ml_direction": -1,
+      "ml_score": 36.58,
+      "meta_confidence": 0.4414,
+      "magnitude": 0.0,
+      "analyst_direction": -1,
+      "analyst_adjustment": -3,
+      "conviction": "low-medium",
+      "reasoning": "4 KMP resignations flagged (governance: 15). Price plateaued after rally. Small downward adjustment for governance flag.",
+      "key_risk": "KMP departures — investigate whether routine rotations or departures of concern."
+    },
+    {
+      "symbol": "INDIGO",
+      "price": 5444.00,
+      "change_pct": 0.83,
+      "sector": "Aviation",
+      "ml_direction": -1,
+      "ml_score": 36.15,
+      "meta_confidence": 0.408,
+      "magnitude": 0.0001,
+      "analyst_direction": 0,
+      "analyst_adjustment": 5,
+      "conviction": "low",
+      "reasoning": "+21% rally in 20 days. Positive magnitude contradicts DOWN direction. No basis to short strong momentum without catalyst.",
+      "key_risk": "Oil price sensitivity; high valuation after rally."
+    },
+    {
+      "symbol": "MARUTI",
+      "price": 14348.00,
+      "change_pct": -0.33,
+      "sector": "Auto",
+      "ml_direction": -1,
+      "ml_score": 37.13,
+      "meta_confidence": 0.3996,
+      "magnitude": 0.0007,
+      "analyst_direction": 0,
+      "analyst_adjustment": 5,
+      "conviction": "low",
+      "reasoning": "Positive magnitude contradicts DOWN. Auto sales data typically released early July could be catalyst. No red flags.",
+      "key_risk": "Monthly auto sales data release; EV transition narrative pressure."
+    },
+    {
+      "symbol": "ADANIENT",
+      "price": 3177.50,
+      "change_pct": 1.08,
+      "sector": "Metals",
+      "ml_direction": -1,
+      "ml_score": 36.19,
+      "meta_confidence": 0.3989,
+      "magnitude": 0.0001,
+      "analyst_direction": 0,
+      "analyst_adjustment": 5,
+      "conviction": "low",
+      "reasoning": "Rally from 2,908 to 3,177 (+9%). No red flags. Magnitude near-zero. No material qualitative catalyst.",
+      "key_risk": "Adani group event risk is structurally elevated."
+    },
+    {
+      "symbol": "EICHERMOT",
+      "price": 7250.00,
+      "change_pct": 1.55,
+      "sector": "Auto",
+      "ml_direction": -1,
+      "ml_score": 36.54,
+      "meta_confidence": 0.3836,
+      "magnitude": -0.0003,
+      "analyst_direction": -1,
+      "analyst_adjustment": 0,
+      "conviction": "low",
+      "reasoning": "Peaked at 7,639, declined to 7,250 (-5%). Price trend supports DOWN direction, magnitude is negative (consistent). Today's +1.55% bounce could indicate reversal.",
+      "key_risk": "Auto sector monthly sales data; Royal Enfield export trajectory."
+    },
+    {
+      "symbol": "ADANIPORTS",
+      "price": 1883.20,
+      "change_pct": 1.89,
+      "sector": "Infra",
+      "ml_direction": -1,
+      "ml_score": 36.38,
+      "meta_confidence": 0.383,
+      "magnitude": 0.0003,
+      "analyst_direction": 0,
+      "analyst_adjustment": 5,
+      "conviction": "low",
+      "reasoning": "Bottomed at 1,776 and recovering. Positive magnitude contradicts DOWN direction. Price action suggests recovery.",
+      "key_risk": "Port traffic data; Adani group-wide regulatory risk."
+    },
+    {
+      "symbol": "LT",
+      "price": 4059.40,
+      "change_pct": -0.81,
+      "sector": "Infra",
+      "ml_direction": -1,
+      "ml_score": 36.67,
+      "meta_confidence": 0.3689,
+      "magnitude": -0.0001,
+      "analyst_direction": -1,
+      "analyst_adjustment": 0,
+      "conviction": "low",
+      "reasoning": "Peaked at 4,216, declining 4 sessions. Negative magnitude consistent with direction. Near-term weakness visible.",
+      "key_risk": "Government capex execution pace; order inflow announcements could reverse."
+    }
+  ],
+  "remaining_stocks": [
+    {"symbol": "KOTAKBANK", "ml_direction": -1, "ml_score": 36.52, "analyst_direction": 0, "conviction": "low", "one_liner": "Sideways after rally; no catalyst"},
+    {"symbol": "TRENT", "ml_direction": -1, "ml_score": 36.25, "analyst_direction": 0, "conviction": "low", "one_liner": "Strong +20% rally; no basis for DOWN"},
+    {"symbol": "MAXHEALTH", "ml_direction": -1, "ml_score": 36.36, "analyst_direction": 0, "conviction": "low", "one_liner": "Pulling back from highs; healthcare stable"},
+    {"symbol": "JSWSTEEL", "ml_direction": -1, "ml_score": 36.69, "analyst_direction": 0, "conviction": "low", "one_liner": "Declining from 1,297 highs; metals weakness"},
+    {"symbol": "SBIN", "ml_direction": -1, "ml_score": 36.50, "analyst_direction": 0, "conviction": "low", "one_liner": "Steady uptrend contradicts DOWN call"},
+    {"symbol": "GRASIM", "ml_direction": -1, "ml_score": 36.53, "analyst_direction": 0, "conviction": "low", "one_liner": "Range-bound; no catalyst"},
+    {"symbol": "TMPV", "ml_direction": -1, "ml_score": 36.03, "analyst_direction": -1, "conviction": "low", "one_liner": "Sustained decline from 397 (-13%); weakest chart"},
+    {"symbol": "CIPLA", "ml_direction": -1, "ml_score": 36.74, "analyst_direction": 0, "conviction": "low", "one_liner": "Recovery from 1,350 lows; pharma stable"},
+    {"symbol": "BEL", "ml_direction": -1, "ml_score": 36.89, "analyst_direction": 0, "conviction": "low", "one_liner": "Pulling back from 431; defence stable"},
+    {"symbol": "DRREDDY", "ml_direction": -1, "ml_score": 36.77, "analyst_direction": 0, "conviction": "low", "one_liner": "Trending up from 1,267; no catalyst"},
+    {"symbol": "HINDALCO", "ml_direction": -1, "ml_score": 36.89, "analyst_direction": -1, "conviction": "low", "one_liner": "Sharp -13% decline; metals weakness"},
+    {"symbol": "BAJAJFINSV", "ml_direction": -1, "ml_score": 36.79, "analyst_direction": 0, "conviction": "low", "one_liner": "Strong +3.2% day; momentum contradicts DOWN"},
+    {"symbol": "JIOFIN", "ml_direction": -1, "ml_score": 36.42, "analyst_direction": 0, "conviction": "low", "one_liner": "Sideways; no material catalyst"},
+    {"symbol": "M&M", "ml_direction": -1, "ml_score": 36.57, "analyst_direction": 0, "conviction": "low", "one_liner": "Range-bound; auto sales data upcoming"},
+    {"symbol": "POWERGRID", "ml_direction": -1, "ml_score": 36.86, "analyst_direction": 0, "conviction": "low", "one_liner": "4 KMP departures (PSU rotation); sideways"},
+    {"symbol": "ICICIBANK", "ml_direction": -1, "ml_score": 36.55, "analyst_direction": 0, "conviction": "low", "one_liner": "Strong uptrend contradicts DOWN"},
+    {"symbol": "SUNPHARMA", "ml_direction": -1, "ml_score": 36.89, "analyst_direction": 0, "conviction": "low", "one_liner": "Steady uptrend; pharma defensive"},
+    {"symbol": "TITAN", "ml_direction": -1, "ml_score": 36.57, "analyst_direction": 0, "conviction": "low", "one_liner": "Recovering from 4,025 lows"},
+    {"symbol": "ULTRACEMCO", "ml_direction": -1, "ml_score": 36.95, "analyst_direction": 0, "conviction": "low", "one_liner": "Range-bound; cement seasonal"},
+    {"symbol": "HINDUNILVR", "ml_direction": -1, "ml_score": 36.57, "analyst_direction": 0, "conviction": "low", "one_liner": "Sideways FMCG; no catalyst"},
+    {"symbol": "NESTLEIND", "ml_direction": -1, "ml_score": 36.69, "analyst_direction": 0, "conviction": "low", "one_liner": "Range-bound; no catalyst"},
+    {"symbol": "TCS", "ml_direction": -1, "ml_score": 36.21, "analyst_direction": 0, "conviction": "low", "one_liner": "+4.3% bounce after selloff; Q1 results"},
+    {"symbol": "NTPC", "ml_direction": -1, "ml_score": 37.17, "analyst_direction": 0, "conviction": "low", "one_liner": "Highest composite but no differentiation"},
+    {"symbol": "BHARTIARTL", "ml_direction": -1, "ml_score": 36.72, "analyst_direction": 0, "conviction": "low", "one_liner": "Pulling back from highs; telecom defensive"},
+    {"symbol": "SBILIFE", "ml_direction": -1, "ml_score": 36.92, "analyst_direction": 0, "conviction": "low", "one_liner": "Choppy; insurance stable"},
+    {"symbol": "TATACONSUM", "ml_direction": -1, "ml_score": 36.89, "analyst_direction": 0, "conviction": "low", "one_liner": "Range-bound FMCG; no catalyst"},
+    {"symbol": "BAJFINANCE", "ml_direction": -1, "ml_score": 36.47, "analyst_direction": 0, "conviction": "low", "one_liner": "Strong +17% rally contradicts DOWN"},
+    {"symbol": "HDFCLIFE", "ml_direction": -1, "ml_score": 36.64, "analyst_direction": 0, "conviction": "low", "one_liner": "Pulling back from 597; insurance stable"},
+    {"symbol": "TECHM", "ml_direction": -1, "ml_score": 36.30, "analyst_direction": 0, "conviction": "low", "one_liner": "+4.3% bounce; IT results watch"},
+    {"symbol": "HCLTECH", "ml_direction": -1, "ml_score": 36.28, "analyst_direction": 0, "conviction": "low", "one_liner": "Strong bounce after selling; Q1 results"},
+    {"symbol": "BAJAJ-AUTO", "ml_direction": -1, "ml_score": 37.13, "analyst_direction": 0, "conviction": "low", "one_liner": "Declining -5%; auto sales watch"},
+    {"symbol": "ONGC", "ml_direction": -1, "ml_score": 37.05, "analyst_direction": -1, "conviction": "low", "one_liner": "-11% decline + KMP resignation; energy weakness"},
+    {"symbol": "WIPRO", "ml_direction": -1, "ml_score": 36.28, "analyst_direction": -1, "conviction": "low-medium", "one_liner": "3+ insider sell cluster + IT selloff; most actionable flag"},
+    {"symbol": "ITC", "ml_direction": -1, "ml_score": 36.70, "analyst_direction": 0, "conviction": "low", "one_liner": "Sideways FMCG defensive"},
+    {"symbol": "RELIANCE", "ml_direction": -1, "ml_score": 36.77, "analyst_direction": 0, "conviction": "low", "one_liner": "Range-bound; no catalyst"},
+    {"symbol": "HDFCBANK", "ml_direction": -1, "ml_score": 36.54, "analyst_direction": 0, "conviction": "low", "one_liner": "Steady uptrend; largest private bank stable"},
+    {"symbol": "ETERNAL", "ml_direction": -1, "ml_score": 36.28, "analyst_direction": 0, "conviction": "low", "one_liner": "Strong recovery contradicts DOWN"},
+    {"symbol": "INFY", "ml_direction": -1, "ml_score": 36.14, "analyst_direction": 0, "conviction": "low", "one_liner": "+5.6% bounce after -13% selloff; Q1 results"},
+    {"symbol": "TATASTEEL", "ml_direction": -1, "ml_score": 36.98, "analyst_direction": -1, "conviction": "low", "one_liner": "-9% decline; metals weakness"},
+    {"symbol": "COALINDIA", "ml_direction": -1, "ml_score": 36.56, "analyst_direction": 0, "conviction": "low", "one_liner": "-7% decline but very low confidence (8.3%)"}
+  ],
+  "analyst_summary": "PREDICTIONS NOT ACTIONABLE TODAY. Model in degenerate state — cal_doy feature overwhelming all other signals, producing blanket bearish call with no stock differentiation. Daily OHLCV data pipeline failed (0 rows). Only actionable qualitative signal: WIPRO insider sell cluster (3+ sellers) combined with IT sector weakness. Recommend: (1) investigate daily_ohlcv data refresh failure, (2) investigate cal_doy feature importance — may need feature cap or removal, (3) do not trade on today's predictions."
+}

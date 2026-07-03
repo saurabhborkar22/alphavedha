@@ -1,0 +1,728 @@
+<title>AlphaVedha Morning Briefing — 3 Jul 2026</title>
+<style>
+  :root {
+    --bg: #0c0e14;
+    --bg-card: #12151e;
+    --bg-card-alt: #171b27;
+    --border: #1e2436;
+    --text: #c8cdd8;
+    --text-dim: #6b7394;
+    --text-heading: #e4e7f0;
+    --accent-warn: #e8a735;
+    --accent-down: #d44a4a;
+    --accent-up: #3ab87a;
+    --accent-neutral: #5b6fa3;
+    --accent-critical: #ff5c5c;
+    --tag-bg: rgba(232, 167, 53, 0.12);
+    --tag-border: rgba(232, 167, 53, 0.25);
+    --tabular: 'SFMono-Regular', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+    --body: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --display: Georgia, 'Times New Roman', serif;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f5f8;
+    --bg-card: #ffffff;
+    --bg-card-alt: #f0f1f5;
+    --border: #d8dce6;
+    --text: #3a3f52;
+    --text-dim: #7c8298;
+    --text-heading: #1a1e2e;
+    --accent-warn: #c48a1a;
+    --accent-down: #c03030;
+    --accent-up: #1f8a52;
+    --accent-neutral: #5b6fa3;
+    --accent-critical: #d42020;
+    --tag-bg: rgba(196, 138, 26, 0.1);
+    --tag-border: rgba(196, 138, 26, 0.3);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f5f8;
+      --bg-card: #ffffff;
+      --bg-card-alt: #f0f1f5;
+      --border: #d8dce6;
+      --text: #3a3f52;
+      --text-dim: #7c8298;
+      --text-heading: #1a1e2e;
+      --accent-warn: #c48a1a;
+      --accent-down: #c03030;
+      --accent-up: #1f8a52;
+      --accent-neutral: #5b6fa3;
+      --accent-critical: #d42020;
+      --tag-bg: rgba(196, 138, 26, 0.1);
+      --tag-border: rgba(196, 138, 26, 0.3);
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 24px 16px 60px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  .header {
+    border-bottom: 2px solid var(--accent-warn);
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+  .header h1 {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-heading);
+    letter-spacing: -0.3px;
+    text-wrap: balance;
+  }
+  .header .subtitle {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  .alert-banner {
+    background: rgba(255, 92, 92, 0.08);
+    border: 1px solid rgba(255, 92, 92, 0.3);
+    border-left: 4px solid var(--accent-critical);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-bottom: 24px;
+  }
+  .alert-banner .alert-title {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--accent-critical);
+    margin-bottom: 6px;
+  }
+  .alert-banner p {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .stat-tile {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .stat-tile .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .stat-tile .value {
+    font-family: var(--tabular);
+    font-variant-numeric: tabular-nums;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-heading);
+  }
+  .stat-tile .value.down { color: var(--accent-down); }
+  .stat-tile .value.up { color: var(--accent-up); }
+  .stat-tile .value.warn { color: var(--accent-warn); }
+  .stat-tile .detail {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  section {
+    margin-bottom: 28px;
+  }
+  section h2 {
+    font-family: var(--display);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-heading);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+  .tag.warn { background: var(--tag-bg); border: 1px solid var(--tag-border); color: var(--accent-warn); }
+  .tag.down { background: rgba(212,74,74,0.1); border: 1px solid rgba(212,74,74,0.25); color: var(--accent-down); }
+  .tag.up { background: rgba(58,184,122,0.1); border: 1px solid rgba(58,184,122,0.25); color: var(--accent-up); }
+  .tag.neutral { background: rgba(91,111,163,0.1); border: 1px solid rgba(91,111,163,0.25); color: var(--accent-neutral); }
+
+  .pattern-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .pattern-card .pattern-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--text-heading);
+    margin-bottom: 4px;
+  }
+  .pattern-card p {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .stock-detail {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 10px;
+  }
+  .stock-detail .stock-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .stock-detail .symbol {
+    font-family: var(--tabular);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text-heading);
+  }
+  .stock-detail .price {
+    font-family: var(--tabular);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .stock-detail .scores {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    font-family: var(--tabular);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .stock-detail .scores strong {
+    color: var(--text);
+  }
+  .stock-detail .reasoning {
+    font-size: 13px;
+    line-height: 1.55;
+    margin-bottom: 6px;
+  }
+  .stock-detail .risk {
+    font-size: 12px;
+    color: var(--accent-warn);
+    font-style: italic;
+  }
+
+  .brief-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  table.brief-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: var(--tabular);
+    font-variant-numeric: tabular-nums;
+  }
+  table.brief-table th {
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    background: var(--bg-card-alt);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+  }
+  table.brief-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  table.brief-table tr:last-child td { border-bottom: none; }
+  table.brief-table tr:hover td { background: var(--bg-card-alt); }
+  .dir-down { color: var(--accent-down); font-weight: 600; }
+  .dir-up { color: var(--accent-up); font-weight: 600; }
+
+  .freshness-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+  }
+  .freshness-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  .freshness-item .fname { color: var(--text); }
+  .freshness-item .fstatus { font-weight: 600; }
+  .freshness-item .fstatus.fresh { color: var(--accent-up); }
+  .freshness-item .fstatus.stale { color: var(--accent-down); }
+
+  .footnote {
+    font-size: 11px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    margin-top: 32px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="header">
+  <h1>AlphaVedha Morning Briefing — 3 July 2026</h1>
+  <div class="subtitle">Pre-market analyst review &middot; Generated 06:38 IST &middot; Market opens 09:15</div>
+</div>
+
+<!-- CRITICAL ALERT -->
+<div class="alert-banner">
+  <div class="alert-title">Model Anomaly Detected — Predictions Not Actionable Today</div>
+  <p>
+    <strong>ALL 50 Nifty stocks predicted DOWN</strong> in a <strong>bull regime</strong>. The top feature driving every single prediction is <code>cal_doy</code> (calendar day-of-year), and composite scores are compressed into a 1-point band (36.0–37.2 on a 100-point scale). This indicates the calendar feature is overwhelming all other signals — the model is expressing "July 3 is historically bearish" rather than stock-specific analysis. Additionally, daily OHLCV data did not refresh overnight (0 rows vs. 2,727 yesterday), so the model ran on stale price data. <strong>Analyst recommendation: do not trade on these signals.</strong> Investigate model calibration and data pipeline before next run.
+  </p>
+</div>
+
+<!-- MARKET CONTEXT STATS -->
+<div class="stats-grid">
+  <div class="stat-tile">
+    <div class="label">Regime</div>
+    <div class="value up">Bull</div>
+    <div class="detail">All 50 stocks in bull</div>
+  </div>
+  <div class="stat-tile">
+    <div class="label">Predictions</div>
+    <div class="value">64</div>
+    <div class="detail">58 symbols, Nifty 50 core</div>
+  </div>
+  <div class="stat-tile">
+    <div class="label">Bearish</div>
+    <div class="value down">52</div>
+    <div class="detail">of 64 total predictions</div>
+  </div>
+  <div class="stat-tile">
+    <div class="label">Bullish</div>
+    <div class="value up">12</div>
+    <div class="detail">Non-Nifty50 stocks only</div>
+  </div>
+  <div class="stat-tile">
+    <div class="label">Tradeable</div>
+    <div class="value warn">14</div>
+    <div class="detail">&gt;55% meta-confidence</div>
+  </div>
+  <div class="stat-tile">
+    <div class="label">Hash Published</div>
+    <div class="value down">No</div>
+    <div class="detail">In DB, not committed</div>
+  </div>
+  <div class="stat-tile">
+    <div class="label">System Status</div>
+    <div class="value warn">Degraded</div>
+    <div class="detail">5 stale tables</div>
+  </div>
+  <div class="stat-tile">
+    <div class="label">Score Range</div>
+    <div class="value">36–37</div>
+    <div class="detail">No differentiation</div>
+  </div>
+</div>
+
+<!-- DATA FRESHNESS -->
+<section>
+  <h2>Data Freshness</h2>
+  <div class="freshness-grid">
+    <div class="freshness-item"><span class="fname">paper_trades</span><span class="fstatus fresh">Fresh (64 rows)</span></div>
+    <div class="freshness-item"><span class="fname">prediction_proofs</span><span class="fstatus fresh">Fresh</span></div>
+    <div class="freshness-item"><span class="fname">disclosures</span><span class="fstatus fresh">Fresh (58 recent)</span></div>
+    <div class="freshness-item"><span class="fname">rating_events</span><span class="fstatus fresh">Fresh (51 recent)</span></div>
+    <div class="freshness-item"><span class="fname">transcripts</span><span class="fstatus fresh">Fresh (17 recent)</span></div>
+    <div class="freshness-item"><span class="fname">intraday_ohlcv</span><span class="fstatus fresh">Fresh (optional)</span></div>
+    <div class="freshness-item"><span class="fname">daily_ohlcv</span><span class="fstatus stale">Stale — 0 rows today</span></div>
+    <div class="freshness-item"><span class="fname">institutional_flows</span><span class="fstatus stale">Stale — 0 rows today</span></div>
+    <div class="freshness-item"><span class="fname">insider_trades</span><span class="fstatus stale">Stale — last 29 Jun</span></div>
+    <div class="freshness-item"><span class="fname">surveillance_flags</span><span class="fstatus stale">Stale — 0 rows today</span></div>
+    <div class="freshness-item"><span class="fname">bulk_block_deals</span><span class="fstatus stale">Stale — last 1 Jul</span></div>
+    <div class="freshness-item"><span class="fname">daily_pnl</span><span class="fstatus stale">Empty (optional)</span></div>
+  </div>
+</section>
+
+<!-- SECTOR PATTERNS -->
+<section>
+  <h2>Cross-Stock Patterns</h2>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag down">Anomaly</span> &nbsp;Blanket Bearish Call — Not a Sector Rotation</div>
+    <p>All 50 Nifty stocks predicted DOWN across every sector. This is not a sector rotation pattern — it is a model-wide bearish bias driven by the <code>cal_doy</code> feature dominating all other signals. In a functioning model, even bear-regime days produce mixed signals. The lack of any differentiation (scores 36–37) confirms this is a calendar artefact, not genuine sector analysis.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag warn">Watch</span> &nbsp;IT Sector — Post-Selloff Bounce</div>
+    <p>5/5 IT stocks (INFY, TCS, HCLTECH, WIPRO, TECHM) predicted DOWN, but all posted strong +4–6% bounces yesterday after multi-week selling (INFY -13%, WIPRO -12% from recent highs). Q1 FY27 results season imminent. WIPRO flagged for insider sell cluster (3+ insiders selling). The DOWN prediction may be directionally correct on a multi-day view but faces short-term bounce momentum.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag warn">Watch</span> &nbsp;Metals — Sustained Weakness</div>
+    <p>4/4 metals stocks (ADANIENT, HINDALCO, JSWSTEEL, TATASTEEL) predicted DOWN. HINDALCO -13% and TATASTEEL -9% from 20-day highs, trending lower consistently. This is the one sector where the bearish call aligns with visible price momentum.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag neutral">Note</span> &nbsp;Financials — 10 Stocks, All DOWN</div>
+    <p>Banking (5) + Financial Services (5) = 10 stocks all predicted DOWN. AXISBANK flagged with 4 KMP resignations (governance score: 15). SHRIRAMFIN has the highest meta-confidence of any Nifty stock at 54.9% — the only stock approaching the tradeable threshold. The sector has been trending sideways-to-up, contradicting the bearish call.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag neutral">Note</span> &nbsp;Energy — Declining But Low Conviction</div>
+    <p>5/5 energy stocks (NTPC, ONGC, COALINDIA, POWERGRID, RELIANCE) predicted DOWN. ONGC -11% and COALINDIA -7% from recent highs show genuine weakness. ONGC flagged with KMP resignation (governance: 15). POWERGRID also flagged (4 KMP resignations).</p>
+  </div>
+</section>
+
+<!-- TOP 10 DETAILED REVIEWS -->
+<section>
+  <h2>Top 10 Analyst Reviews — by Meta-Confidence</h2>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">SHRIRAMFIN</span>
+      <span class="price">&#8377;1,066.70 (+1.77%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag warn">Analyst: HOLD</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>36.49</strong></span>
+      <span>Meta-conf: <strong>54.9%</strong></span>
+      <span>Magnitude: <strong>-0.08%</strong></span>
+      <span>Analyst adj: <strong>0</strong></span>
+      <span>Conviction: <strong>Low</strong></span>
+    </div>
+    <div class="reasoning">Highest confidence Nifty prediction, but near-zero magnitude (-0.08%) makes this essentially a "flat" call. Stock has rallied +20% in 20 days (886 → 1,067), so a pause is plausible. However, the cal_doy feature dominance and compressed composite score undermine confidence. No red flags. Maintaining ML direction at face value but conviction is low — the magnitude says the model expects no meaningful move.</div>
+    <div class="risk">Risk: Strong momentum could continue; shorting a +20% rally without catalyst is high-risk.</div>
+  </div>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">APOLLOHOSP</span>
+      <span class="price">&#8377;8,696.00 (+0.90%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag neutral">Analyst: NEUTRAL</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>36.40</strong></span>
+      <span>Meta-conf: <strong>51.6%</strong></span>
+      <span>Magnitude: <strong>+0.08%</strong></span>
+      <span>Analyst adj: <strong>+5</strong></span>
+      <span>Conviction: <strong>Low</strong></span>
+    </div>
+    <div class="reasoning">ML predicts DOWN but the magnitude is actually <em>positive</em> (+0.08%) — the direction and magnitude contradict each other. Stock in steady uptrend (8,304 → 8,696). Healthcare sector showing no stress. No red flags. Upgrading toward neutral given the conflicting signals within the ML output itself.</div>
+    <div class="risk">Risk: Earnings season could introduce volatility; watch for hospital sector regulatory news.</div>
+  </div>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">ASIANPAINT</span>
+      <span class="price">&#8377;2,744.50 (+1.03%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag neutral">Analyst: NEUTRAL</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>36.41</strong></span>
+      <span>Meta-conf: <strong>45.5%</strong></span>
+      <span>Magnitude: <strong>+0.06%</strong></span>
+      <span>Analyst adj: <strong>+5</strong></span>
+      <span>Conviction: <strong>Low</strong></span>
+    </div>
+    <div class="reasoning">Price range-bound (2,635–2,755) for 2 weeks. Magnitude is positive despite DOWN direction — another internal contradiction. FMCG/paints sector stable. No red flags. No material qualitative catalyst in either direction. Adjusting toward neutral.</div>
+    <div class="risk">Risk: Monsoon season paint demand narratives; input cost pressure from crude.</div>
+  </div>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">AXISBANK</span>
+      <span class="price">&#8377;1,362.60 (-0.45%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag down">Analyst: DOWN</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>36.58</strong></span>
+      <span>Meta-conf: <strong>44.1%</strong></span>
+      <span>Magnitude: <strong>0.00%</strong></span>
+      <span>Analyst adj: <strong>-3</strong></span>
+      <span>Conviction: <strong>Low-Medium</strong></span>
+    </div>
+    <div class="reasoning">ML direction aligns with governance concern: 4 KMP resignations flagged (governance score: 15). While large banks routinely rotate leadership, 4 KMP departures in recent weeks is elevated and warrants monitoring. Price has plateaued after rally to 1,384. Small downward adjustment for governance flag, but conviction remains low due to the model's cal_doy issue.</div>
+    <div class="risk">Risk: KMP departures — investigate whether these are routine rotations or departures of concern. Banking sector NPA exposure to monitor.</div>
+  </div>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">INDIGO</span>
+      <span class="price">&#8377;5,444.00 (+0.83%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag neutral">Analyst: NEUTRAL</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>36.15</strong></span>
+      <span>Meta-conf: <strong>40.8%</strong></span>
+      <span>Magnitude: <strong>+0.01%</strong></span>
+      <span>Analyst adj: <strong>+5</strong></span>
+      <span>Conviction: <strong>Low</strong></span>
+    </div>
+    <div class="reasoning">Massive +21% rally in 20 days (4,481 → 5,444). Mean reversion is plausible, but magnitude is near-zero and positive, contradicting the DOWN direction. Aviation stocks can sustain momentum on capacity additions and fare hikes. No red flags. Adjusting toward neutral — no basis to short strong momentum without catalyst.</div>
+    <div class="risk">Risk: Oil price sensitivity; high valuation after rally makes it vulnerable to any disappointment.</div>
+  </div>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">MARUTI</span>
+      <span class="price">&#8377;14,348.00 (-0.33%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag neutral">Analyst: NEUTRAL</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>37.13</strong></span>
+      <span>Meta-conf: <strong>40.0%</strong></span>
+      <span>Magnitude: <strong>+0.07%</strong></span>
+      <span>Analyst adj: <strong>+5</strong></span>
+      <span>Conviction: <strong>Low</strong></span>
+    </div>
+    <div class="reasoning">One of the highest composite scores (37.13) but this is statistically indistinguishable from the pack. Price volatile — surged from 13,050 to 14,395 (+10%) then minor pullback. Positive magnitude again contradicts DOWN direction. Auto sales data typically released early July could be a catalyst. No red flags.</div>
+    <div class="risk">Risk: Monthly auto sales data release; EV transition narrative pressure.</div>
+  </div>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">ADANIENT</span>
+      <span class="price">&#8377;3,177.50 (+1.08%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag neutral">Analyst: NEUTRAL</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>36.19</strong></span>
+      <span>Meta-conf: <strong>39.9%</strong></span>
+      <span>Magnitude: <strong>+0.01%</strong></span>
+      <span>Analyst adj: <strong>+5</strong></span>
+      <span>Conviction: <strong>Low</strong></span>
+    </div>
+    <div class="reasoning">Rally from 2,908 to 3,177 (+9%). Adani group stocks carry higher event risk (regulatory, governance) but no red flags currently flagged. Magnitude near-zero and positive. Classified as metals sector by the system — actually a conglomerate. No material qualitative catalyst.</div>
+    <div class="risk">Risk: Adani group event risk is structurally elevated; watch for any new regulatory/legal developments.</div>
+  </div>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">EICHERMOT</span>
+      <span class="price">&#8377;7,250.00 (+1.55%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag down">Analyst: DOWN</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>36.54</strong></span>
+      <span>Meta-conf: <strong>38.4%</strong></span>
+      <span>Magnitude: <strong>-0.03%</strong></span>
+      <span>Analyst adj: <strong>0</strong></span>
+      <span>Conviction: <strong>Low</strong></span>
+    </div>
+    <div class="reasoning">Peaked at 7,639 and declined to 7,250 (-5%). One of few stocks where the price trend actually supports the DOWN direction, and the magnitude is negative (consistent). However, today's +1.55% bounce could indicate a reversal. No red flags. Maintaining ML direction but low conviction.</div>
+    <div class="risk">Risk: Auto sector monthly sales data; Royal Enfield export trajectory.</div>
+  </div>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">ADANIPORTS</span>
+      <span class="price">&#8377;1,883.20 (+1.89%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag neutral">Analyst: NEUTRAL</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>36.38</strong></span>
+      <span>Meta-conf: <strong>38.3%</strong></span>
+      <span>Magnitude: <strong>+0.03%</strong></span>
+      <span>Analyst adj: <strong>+5</strong></span>
+      <span>Conviction: <strong>Low</strong></span>
+    </div>
+    <div class="reasoning">Bottomed at 1,776 and recovering to 1,883 (+6%). Positive magnitude contradicts DOWN direction. Infra/ports sector generally stable. No red flags. Price action suggests recovery, not decline. Adjusting toward neutral.</div>
+    <div class="risk">Risk: Port traffic data; any Adani group-wide regulatory action.</div>
+  </div>
+
+  <div class="stock-detail">
+    <div class="stock-header">
+      <span class="symbol">LT</span>
+      <span class="price">&#8377;4,059.40 (-0.81%)</span>
+      <span class="tag down">ML: DOWN</span>
+      <span class="tag down">Analyst: DOWN</span>
+    </div>
+    <div class="scores">
+      <span>ML Score: <strong>36.67</strong></span>
+      <span>Meta-conf: <strong>36.9%</strong></span>
+      <span>Magnitude: <strong>-0.01%</strong></span>
+      <span>Analyst adj: <strong>0</strong></span>
+      <span>Conviction: <strong>Low</strong></span>
+    </div>
+    <div class="reasoning">Peaked at 4,216 and declining for 4 sessions to 4,059 (-3.7%). One of few stocks with negative price momentum supporting the DOWN call, and negative magnitude is directionally consistent. Order book and infrastructure capex cycle are long-term positives, but near-term weakness is visible. No red flags.</div>
+    <div class="risk">Risk: Government capex execution pace; any order inflow announcements could reverse.</div>
+  </div>
+</section>
+
+<!-- RED FLAGS -->
+<section>
+  <h2>Red Flags &amp; Governance Alerts</h2>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag warn">Governance</span> &nbsp;AXISBANK — 4 KMP Resignations</div>
+    <p>Governance score: 15. Four Key Management Personnel departures flagged. Monitor whether these are routine rotations or a pattern of concern.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag warn">Governance</span> &nbsp;POWERGRID — 4 KMP Resignations</div>
+    <p>Governance score: 15. Four KMP departures. As a PSU, leadership rotation can be government-directed. Low concern unless accompanied by operational disruption.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag warn">Governance</span> &nbsp;ONGC — KMP Resignation</div>
+    <p>Governance score: 15. One KMP departure. PSU — likely government-directed rotation. Low concern standalone.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag down">Insider Sell</span> &nbsp;WIPRO — 3+ Insider Sell Cluster</div>
+    <p>Insider sell score: 15. Three or more insiders selling in recent window. Combined with the IT sector selloff (WIPRO -12% from highs), this is the most material qualitative signal today. Worth monitoring for follow-up insider transactions.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag neutral">Clear</span> &nbsp;No Blowup Avoid List Entries</div>
+    <p>No Nifty 50 stock exceeds the 70-point blowup threshold. All red-flag scores are 15 or below.</p>
+  </div>
+</section>
+
+<!-- FULL 50-STOCK TABLE -->
+<section>
+  <h2>Full Stock Review — All 50 Nifty Stocks</h2>
+  <div class="brief-table-wrap">
+    <table class="brief-table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Price</th>
+          <th>Chg%</th>
+          <th>ML Dir</th>
+          <th>Conf%</th>
+          <th>Score</th>
+          <th>Analyst</th>
+          <th>Conv.</th>
+          <th>Flags</th>
+          <th>One-liner</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>SHRIRAMFIN</td><td>1,066.70</td><td>+1.77</td><td class="dir-down">DOWN</td><td>54.9</td><td>36.49</td><td>Hold</td><td>Low</td><td>—</td><td>Highest confidence but near-zero magnitude; +20% rally intact</td></tr>
+        <tr><td>APOLLOHOSP</td><td>8,696.00</td><td>+0.90</td><td class="dir-down">DOWN</td><td>51.6</td><td>36.40</td><td>Neutral</td><td>Low</td><td>—</td><td>Direction/magnitude contradiction; steady uptrend</td></tr>
+        <tr><td>ASIANPAINT</td><td>2,744.50</td><td>+1.03</td><td class="dir-down">DOWN</td><td>45.5</td><td>36.41</td><td>Neutral</td><td>Low</td><td>—</td><td>Range-bound; no catalyst either way</td></tr>
+        <tr><td>AXISBANK</td><td>1,362.60</td><td>-0.45</td><td class="dir-down">DOWN</td><td>44.1</td><td>36.58</td><td>Down</td><td>Low-Med</td><td>Gov:15</td><td>4 KMP resignations; plateauing price supports caution</td></tr>
+        <tr><td>INDIGO</td><td>5,444.00</td><td>+0.83</td><td class="dir-down">DOWN</td><td>40.8</td><td>36.15</td><td>Neutral</td><td>Low</td><td>—</td><td>+21% rally; no basis to short strong momentum</td></tr>
+        <tr><td>MARUTI</td><td>14,348.00</td><td>-0.33</td><td class="dir-down">DOWN</td><td>40.0</td><td>37.13</td><td>Neutral</td><td>Low</td><td>—</td><td>Positive magnitude contradicts DOWN; await monthly sales</td></tr>
+        <tr><td>ADANIENT</td><td>3,177.50</td><td>+1.08</td><td class="dir-down">DOWN</td><td>39.9</td><td>36.19</td><td>Neutral</td><td>Low</td><td>—</td><td>Recovering trend; no material catalyst</td></tr>
+        <tr><td>EICHERMOT</td><td>7,250.00</td><td>+1.55</td><td class="dir-down">DOWN</td><td>38.4</td><td>36.54</td><td>Down</td><td>Low</td><td>—</td><td>Price decline supports direction; bouncing today</td></tr>
+        <tr><td>ADANIPORTS</td><td>1,883.20</td><td>+1.89</td><td class="dir-down">DOWN</td><td>38.3</td><td>36.38</td><td>Neutral</td><td>Low</td><td>—</td><td>Recovery from lows contradicts DOWN call</td></tr>
+        <tr><td>LT</td><td>4,059.40</td><td>-0.81</td><td class="dir-down">DOWN</td><td>36.9</td><td>36.67</td><td>Down</td><td>Low</td><td>—</td><td>4-session decline; near-term weakness visible</td></tr>
+        <tr><td>KOTAKBANK</td><td>399.30</td><td>-0.29</td><td class="dir-down">DOWN</td><td>35.6</td><td>36.52</td><td>Neutral</td><td>Low</td><td>—</td><td>Sideways after rally; no catalyst</td></tr>
+        <tr><td>TRENT</td><td>3,317.80</td><td>+0.84</td><td class="dir-down">DOWN</td><td>34.6</td><td>36.25</td><td>Neutral</td><td>Low</td><td>—</td><td>Strong +20% rally; no basis for DOWN</td></tr>
+        <tr><td>MAXHEALTH</td><td>1,127.40</td><td>-1.10</td><td class="dir-down">DOWN</td><td>31.9</td><td>36.36</td><td>Neutral</td><td>Low</td><td>—</td><td>Pulling back from highs; healthcare stable</td></tr>
+        <tr><td>JSWSTEEL</td><td>1,223.80</td><td>+0.62</td><td class="dir-down">DOWN</td><td>30.1</td><td>36.69</td><td>Neutral</td><td>Low</td><td>—</td><td>Declining from 1,297 highs; metals weakness</td></tr>
+        <tr><td>SBIN</td><td>1,051.60</td><td>+0.40</td><td class="dir-down">DOWN</td><td>29.4</td><td>36.50</td><td>Neutral</td><td>Low</td><td>—</td><td>Steady uptrend contradicts DOWN call</td></tr>
+        <tr><td>GRASIM</td><td>3,169.20</td><td>+0.92</td><td class="dir-down">DOWN</td><td>29.2</td><td>36.53</td><td>Neutral</td><td>Low</td><td>—</td><td>Range-bound 3,050–3,175; no catalyst</td></tr>
+        <tr><td>TMPV</td><td>345.95</td><td>-0.53</td><td class="dir-down">DOWN</td><td>28.3</td><td>36.03</td><td>Down</td><td>Low</td><td>—</td><td>Sustained decline from 397 (-13%); weakest Nifty chart</td></tr>
+        <tr><td>CIPLA</td><td>1,456.00</td><td>-0.05</td><td class="dir-down">DOWN</td><td>26.4</td><td>36.74</td><td>Neutral</td><td>Low</td><td>—</td><td>Recovery from 1,350 lows; pharma stable</td></tr>
+        <tr><td>BEL</td><td>415.05</td><td>-0.29</td><td class="dir-down">DOWN</td><td>25.3</td><td>36.89</td><td>Neutral</td><td>Low</td><td>—</td><td>Pulling back from 431; defence sector stable</td></tr>
+        <tr><td>DRREDDY</td><td>1,345.70</td><td>+0.43</td><td class="dir-down">DOWN</td><td>25.3</td><td>36.77</td><td>Neutral</td><td>Low</td><td>—</td><td>Trending up from 1,267 lows; no catalyst</td></tr>
+        <tr><td>HINDALCO</td><td>949.20</td><td>+1.01</td><td class="dir-down">DOWN</td><td>25.3</td><td>36.89</td><td>Down</td><td>Low</td><td>—</td><td>Sharp -13% decline from 1,092; metals sector weakness</td></tr>
+        <tr><td>BAJAJFINSV</td><td>1,855.70</td><td>+3.23</td><td class="dir-down">DOWN</td><td>24.8</td><td>36.79</td><td>Neutral</td><td>Low</td><td>—</td><td>Strong +3.2% day; momentum contradicts DOWN</td></tr>
+        <tr><td>JIOFIN</td><td>239.73</td><td>-0.12</td><td class="dir-down">DOWN</td><td>24.2</td><td>36.42</td><td>Neutral</td><td>Low</td><td>—</td><td>Sideways; no material catalyst</td></tr>
+        <tr><td>M&M</td><td>3,175.40</td><td>+1.45</td><td class="dir-down">DOWN</td><td>24.2</td><td>36.57</td><td>Neutral</td><td>Low</td><td>—</td><td>Range-bound; auto sales data upcoming</td></tr>
+        <tr><td>POWERGRID</td><td>288.20</td><td>+0.23</td><td class="dir-down">DOWN</td><td>24.1</td><td>36.86</td><td>Neutral</td><td>Low</td><td>Gov:15</td><td>4 KMP departures (PSU rotation); price sideways</td></tr>
+        <tr><td>ICICIBANK</td><td>1,400.00</td><td>+1.46</td><td class="dir-down">DOWN</td><td>24.0</td><td>36.55</td><td>Neutral</td><td>Low</td><td>—</td><td>Strong uptrend (1,250 → 1,400); contradicts DOWN</td></tr>
+        <tr><td>SUNPHARMA</td><td>1,871.00</td><td>+0.26</td><td class="dir-down">DOWN</td><td>23.8</td><td>36.89</td><td>Neutral</td><td>Low</td><td>—</td><td>Steady uptrend; pharma defensive</td></tr>
+        <tr><td>TITAN</td><td>4,481.10</td><td>+1.88</td><td class="dir-down">DOWN</td><td>23.7</td><td>36.57</td><td>Neutral</td><td>Low</td><td>—</td><td>Recovering from 4,025 lows; consumer discretionary</td></tr>
+        <tr><td>ULTRACEMCO</td><td>11,536.00</td><td>+0.70</td><td class="dir-down">DOWN</td><td>23.3</td><td>36.95</td><td>Neutral</td><td>Low</td><td>—</td><td>Range-bound; cement demand seasonal</td></tr>
+        <tr><td>HINDUNILVR</td><td>2,210.60</td><td>+1.31</td><td class="dir-down">DOWN</td><td>23.2</td><td>36.57</td><td>Neutral</td><td>Low</td><td>—</td><td>Sideways; FMCG defensive, no catalyst</td></tr>
+        <tr><td>NESTLEIND</td><td>1,446.20</td><td>-0.52</td><td class="dir-down">DOWN</td><td>23.1</td><td>36.69</td><td>Neutral</td><td>Low</td><td>—</td><td>Range-bound 1,382–1,453; no catalyst</td></tr>
+        <tr><td>TCS</td><td>2,068.10</td><td>+4.31</td><td class="dir-down">DOWN</td><td>23.1</td><td>36.21</td><td>Neutral</td><td>Low</td><td>—</td><td>Bouncing +4.3% after IT selloff; Q1 results imminent</td></tr>
+        <tr><td>NTPC</td><td>358.25</td><td>+0.10</td><td class="dir-down">DOWN</td><td>23.0</td><td>37.17</td><td>Neutral</td><td>Low</td><td>—</td><td>Highest composite score but no differentiation; sideways</td></tr>
+        <tr><td>BHARTIARTL</td><td>1,875.00</td><td>+0.21</td><td class="dir-down">DOWN</td><td>22.6</td><td>36.72</td><td>Neutral</td><td>Low</td><td>—</td><td>Pulling back from 1,916 highs; telecom defensive</td></tr>
+        <tr><td>SBILIFE</td><td>1,784.40</td><td>-0.36</td><td class="dir-down">DOWN</td><td>22.3</td><td>36.92</td><td>Neutral</td><td>Low</td><td>—</td><td>Choppy; insurance sector stable</td></tr>
+        <tr><td>TATACONSUM</td><td>1,107.20</td><td>+1.49</td><td class="dir-down">DOWN</td><td>20.1</td><td>36.89</td><td>Neutral</td><td>Low</td><td>—</td><td>Range-bound; FMCG no catalyst</td></tr>
+        <tr><td>BAJFINANCE</td><td>1,018.40</td><td>+0.34</td><td class="dir-down">DOWN</td><td>19.5</td><td>36.47</td><td>Neutral</td><td>Low</td><td>—</td><td>Strong rally from 870 (+17%); contradicts DOWN</td></tr>
+        <tr><td>HDFCLIFE</td><td>571.35</td><td>+0.25</td><td class="dir-down">DOWN</td><td>17.6</td><td>36.64</td><td>Neutral</td><td>Low</td><td>—</td><td>Pulling back from 597; insurance stable</td></tr>
+        <tr><td>TECHM</td><td>1,421.30</td><td>+4.34</td><td class="dir-down">DOWN</td><td>16.6</td><td>36.30</td><td>Neutral</td><td>Low</td><td>—</td><td>+4.3% bounce; IT results season watch</td></tr>
+        <tr><td>HCLTECH</td><td>1,078.10</td><td>+4.24</td><td class="dir-down">DOWN</td><td>16.0</td><td>36.28</td><td>Neutral</td><td>Low</td><td>—</td><td>Strong bounce after selling; Q1 results watch</td></tr>
+        <tr><td>BAJAJ-AUTO</td><td>9,857.00</td><td>+0.15</td><td class="dir-down">DOWN</td><td>15.0</td><td>37.13</td><td>Neutral</td><td>Low</td><td>—</td><td>Declining from 10,342 (-5%); auto sales watch</td></tr>
+        <tr><td>ONGC</td><td>235.96</td><td>+0.41</td><td class="dir-down">DOWN</td><td>15.0</td><td>37.05</td><td>Down</td><td>Low</td><td>Gov:15</td><td>-11% decline + KMP resignation; energy weakness</td></tr>
+        <tr><td>WIPRO</td><td>174.00</td><td>+2.27</td><td class="dir-down">DOWN</td><td>14.8</td><td>36.28</td><td>Down</td><td>Low-Med</td><td>Ins:15</td><td>3+ insider sell cluster + IT sector selling; most actionable flag</td></tr>
+        <tr><td>ITC</td><td>289.90</td><td>-0.14</td><td class="dir-down">DOWN</td><td>14.6</td><td>36.70</td><td>Neutral</td><td>Low</td><td>—</td><td>Sideways; FMCG defensive</td></tr>
+        <tr><td>RELIANCE</td><td>1,303.50</td><td>-0.34</td><td class="dir-down">DOWN</td><td>14.4</td><td>36.77</td><td>Neutral</td><td>Low</td><td>—</td><td>Range-bound 1,260–1,332; no catalyst</td></tr>
+        <tr><td>HDFCBANK</td><td>795.90</td><td>-0.03</td><td class="dir-down">DOWN</td><td>13.9</td><td>36.54</td><td>Neutral</td><td>Low</td><td>—</td><td>Steady uptrend from 738; largest private bank stable</td></tr>
+        <tr><td>ETERNAL</td><td>279.70</td><td>+0.00</td><td class="dir-down">DOWN</td><td>13.4</td><td>36.28</td><td>Neutral</td><td>Low</td><td>—</td><td>Strong recovery from 235; momentum contradicts DOWN</td></tr>
+        <tr><td>INFY</td><td>1,040.90</td><td>+5.64</td><td class="dir-down">DOWN</td><td>12.7</td><td>36.14</td><td>Neutral</td><td>Low</td><td>—</td><td>+5.6% bounce after -13% selloff; Q1 results imminent</td></tr>
+        <tr><td>TATASTEEL</td><td>187.67</td><td>+1.35</td><td class="dir-down">DOWN</td><td>11.1</td><td>36.98</td><td>Down</td><td>Low</td><td>—</td><td>-9% decline from 206; metals weakness pattern</td></tr>
+        <tr><td>COALINDIA</td><td>438.90</td><td>+0.95</td><td class="dir-down">DOWN</td><td>8.3</td><td>36.56</td><td>Neutral</td><td>Low</td><td>—</td><td>-7% decline but very low confidence (8.3%)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ISSUES LOG -->
+<section>
+  <h2>Pipeline &amp; System Issues</h2>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag down">Critical</span> &nbsp;daily_ohlcv Data Refresh Failed</div>
+    <p>0 rows ingested today vs. 2,727 yesterday. The 17:00 data refresh job did not run or failed silently. This means predictions were generated on stale T-1 price data. This is the most likely contributor to the degenerate model output — without fresh price features, the calendar feature dominates.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag warn">Warning</span> &nbsp;predict/{symbol} Endpoint — 500 Error</div>
+    <p>Individual prediction endpoint returns Internal Server Error for non-Nifty-50 symbols (BPCL, TATAMOTORS, DIAMINESQ, etc.). These 14 stocks have predictions in paper_trades but cannot be queried individually. No traceback returned — requires server-side log investigation.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag warn">Warning</span> &nbsp;Prediction Hash Not Published</div>
+    <p>SHA256 hash is in the database but not committed to git or OTS-stamped. The proof-of-prediction chain is incomplete for today.</p>
+  </div>
+
+  <div class="pattern-card">
+    <div class="pattern-title"><span class="tag warn">Warning</span> &nbsp;Multiple Data Tables Stale</div>
+    <p>institutional_flows (0 rows), insider_trades (last: 29 Jun), surveillance_flags (0 rows), bulk_block_deals (last: 1 Jul) — all stale. Predictions made without current institutional flow data or insider trade signals.</p>
+  </div>
+</section>
+
+<div class="footnote">
+  AlphaVedha Analyst Briefing &middot; Model v0.1.0 &middot; Generated by automated routine &middot; Not investment advice &middot; All predictions are for research purposes only
+</div>
