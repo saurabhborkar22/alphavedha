@@ -231,3 +231,44 @@ class TestDegeneracyGate:
         empty_y = labels.iloc[0:0]
         reason = _check_degenerate_direction_model(model, empty_X, empty_y)  # type: ignore[arg-type]
         assert reason is None
+
+
+class TestDropExcludedFeatures:
+    def test_drops_raw_date_features(self) -> None:
+        from alphavedha.training.pipeline import _drop_stub_features
+
+        X = pd.DataFrame(
+            {
+                "ret_1d": [0.01, -0.02],
+                "cal_year": [2026, 2026],
+                "cal_doy": [187, 188],
+                "cal_week_of_year": [28, 28],
+                "cal_month": [7, 7],
+            }
+        )
+        out = _drop_stub_features(X)
+        assert "cal_year" not in out.columns
+        assert "cal_doy" not in out.columns
+        assert "cal_week_of_year" not in out.columns
+        # Cyclical seasonality features survive — only raw positions go.
+        assert list(out.columns) == ["ret_1d", "cal_month"]
+
+    def test_drops_stub_and_date_features_together(self) -> None:
+        from alphavedha.training.pipeline import _drop_stub_features
+
+        X = pd.DataFrame(
+            {
+                "macro_gsec_10y": [7.0, 7.0],
+                "cal_year": [2026, 2026],
+                "mom_rsi_14": [55.0, 60.0],
+            }
+        )
+        out = _drop_stub_features(X)
+        assert list(out.columns) == ["mom_rsi_14"]
+
+    def test_noop_when_nothing_excluded(self) -> None:
+        from alphavedha.training.pipeline import _drop_stub_features
+
+        X = pd.DataFrame({"ret_1d": [0.01], "mom_rsi_14": [55.0]})
+        out = _drop_stub_features(X)
+        assert list(out.columns) == ["ret_1d", "mom_rsi_14"]
