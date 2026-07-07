@@ -105,6 +105,65 @@ promoter_groups:
     - GRASIM
     - ULTRACEMCO
 
+# ─── News Aliases ────────────────────────────────────────
+# Company-name variants used to map news headlines to NSE symbols.
+# Matching rules (intel/symbols.py): aliases match case-insensitively on
+# word boundaries; the NSE ticker itself additionally matches as an
+# exact-case uppercase word. Keep aliases specific — a bare "Tata" or
+# "Reliance" would tag unrelated group companies.
+# Used by: telegram news collector, live news watcher
+news_aliases:
+  HDFCBANK: [HDFC Bank]
+  ICICIBANK: [ICICI Bank]
+  SBIN: [State Bank of India, SBI]
+  KOTAKBANK: [Kotak Mahindra Bank, Kotak Bank]
+  AXISBANK: [Axis Bank]
+  TCS: [Tata Consultancy Services, Tata Consultancy]
+  INFY: [Infosys]
+  WIPRO: [Wipro]
+  HCLTECH: [HCL Technologies, HCLTech]
+  TECHM: [Tech Mahindra]
+  RELIANCE: [Reliance Industries, RIL]
+  ONGC: [Oil and Natural Gas Corporation]
+  NTPC: []
+  POWERGRID: [Power Grid]
+  COALINDIA: [Coal India]
+  MARUTI: [Maruti Suzuki, Maruti]
+  TMPV: [Tata Motors]
+  "M&M": [Mahindra & Mahindra, Mahindra and Mahindra]
+  BAJAJ-AUTO: [Bajaj Auto]
+  EICHERMOT: [Eicher Motors, Royal Enfield]
+  SUNPHARMA: [Sun Pharma, Sun Pharmaceutical]
+  DRREDDY: [Dr Reddy, Dr. Reddy]
+  CIPLA: [Cipla]
+  APOLLOHOSP: [Apollo Hospitals]
+  MAXHEALTH: [Max Healthcare]
+  HINDUNILVR: [Hindustan Unilever, HUL]
+  ITC: []
+  NESTLEIND: [Nestle India, Nestle]
+  TATACONSUM: [Tata Consumer]
+  ASIANPAINT: [Asian Paints]
+  TITAN: [Titan Company, Titan]
+  TRENT: [Trent]
+  ETERNAL: [Eternal, Zomato, Blinkit]
+  TATASTEEL: [Tata Steel]
+  JSWSTEEL: [JSW Steel]
+  HINDALCO: [Hindalco]
+  ADANIENT: [Adani Enterprises]
+  BAJFINANCE: [Bajaj Finance]
+  BAJAJFINSV: [Bajaj Finserv]
+  SBILIFE: [SBI Life]
+  HDFCLIFE: [HDFC Life]
+  JIOFIN: [Jio Financial]
+  SHRIRAMFIN: [Shriram Finance]
+  LT: [Larsen & Toubro, Larsen, "L&T"]
+  ADANIPORTS: [Adani Ports]
+  ULTRACEMCO: [UltraTech Cement, UltraTech]
+  GRASIM: [Grasim]
+  BEL: [Bharat Electronics]
+  INDIGO: [IndiGo, InterGlobe Aviation]
+  BHARTIARTL: [Bharti Airtel, Airtel]
+
 # ─── Screener Symbol Mapping ─────────────────────────────
 # Maps NSE symbols to Screener.in slugs for earnings scraping.
 # Used by: EarningsProvider (earnings_provider.py)

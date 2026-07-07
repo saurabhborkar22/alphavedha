@@ -62,6 +62,8 @@ BSE_INGESTION_DAY = "sunday"
 BSE_INGESTION_TIME = "21:00"
 TRENDS_INGESTION_TIME = "21:30"
 INTRADAY_POLL_INTERVAL_MINUTES = 2
+TELEGRAM_NEWS_POLL_MINUTES = 15  # t.me/s/ previews hold ~20 messages; 15 min loses nothing
+TELEGRAM_NEWS_WINDOW = (7, 22)  # IST hours — channels are quiet overnight
 REBALANCE_MONTHS = {3, 9}
 
 # Paper trade evaluation: triple-barrier config uses a 15-trading-day max hold.
@@ -1767,6 +1769,41 @@ class AlphaVedhaScheduler:
         self._record_job(result)
         return result
 
+    def run_telegram_news_ingestion(self) -> JobResult:
+        """Poll Telegram news-channel previews and store symbol-matched messages."""
+        result = JobResult(job_name="telegram_news_ingestion", started_at=_now_ist())
+
+        hour = _now_ist().hour
+        if not (TELEGRAM_NEWS_WINDOW[0] <= hour < TELEGRAM_NEWS_WINDOW[1]):
+            result.success = True
+            result.finished_at = _now_ist()
+            return result
+
+        logger.info("scheduler_job_start", job="telegram_news_ingestion")
+
+        try:
+            if self._demo:
+                logger.info("telegram_news_ingestion_skipped", reason="demo mode")
+            else:
+                from alphavedha.intel.collectors.telegram_news import ingest_telegram_news
+
+                counts: dict[str, int] = _run_async(ingest_telegram_news())  # type: ignore[assignment]
+                result.symbols_processed = counts.get("rows", 0)
+                logger.info(
+                    "scheduler_job_complete",
+                    job="telegram_news_ingestion",
+                    **counts,
+                )
+
+            result.success = True
+        except Exception as e:
+            result.error = str(e)
+            logger.error("scheduler_job_failed", job="telegram_news_ingestion", error=str(e))
+
+        result.finished_at = _now_ist()
+        self._record_job(result)
+        return result
+
     def setup_schedule(self) -> None:
         """Register all jobs with the schedule library."""
         schedule.every().day.at(PREDICTION_TIME).do(self.run_daily_predictions)
@@ -1791,6 +1828,7 @@ class AlphaVedhaScheduler:
         schedule.every().day.at(INTEL_QUALITY_CHECK_TIME).do(self.run_intel_quality_check)
         schedule.every().day.at(XGBOOST_RETRAIN_TIME).do(self.run_daily_xgboost_retrain)
         schedule.every(INTRADAY_POLL_INTERVAL_MINUTES).minutes.do(self.run_intraday_poll)
+        schedule.every(TELEGRAM_NEWS_POLL_MINUTES).minutes.do(self.run_telegram_news_ingestion)
 
         getattr(schedule.every(), BSE_INGESTION_DAY).at(BSE_INGESTION_TIME).do(
             self.run_bse_ingestion,

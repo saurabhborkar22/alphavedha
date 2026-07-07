@@ -61,3 +61,6 @@ pytz>=2024.1
 python-dateutil>=2.9
 tqdm>=4.66
 schedule>=1.2.2
+
+# Telegram live news watcher (news-watch compose service; pure-python MTProto)
+telethon>=1.36

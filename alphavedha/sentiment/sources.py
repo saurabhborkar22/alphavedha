@@ -224,3 +224,50 @@ class RedditSource:
         except Exception as exc:
             logger.warning("reddit_fetch_failed", symbol=symbol, error=str(exc))
             return []
+
+
+# ---------------------------------------------------------------------------
+# Telegram source — news rows stored by the intel collectors
+# ---------------------------------------------------------------------------
+
+
+class TelegramSource:
+    """Surfaces Telegram channel news already stored in ``disclosures``.
+
+    No network calls — the polling collector / live watcher persist messages
+    with source="TELEGRAM"; this reads them back per symbol for FinBERT
+    scoring. Degrades gracefully to an empty list on any DB error.
+    """
+
+    async def fetch(self, symbol: str, lookback_days: int = 7) -> list[SentimentPost]:
+        since = datetime.now(UTC) - timedelta(days=lookback_days)
+        try:
+            from alphavedha.intel.store import load_disclosures
+
+            df = await load_disclosures(symbol=symbol, since=since, limit=100)
+        except Exception as exc:
+            logger.debug("telegram_source_failed", symbol=symbol, error=str(exc))
+            return []
+
+        if df.empty or "source" not in df.columns:
+            return []
+
+        posts: list[SentimentPost] = []
+        for _, row in df[df["source"] == "TELEGRAM"].iterrows():
+            text = str(row.get("text") or row.get("headline") or "").strip()[:512]
+            if not text:
+                continue
+            published_at = row["filed_at"]
+            if published_at.tzinfo is None:
+                published_at = published_at.replace(tzinfo=UTC)
+            posts.append(
+                SentimentPost(
+                    text=text,
+                    source="telegram",
+                    published_at=published_at.astimezone(UTC),
+                    url=str(row.get("url") or ""),
+                )
+            )
+
+        logger.debug("telegram_posts_fetched", symbol=symbol, n=len(posts))
+        return posts
