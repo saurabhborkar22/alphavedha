@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import AsyncMock, patch
 
 import pandas as pd
@@ -472,3 +472,49 @@ class TestOpsAltDataPush:
             headers=auth_headers,
         )
         assert "alternative_data" in resp.json()["allowed_tables"]
+       
+class TestIsStale:
+    """_is_stale: date-only values judged by trading day, datetimes by hours."""
+
+    def _now(self, y: int, m: int, d: int, hour: int) -> datetime:
+        from alphavedha.api.routes.ops import IST
+
+        return datetime(y, m, d, hour, 0, tzinfo=IST)
+
+    def test_none_is_stale(self) -> None:
+        from alphavedha.api.routes.ops import _is_stale
+
+        assert _is_stale(None) is True
+
+    def test_garbage_is_stale(self) -> None:
+        from alphavedha.api.routes.ops import _is_stale
+
+        assert _is_stale("not-a-date") is True
+
+    def test_date_yesterday_fresh_before_evening_job(self) -> None:
+        from alphavedha.api.routes.ops import _is_stale
+
+        # Tue 11:30 IST, newest row Mon — the 17:00 job hasn't run yet today.
+        assert _is_stale("2026-07-06", now=self._now(2026, 7, 7, 11)) is False
+
+    def test_date_friday_fresh_on_monday_morning(self) -> None:
+        from alphavedha.api.routes.ops import _is_stale
+
+        # Mon 09:00 IST, newest row Fri — weekend gap is not staleness.
+        assert _is_stale("2026-07-03", now=self._now(2026, 7, 6, 9)) is False
+
+    def test_date_missing_trading_day_is_stale(self) -> None:
+        from alphavedha.api.routes.ops import _is_stale
+
+        # Wed morning, newest row Mon — Tuesday's job never landed.
+        assert _is_stale("2026-07-06", now=self._now(2026, 7, 8, 9)) is True
+
+    def test_datetime_within_threshold_fresh(self) -> None:
+        from alphavedha.api.routes.ops import _is_stale
+
+        assert _is_stale("2026-07-06T19:05:00", now=self._now(2026, 7, 7, 11)) is False
+
+    def test_datetime_beyond_threshold_stale(self) -> None:
+        from alphavedha.api.routes.ops import _is_stale
+
+        assert _is_stale("2026-07-05T19:05:00", now=self._now(2026, 7, 7, 11)) is True

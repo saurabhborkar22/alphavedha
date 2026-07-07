@@ -59,13 +59,33 @@ _STUB_FEATURES: frozenset[str] = frozenset(
     ]
 )
 
+# Raw ordinal date positions let trees memorize WHERE in history a row sits
+# instead of market structure. At inference every symbol shares the same
+# value (cal_year=2026 for all 50), so the model replays whatever the
+# current year's training slice looked like — diagnosed Jul 2026 as
+# cal_year/cal_doy top importance on all symbols with a uniform bearish
+# cross-section. Cyclical calendar features (cal_month, expiry flags,
+# result-season flags, ...) remain — they encode seasonality, not position.
+# Still computed at serve time so previously trained artifacts keep working.
+_RAW_DATE_FEATURES: frozenset[str] = frozenset(
+    [
+        "cal_year",
+        "cal_doy",
+        "cal_week_of_year",
+    ]
+)
+
 
 def _drop_stub_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Remove known-stub (constant/NaN) columns before training."""
+    """Remove known-stub (constant/NaN) and raw-date columns before training."""
     cols_to_drop = [c for c in df.columns if c in _STUB_FEATURES]
     if cols_to_drop:
         logger.info("train_drop_stub_features", dropped=cols_to_drop, n=len(cols_to_drop))
-        return df.drop(columns=cols_to_drop)
+        df = df.drop(columns=cols_to_drop)
+    date_cols = [c for c in df.columns if c in _RAW_DATE_FEATURES]
+    if date_cols:
+        logger.info("train_drop_raw_date_features", dropped=date_cols, n=len(date_cols))
+        df = df.drop(columns=date_cols)
     return df
 
 

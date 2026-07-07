@@ -157,11 +157,14 @@ async def _persist_paper_trades(
     persisted = 0
     for pred in predictions:
         try:
-            entry_price: float | None = None
-            try:
-                entry_price = await _latest_close(pred.symbol, prediction_date)
-            except Exception as e:
-                logger.warning("entry_price_unavailable", symbol=pred.symbol, error=str(e))
+            # Prefer the engine's entry — the stop/target below are ATR
+            # offsets from it, so mixing entry sources would skew stop math.
+            entry_price: float | None = pred.entry_price
+            if entry_price is None:
+                try:
+                    entry_price = await _latest_close(pred.symbol, prediction_date)
+                except Exception as e:
+                    logger.warning("entry_price_unavailable", symbol=pred.symbol, error=str(e))
             if entry_price is None:
                 logger.warning("entry_price_missing", symbol=pred.symbol)
 
@@ -177,6 +180,8 @@ async def _persist_paper_trades(
                     "regime": pred.regime,
                     "is_tradeable": bool(pred.is_tradeable),
                     "entry_price": entry_price,
+                    "stop_loss_price": pred.stop_loss_price,
+                    "take_profit_price": pred.take_profit_price,
                 }
             )
             persisted += 1
