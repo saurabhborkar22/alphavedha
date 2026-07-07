@@ -96,16 +96,36 @@ async def _table_freshness(
         return {"latest": None, "recent_count": 0, "error": str(e)}
 
 
-def _is_stale(latest: str | None, max_age_hours: int = 26) -> bool:
-    """Check if latest timestamp is older than max_age_hours."""
+def _previous_trading_day(d: date) -> date:
+    """Most recent weekday before d (NSE holidays not tracked)."""
+    prev = d - timedelta(days=1)
+    while prev.weekday() >= 5:
+        prev -= timedelta(days=1)
+    return prev
+
+
+def _is_stale(latest: str | None, max_age_hours: int = 26, now: datetime | None = None) -> bool:
+    """Check whether a table's newest row is older than expected.
+
+    Date-granularity tables (daily_ohlcv, institutional_flows, ...) stamp
+    rows at midnight, so a fixed hour threshold marks them stale every day
+    from ~02:00 until their evening ingestion job — and all Monday until
+    17:00. That burned every morning routine briefing with 4-5 false
+    "stale" problems, burying real alerts. Date-only values are instead
+    judged by trading day: fresh while data for the previous trading day
+    exists; missing data is flagged the morning after the job skipped.
+    Datetime values keep the hour threshold.
+    """
     if latest is None:
         return True
+    now = now or datetime.now(IST)
     try:
+        if len(latest) == 10:  # date-only, e.g. "2026-07-06"
+            return date.fromisoformat(latest) < _previous_trading_day(now.date())
         dt = datetime.fromisoformat(latest)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=IST)
-        age = datetime.now(IST) - dt
-        return age > timedelta(hours=max_age_hours)
+        return now - dt > timedelta(hours=max_age_hours)
     except (ValueError, TypeError):
         return True
 
