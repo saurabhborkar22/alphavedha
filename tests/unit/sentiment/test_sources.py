@@ -5,11 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
+import pandas as pd
 import pytest
 
 from alphavedha.sentiment.sources import (
     RedditSource,
     RSSSource,
+    TelegramSource,
     _item_matches,
     _symbol_variants,
 )
@@ -123,4 +125,59 @@ class TestRedditSource:
             with patch.object(src, "_get_reddit", return_value=None):
                 posts = await src.fetch("TCS", lookback_days=7)
         assert isinstance(posts, list)
+        assert posts == []
+
+
+class TestTelegramSource:
+    def _disclosures_df(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "symbol": "TCS",
+                    "source": "TELEGRAM",
+                    "headline": "TCS wins mega deal",
+                    "text": "TCS wins mega deal from European client",
+                    "filed_at": datetime.now(UTC) - timedelta(days=1),
+                    "url": "https://t.me/moneycontrolcom/1",
+                },
+                {
+                    "symbol": "TCS",
+                    "source": "BSE",  # exchange filing — must be excluded
+                    "headline": "Board meeting intimation",
+                    "text": "Board meeting on ...",
+                    "filed_at": datetime.now(UTC) - timedelta(days=2),
+                    "url": None,
+                },
+            ]
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_only_telegram_rows(self) -> None:
+        with patch(
+            "alphavedha.intel.store.load_disclosures",
+            new=AsyncMock(return_value=self._disclosures_df()),
+        ):
+            src = TelegramSource()
+            posts = await src.fetch("TCS", lookback_days=7)
+        assert len(posts) == 1
+        assert posts[0].source == "telegram"
+        assert "mega deal" in posts[0].text
+        assert posts[0].published_at.tzinfo is not None
+
+    @pytest.mark.asyncio
+    async def test_empty_dataframe(self) -> None:
+        with patch(
+            "alphavedha.intel.store.load_disclosures",
+            new=AsyncMock(return_value=pd.DataFrame()),
+        ):
+            posts = await TelegramSource().fetch("TCS", lookback_days=7)
+        assert posts == []
+
+    @pytest.mark.asyncio
+    async def test_degrades_on_db_error(self) -> None:
+        with patch(
+            "alphavedha.intel.store.load_disclosures",
+            new=AsyncMock(side_effect=RuntimeError("db down")),
+        ):
+            posts = await TelegramSource().fetch("TCS", lookback_days=7)
         assert posts == []

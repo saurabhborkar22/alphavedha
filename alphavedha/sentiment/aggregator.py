@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 import structlog
 
 from alphavedha.features.sentiment import score_articles
-from alphavedha.sentiment.sources import RedditSource, RSSSource, SentimentPost
+from alphavedha.sentiment.sources import RedditSource, RSSSource, SentimentPost, TelegramSource
 
 logger = structlog.get_logger(__name__)
 
@@ -75,11 +75,12 @@ def _score_posts(posts: list[SentimentPost]) -> list[float]:
 
 
 class SentimentAggregator:
-    """Aggregates sentiment from RSS feeds and Reddit into a single score."""
+    """Aggregates sentiment from RSS feeds, Reddit, and Telegram into a single score."""
 
     def __init__(self) -> None:
         self._rss = RSSSource()
         self._reddit = RedditSource()
+        self._telegram = TelegramSource()
 
     async def aggregate(
         self,
@@ -90,12 +91,13 @@ class SentimentAggregator:
         now_ist = datetime.now(IST).isoformat()
 
         # Fetch concurrently
-        rss_posts, reddit_posts = await asyncio.gather(
+        rss_posts, reddit_posts, telegram_posts = await asyncio.gather(
             self._rss.fetch(symbol, lookback_days),
             self._reddit.fetch(symbol, lookback_days),
+            self._telegram.fetch(symbol, lookback_days),
         )
 
-        all_posts = rss_posts + reddit_posts
+        all_posts = rss_posts + reddit_posts + telegram_posts
 
         if not all_posts:
             logger.info("sentiment_no_posts", symbol=symbol)

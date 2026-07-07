@@ -247,6 +247,7 @@ async def trigger_job(job_name: str) -> dict[str, Any]:
         "transcripts": "run_transcript_ingestion",
         "intel_extraction": "run_intel_extraction",
         "quality_check": "run_quality_check",
+        "telegram_news": "run_telegram_news_ingestion",
     }
 
     if job_name not in allowed_jobs:

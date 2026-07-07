@@ -78,6 +78,36 @@ services:
       # uses it via GIT_SSH_COMMAND in .env.vps.
       - /opt/alphavedha/secrets:/secrets:ro
 
+  # Live Telegram news watcher — opt-in (--profile telegram). Needs
+  # TELEGRAM_API_ID/HASH in .env.vps plus a one-time interactive login:
+  #   docker compose -f docker-compose.vps.yml --profile telegram \
+  #     run --rm news-watch python -m alphavedha.intel.telegram_live login
+  news-watch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_TARGET: vps
+        GIT_SHA: ${GIT_SHA:-unknown}
+    container_name: alphavedha-news-watch
+    env_file: .env.vps
+    environment:
+      TZ: Asia/Kolkata
+      # Telethon appends .session — keep it on the named volume across rebuilds
+      TELEGRAM_SESSION: /session/telegram_news
+    command: ["python", "-m", "alphavedha.intel.telegram_live", "watch"]
+    profiles:
+      - telegram
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    volumes:
+      - telegram-session:/session
+      - app-logs:/app/logs
+
   trainer:
     build:
       context: .
@@ -158,3 +188,4 @@ volumes:
   model-artifacts:
   app-logs:
   proofs-repo:
+  telegram-session:
