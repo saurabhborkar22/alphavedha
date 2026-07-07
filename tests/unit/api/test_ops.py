@@ -433,6 +433,47 @@ class TestOpsWeeklyReport:
         assert data["performance"]["trading_days"] == 0
 
 
+class TestOpsAltDataPush:
+    def test_accepts_alternative_data_rows(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        with patch(
+            "alphavedha.data.store.store_alternative_data",
+            new_callable=AsyncMock,
+            return_value=2,
+        ):
+            resp = client.post(
+                "/api/ops/intel/push",
+                json={
+                    "table": "alternative_data",
+                    "rows": [
+                        {"data_type": "gsec_10y", "period_date": "2026-07-03", "value": 6.71},
+                        {
+                            "data_type": "pmi_manufacturing",
+                            "period_date": "2026-07-01",
+                            "value": 54.2,
+                            "source": "S&P Global",
+                        },
+                    ],
+                },
+                headers=auth_headers,
+            )
+        data = resp.json()
+        assert data["success"] is True
+        assert data["rows_received"] == 2
+        assert data["rows_stored"] == 2
+
+    def test_alternative_data_listed_as_allowed(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        resp = client.post(
+            "/api/ops/intel/push",
+            json={"table": "fake_table", "rows": [{"a": 1}]},
+            headers=auth_headers,
+        )
+        assert "alternative_data" in resp.json()["allowed_tables"]
+
+
 class TestIsStale:
     """_is_stale: date-only values judged by trading day, datetimes by hours."""
 

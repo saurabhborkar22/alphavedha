@@ -308,6 +308,10 @@ async def push_intel(payload: dict[str, Any]) -> dict[str, Any]:
         "insider_trades": "alphavedha.data.store:store_insider_trades",
         "rating_events": "alphavedha.intel.store:store_rating_events",
         "surveillance_flags": "alphavedha.intel.store:store_surveillance_flags",
+        # Macro series scraped by the weekly-intel routine (G-Sec yield, PMI,
+        # auto sales) — rows: {data_type, period_date, value[, yoy_change,
+        # sector, source]}, upserted on (data_type, period_date).
+        "alternative_data": "alphavedha.data.store:store_alternative_data",
     }
 
     if table not in store_funcs:

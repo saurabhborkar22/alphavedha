@@ -125,6 +125,7 @@ def _prepare_symbol_data(
     ohlcv_df: pd.DataFrame,
     fii_dii_df: pd.DataFrame | None = None,
     macro_df: pd.DataFrame | None = None,
+    alt_data_df: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.Series, pd.Series] | None:
     """Compute features and labels for a single symbol. Returns (X, y_direction, y_return) or None."""
     config = get_config()
@@ -138,6 +139,7 @@ def _prepare_symbol_data(
         ohlcv_df=ohlcv_df,
         fii_dii_df=fii_dii_df,
         macro_df=macro_df,
+        alt_data_df=alt_data_df,
     )
     features_df = feature_result.df
 
@@ -157,6 +159,25 @@ def _prepare_symbol_data(
         return None
 
     return features_df, labels_df["label"].astype(int), labels_df["return_pct"]
+
+
+async def _load_alt_data(end_date: date | None = None) -> pd.DataFrame | None:
+    """Load routine-pushed alternative data (G-Sec yield, PMI, auto sales).
+
+    end_date caps the load for as-of training (historical sim) so a frozen
+    model never sees macro prints from after its cutoff.
+    """
+    try:
+        from alphavedha.data.store import load_alternative_data
+
+        alt_df = await load_alternative_data(end=end_date)
+        if alt_df.empty:
+            return None
+        logger.info("train_alt_data_loaded", rows=len(alt_df))
+        return alt_df
+    except Exception as e:
+        logger.warning("train_alt_data_load_failed", error=str(e))
+        return None
 
 
 def _temporal_split(
@@ -312,6 +333,8 @@ async def _load_tier_data(
     except Exception as e:
         logger.warning("train_macro_load_failed", error=str(e))
 
+    alt_data_df = await _load_alt_data(end_date)
+
     for symbol in symbols:
         try:
             ohlcv_df = await load_ohlcv(symbol, start_date, end_date)
@@ -320,7 +343,7 @@ async def _load_tier_data(
                 continue
 
             ohlcv_by_symbol[symbol] = ohlcv_df
-            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df, macro_df)
+            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df, macro_df, alt_data_df)
             if prepared is None:
                 continue
 
@@ -519,6 +542,8 @@ async def train_xgboost(
     except Exception as e:
         logger.warning("train_macro_load_failed", error=str(e))
 
+    alt_data_df = await _load_alt_data(end_date)
+
     for symbol in symbols:
         try:
             ohlcv_df = await load_ohlcv(symbol, start_date, end_date)
@@ -526,7 +551,7 @@ async def train_xgboost(
                 result.errors[symbol] = "no data in DB"
                 continue
 
-            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df, macro_df)
+            prepared = _prepare_symbol_data(symbol, ohlcv_df, fii_dii_df, macro_df, alt_data_df)
             if prepared is None:
                 continue
 

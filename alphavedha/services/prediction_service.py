@@ -130,10 +130,25 @@ class PredictionService:
             logger.warning("macro_fetch_failed", symbol=symbol, error=str(e))
             macro_df = None
 
+        alt_data_df: pd.DataFrame | None = None
+        try:
+            from alphavedha.data.store import load_alternative_data
+
+            # Capped at as_of so sim predictions never see later macro prints.
+            alt_data_df = await load_alternative_data(end=today)
+            if alt_data_df.empty:
+                alt_data_df = None
+        except Exception as e:
+            logger.warning("alt_data_load_failed", symbol=symbol, error=str(e))
+
         try:
             # CPU-heavy (~2-4s) — run off the event loop
             result = await asyncio.to_thread(
-                compute_all_features, symbol=symbol, ohlcv_df=ohlcv_df, macro_df=macro_df
+                compute_all_features,
+                symbol=symbol,
+                ohlcv_df=ohlcv_df,
+                macro_df=macro_df,
+                alt_data_df=alt_data_df,
             )
         except Exception as e:
             logger.warning("feature_computation_failed", symbol=symbol, error=str(e))

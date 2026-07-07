@@ -74,3 +74,38 @@ class TestMacroFeatures:
     def test_graceful_empty_data(self, sample_ohlcv: pd.DataFrame) -> None:
         result = compute_macro_features(sample_ohlcv)
         assert len(result) == len(sample_ohlcv)
+
+
+class TestAltDataFeatures:
+    def _alt_df(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {"data_type": "gsec_10y", "period_date": "2023-06-01", "value": 7.15},
+                {"data_type": "gsec_10y", "period_date": "2023-11-01", "value": 6.90},
+                {"data_type": "pmi_manufacturing", "period_date": "2023-10-02", "value": 54.2},
+            ]
+        )
+
+    def test_gsec_from_alt_data_overrides_hardcoded(self, sample_ohlcv_long: pd.DataFrame) -> None:
+        macro_df = _make_macro_df(sample_ohlcv_long.index)
+        result = compute_macro_features(sample_ohlcv_long, macro_df, alt_data_df=self._alt_df())
+        # Latest stored print (6.90) replaces the 7.0 stub after Nov 1.
+        assert result["macro_gsec_10y"].iloc[-1] == 6.90
+        assert result["macro_gsec_change_1d"].notna().any()
+
+    def test_gsec_falls_back_to_constant_without_rows(
+        self, sample_ohlcv_long: pd.DataFrame
+    ) -> None:
+        macro_df = _make_macro_df(sample_ohlcv_long.index)
+        result = compute_macro_features(sample_ohlcv_long, macro_df)
+        assert (result["macro_gsec_10y"] == 7.0).all()
+
+    def test_pmi_from_alt_data(self, sample_ohlcv_long: pd.DataFrame) -> None:
+        result = compute_macro_features(sample_ohlcv_long, alt_data_df=self._alt_df())
+        assert result["macro_pmi"].iloc[-1] == 54.2
+
+    def test_tz_aware_index_aligns(self, sample_ohlcv_long: pd.DataFrame) -> None:
+        df = sample_ohlcv_long.copy()
+        df.index = df.index.tz_localize("Asia/Kolkata")
+        result = compute_macro_features(df, alt_data_df=self._alt_df())
+        assert result["macro_gsec_10y"].iloc[-1] == 6.90
