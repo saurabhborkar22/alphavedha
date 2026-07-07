@@ -216,21 +216,32 @@ def _compute_alt_data_features(
 
     for data_type, col_name in [
         ("pmi_manufacturing", "macro_pmi"),
+        ("gsec_10y", "macro_gsec_10y"),
     ]:
         subset = (
             alt[alt["data_type"] == data_type] if "data_type" in alt.columns else pd.DataFrame()
         )
-        if not subset.empty:
-            pmi_series = subset.set_index("period_date")["value"].sort_index()
-            pmi_aligned = pmi_series.reindex(index, method="ffill")
-            result[col_name] = pmi_aligned
+        if subset.empty:
+            continue
+        series = subset.set_index("period_date")["value"].sort_index()
+        if index.tz is not None and series.index.tz is None:
+            # DB period_dates are naive; OHLCV indexes are tz-aware (IST) —
+            # reindex across the mismatch raises instead of aligning.
+            series.index = series.index.tz_localize(index.tz)
+        aligned = series.reindex(index, method="ffill")
+        # Overwrites the hardcoded 7.0 fallback from _compute_market_features
+        # when real gsec_10y rows exist (this runs after it).
+        result[col_name] = aligned
 
+        if col_name == "macro_pmi":
             staleness = pd.Series(np.nan, index=index)
             for i, idx in enumerate(index):
-                valid = pmi_series.index[pmi_series.index <= idx]
+                valid = series.index[series.index <= idx]
                 if len(valid) > 0:
                     staleness.iloc[i] = (idx - valid[-1]).days
             result["macro_pmi_staleness_days"] = staleness
+        elif col_name == "macro_gsec_10y":
+            result["macro_gsec_change_1d"] = aligned.diff()
 
 
 def _compute_breadth_features(
