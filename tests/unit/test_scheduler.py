@@ -46,6 +46,9 @@ def _make_prediction(symbol: str, direction: int = 1) -> SimpleNamespace:
         is_tradeable=True,
         position_size_pct=0.05,
         composite_score=70.0,
+        entry_price=None,
+        stop_loss_price=97.5,
+        take_profit_price=105.0,
     )
 
 
@@ -441,6 +444,32 @@ class TestPersistPaperTrades:
         assert first_row["regime"] == "bull"
         assert first_row["is_tradeable"] is True
         assert first_row["entry_price"] == float(ohlcv["close"].iloc[-1])
+        assert first_row["stop_loss_price"] == 97.5
+        assert first_row["take_profit_price"] == 105.0
+
+    async def test_prefers_engine_entry_price_when_present(self) -> None:
+        pred = _make_prediction("TCS", 1)
+        pred.entry_price = 2057.6
+
+        with (
+            patch(
+                "alphavedha.data.store.load_ohlcv",
+                new_callable=AsyncMock,
+            ) as mock_ohlcv,
+            patch(
+                "alphavedha.data.store.store_paper_trade",
+                new_callable=AsyncMock,
+                return_value=1,
+            ) as mock_store,
+        ):
+            persisted = await _persist_paper_trades([pred], date(2026, 6, 11))
+
+        assert persisted == 1
+        mock_ohlcv.assert_not_awaited()
+        row = mock_store.await_args.args[0]
+        assert row["entry_price"] == 2057.6
+        assert row["stop_loss_price"] == 97.5
+        assert row["take_profit_price"] == 105.0
 
     async def test_continues_on_per_symbol_store_failure(self) -> None:
         predictions = [_make_prediction("BAD"), _make_prediction("GOOD")]
