@@ -472,7 +472,8 @@ class TestOpsAltDataPush:
             headers=auth_headers,
         )
         assert "alternative_data" in resp.json()["allowed_tables"]
-       
+
+
 class TestIsStale:
     """_is_stale: date-only values judged by trading day, datetimes by hours."""
 
