@@ -305,6 +305,17 @@ class CostsConfig(BaseModel):
     gst: float = 0.18
     sebi_turnover: float = 0.000001
     stamp_duty: float = 0.00015
+    # Futures (stock F&O) leg — used to cost swing SHORTS, which cannot be held
+    # overnight in the Indian cash market and must be stock futures. STT on
+    # futures applies to the SELL leg only. stt_fno is the post-2024-budget
+    # 0.02% sell-side rate; stamp_duty_fno (0.002%) is buy-side. Verify both
+    # against your broker/NSE before trusting the reported short economics.
+    stt_fno: float = 0.0002
+    stamp_duty_fno: float = 0.00002
+    # Conservative buffer for rolling a futures short across the monthly expiry
+    # (last Thursday). A ~15-day hold usually crosses one expiry. This is a
+    # modeling assumption, not a fixed regulatory charge — tune from real fills.
+    futures_rollover_pct: float = 0.0005
 
 
 class SlippageConfig(BaseModel):

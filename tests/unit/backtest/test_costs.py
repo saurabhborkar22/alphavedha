@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from alphavedha.backtest.costs import TradeCost, compute_round_trip_cost_pct, compute_trade_cost
+from alphavedha.backtest.costs import (
+    INSTRUMENT_DELIVERY,
+    INSTRUMENT_FUTURES,
+    TradeCost,
+    compute_long_short_cost_pct,
+    compute_round_trip_cost_pct,
+    compute_trade_cost,
+)
 from alphavedha.config import BacktestConfig
 
 
@@ -123,3 +130,88 @@ class TestRoundTripCost:
         assert buy.stamp_duty > 0
         assert sell.stamp_duty == 0
         assert buy.slippage > 0 and sell.slippage > 0
+
+
+class TestFuturesCost:
+    """Futures leg costs — used to model swing shorts (stock futures)."""
+
+    def test_futures_stt_on_sell_leg_only(self, default_config: BacktestConfig) -> None:
+        buy = compute_trade_cost(
+            100_000.0,
+            "buy",
+            "large",
+            default_config.costs,
+            default_config.slippage,
+            instrument=INSTRUMENT_FUTURES,
+        )
+        sell = compute_trade_cost(
+            100_000.0,
+            "sell",
+            "large",
+            default_config.costs,
+            default_config.slippage,
+            instrument=INSTRUMENT_FUTURES,
+        )
+        assert buy.stt == 0.0
+        assert abs(sell.stt - 100_000.0 * default_config.costs.stt_fno) < 0.01
+
+    def test_futures_stamp_lower_than_delivery(self, default_config: BacktestConfig) -> None:
+        fut = compute_trade_cost(
+            100_000.0,
+            "buy",
+            "large",
+            default_config.costs,
+            default_config.slippage,
+            instrument=INSTRUMENT_FUTURES,
+        )
+        delivery = compute_trade_cost(
+            100_000.0,
+            "buy",
+            "large",
+            default_config.costs,
+            default_config.slippage,
+            instrument=INSTRUMENT_DELIVERY,
+        )
+        assert 0.0 < fut.stamp_duty < delivery.stamp_duty
+
+    def test_futures_round_trip_cheaper_than_delivery(self, default_config: BacktestConfig) -> None:
+        """Futures STT is sell-only and far lower, so even with the rollover
+        buffer a futures round trip costs less than cash delivery."""
+        delivery = compute_round_trip_cost_pct("large", default_config, INSTRUMENT_DELIVERY)
+        futures = compute_round_trip_cost_pct("large", default_config, INSTRUMENT_FUTURES)
+        assert 0.0 < futures < delivery
+
+    def test_futures_round_trip_includes_rollover(self, default_config: BacktestConfig) -> None:
+        """The rollover buffer is added on top of the two legs."""
+        legs_only = (
+            compute_trade_cost(
+                100_000.0,
+                "buy",
+                "large",
+                default_config.costs,
+                default_config.slippage,
+                instrument=INSTRUMENT_FUTURES,
+            ).total
+            + compute_trade_cost(
+                100_000.0,
+                "sell",
+                "large",
+                default_config.costs,
+                default_config.slippage,
+                instrument=INSTRUMENT_FUTURES,
+            ).total
+        ) / 100_000.0
+        full = compute_round_trip_cost_pct("large", default_config, INSTRUMENT_FUTURES)
+        assert abs((full - legs_only) - default_config.costs.futures_rollover_pct) < 1e-9
+
+    def test_long_short_helper_returns_delivery_then_futures(
+        self, default_config: BacktestConfig
+    ) -> None:
+        long_cost, short_cost = compute_long_short_cost_pct("large", default_config)
+        assert long_cost == compute_round_trip_cost_pct(
+            "large", default_config, INSTRUMENT_DELIVERY
+        )
+        assert short_cost == compute_round_trip_cost_pct(
+            "large", default_config, INSTRUMENT_FUTURES
+        )
+        assert short_cost < long_cost

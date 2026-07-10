@@ -196,13 +196,15 @@ async def get_dashboard(strategy: str | None = None) -> DashboardSummary:
     correct short counts as a gain. `tracks` reports gross and net-of-cost
     stats for all predictions, gate-passed trades, and top-5 daily picks.
     """
-    from alphavedha.backtest.costs import compute_round_trip_cost_pct
+    from alphavedha.backtest.costs import compute_long_short_cost_pct
     from alphavedha.config import get_config
     from alphavedha.data.store import load_paper_trades
     from alphavedha.monitoring.track_record import compute_track_record, compute_track_stats
 
     trades_df = await load_paper_trades(strategy=strategy)
-    cost_pct = compute_round_trip_cost_pct("large", get_config().backtest)
+    # Longs = cash delivery; shorts = stock futures (a swing short can't be held
+    # overnight in the cash market). Each leg is charged its real round-trip.
+    cost_pct, short_cost_pct = compute_long_short_cost_pct("large", get_config().backtest)
 
     if trades_df.empty:
         return DashboardSummary(
@@ -243,7 +245,9 @@ async def get_dashboard(strategy: str | None = None) -> DashboardSummary:
 
     # Legacy top-level fields stay gross; cost-adjusted numbers live in tracks.
     gross_all = compute_track_stats("all_gross", trades_df, cost_pct=0.0)
-    record = compute_track_record(trades_df, round_trip_cost_pct=cost_pct)
+    record = compute_track_record(
+        trades_df, round_trip_cost_pct=cost_pct, short_round_trip_cost_pct=short_cost_pct
+    )
 
     return DashboardSummary(
         total_predictions=total,
