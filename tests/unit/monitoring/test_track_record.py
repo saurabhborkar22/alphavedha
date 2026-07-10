@@ -48,6 +48,48 @@ D2 = date(2026, 5, 5)
 D3 = date(2026, 5, 6)
 
 
+class TestPerLegCost:
+    def test_short_leg_charged_short_cost(self) -> None:
+        """A long and a short with equal directional gross diverge in NET only
+        by the difference in their per-leg costs (delivery vs futures)."""
+        trades = pd.DataFrame(
+            [
+                _trade("LONG", D1, 1, 0.7, actual_return=0.05),  # gross +5%
+                _trade("SHORT", D1, -1, 0.7, actual_return=-0.05),  # gross +5%
+            ]
+        )
+        long_cost, short_cost = 0.005, 0.003
+        stats = compute_track_stats("all", trades, cost_pct=long_cost, short_cost_pct=short_cost)
+        # Both gross +5%; nets differ by exactly (long_cost - short_cost).
+        # avg_net = ((0.05 - long_cost) + (0.05 - short_cost)) / 2
+        expected_avg = ((0.05 - long_cost) + (0.05 - short_cost)) / 2
+        assert stats.avg_return_net is not None
+        assert abs(stats.avg_return_net - expected_avg) < 1e-9
+
+    def test_none_short_cost_falls_back_to_long_cost(self) -> None:
+        """Legacy behavior: omitting short_cost_pct charges both legs cost_pct."""
+        trades = pd.DataFrame(
+            [
+                _trade("LONG", D1, 1, 0.7, actual_return=0.05),
+                _trade("SHORT", D1, -1, 0.7, actual_return=-0.05),
+            ]
+        )
+        flat = compute_track_stats("all", trades, cost_pct=0.005)
+        explicit = compute_track_stats("all", trades, cost_pct=0.005, short_cost_pct=0.005)
+        assert flat.avg_return_net == explicit.avg_return_net
+        assert flat.total_return_net == explicit.total_return_net
+
+    def test_record_threads_short_cost(self) -> None:
+        trades = pd.DataFrame([_trade("S", D1, -1, 0.7, actual_return=-0.05)])
+        record = compute_track_record(
+            trades, round_trip_cost_pct=0.005, short_round_trip_cost_pct=0.003
+        )
+        assert record.short_round_trip_cost_pct == 0.003
+        # Short net uses the 0.003 futures cost, not 0.005.
+        assert record.all_predictions.avg_return_net is not None
+        assert abs(record.all_predictions.avg_return_net - (0.05 - 0.003)) < 1e-9
+
+
 class TestComputeTrackStats:
     def test_empty_frame_returns_zeroed_stats(self) -> None:
         stats = compute_track_stats("all", pd.DataFrame(), cost_pct=0.005)

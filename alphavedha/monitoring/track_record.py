@@ -15,10 +15,11 @@ Conventions:
 - A trade's gross return is ``predicted_direction * actual_return`` so a
   correct short counts as a gain. Direction-0 (flat) predictions are never
   "traded" and contribute no P&L.
-- Net return subtracts a flat round-trip cost fraction (see
-  ``alphavedha.backtest.costs.compute_round_trip_cost_pct``). Shorts get the
-  same charge — slightly conservative, since a futures short would pay lower
-  STT than cash delivery.
+- Net return subtracts a round-trip cost fraction that depends on the leg's
+  instrument (see ``alphavedha.backtest.costs``). Swing LONGS are cash
+  delivery; swing SHORTS are stock futures (a cash short can't be held
+  overnight in India). Pass ``short_cost_pct`` to charge shorts the futures
+  round-trip; when omitted, both legs pay ``cost_pct`` (legacy behavior).
 - Sharpe and drawdown are computed on per-prediction-date cohort means. Each
   cohort is one ~15-trading-day bet, so Sharpe annualizes by
   sqrt(252 / 15). Cohorts from adjacent days hold overlapping positions;
@@ -67,6 +68,8 @@ class TrackRecord:
     all_predictions: TrackStats
     gate_passed: TrackStats
     top_k: TrackStats
+    # Futures round-trip charged to short legs; None => shorts paid the delivery cost.
+    short_round_trip_cost_pct: float | None = None
 
 
 def _directional_evaluated(trades: pd.DataFrame) -> pd.DataFrame:
@@ -77,11 +80,32 @@ def _directional_evaluated(trades: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def compute_track_stats(name: str, selected: pd.DataFrame, cost_pct: float) -> TrackStats:
+def _per_leg_cost(
+    evaluated: pd.DataFrame, long_cost: float, short_cost: float | None
+) -> np.ndarray | float:
+    """Round-trip cost per row: ``long_cost`` for longs, ``short_cost`` for shorts.
+
+    Returns a scalar when there is nothing to differentiate (no short cost, or
+    it equals the long cost) so the common path stays a plain Series subtraction.
+    """
+    if short_cost is None or short_cost == long_cost:
+        return long_cost
+    is_long = evaluated["predicted_direction"].astype(float) > 0
+    return np.where(is_long, long_cost, short_cost)
+
+
+def compute_track_stats(
+    name: str,
+    selected: pd.DataFrame,
+    cost_pct: float,
+    short_cost_pct: float | None = None,
+) -> TrackStats:
     """Compute win rate, expectancy, Sharpe, and drawdown for one track.
 
-    ``cost_pct`` is the full round-trip cost as a fraction of notional;
-    pass 0.0 for gross statistics.
+    ``cost_pct`` is the round-trip cost fraction charged to LONG legs (and to
+    both legs when ``short_cost_pct`` is None). ``short_cost_pct``, when given,
+    is charged to SHORT legs instead — the futures round-trip. Pass 0.0 for
+    both to get gross statistics.
     """
     stats = TrackStats(name=name, n_selected=len(selected))
     if selected.empty:
@@ -92,7 +116,7 @@ def compute_track_stats(name: str, selected: pd.DataFrame, cost_pct: float) -> T
     if evaluated.empty:
         return stats
 
-    net = evaluated["gross"] - cost_pct
+    net = evaluated["gross"] - _per_leg_cost(evaluated, cost_pct, short_cost_pct)
     wins = net[net > 0]
     losses = net[net <= 0]
 
@@ -145,11 +169,13 @@ def compute_track_record(
     round_trip_cost_pct: float,
     gate_confidence: float = DEFAULT_GATE_CONFIDENCE,
     top_k: int = DEFAULT_TOP_K,
+    short_round_trip_cost_pct: float | None = None,
 ) -> TrackRecord:
     """Compute the three-track, cost-adjusted live track record.
 
     ``trades`` is the frame returned by ``load_paper_trades()``. An empty
-    frame yields zeroed stats rather than raising.
+    frame yields zeroed stats rather than raising. ``short_round_trip_cost_pct``
+    charges short legs the futures round-trip; None => shorts pay the long cost.
     """
     if trades.empty:
         return TrackRecord(
@@ -157,21 +183,27 @@ def compute_track_record(
             all_predictions=TrackStats(name="all"),
             gate_passed=TrackStats(name="gate_passed"),
             top_k=TrackStats(name=f"top_{top_k}"),
+            short_round_trip_cost_pct=short_round_trip_cost_pct,
         )
 
     record = TrackRecord(
         round_trip_cost_pct=round_trip_cost_pct,
-        all_predictions=compute_track_stats("all", trades, round_trip_cost_pct),
+        all_predictions=compute_track_stats(
+            "all", trades, round_trip_cost_pct, short_round_trip_cost_pct
+        ),
         gate_passed=compute_track_stats(
             "gate_passed",
             _select_gate_passed(trades, gate_confidence),
             round_trip_cost_pct,
+            short_round_trip_cost_pct,
         ),
         top_k=compute_track_stats(
             f"top_{top_k}",
             _select_top_k(trades, top_k),
             round_trip_cost_pct,
+            short_round_trip_cost_pct,
         ),
+        short_round_trip_cost_pct=short_round_trip_cost_pct,
     )
 
     logger.info(
@@ -180,6 +212,7 @@ def compute_track_record(
         n_evaluated=record.all_predictions.n_evaluated,
         gate_selected=record.gate_passed.n_selected,
         cost_pct=round_trip_cost_pct,
+        short_cost_pct=short_round_trip_cost_pct,
     )
     return record
 
@@ -189,6 +222,7 @@ def compute_track_records_by_strategy(
     round_trip_cost_pct: float,
     gate_confidence: float = DEFAULT_GATE_CONFIDENCE,
     top_k: int = DEFAULT_TOP_K,
+    short_round_trip_cost_pct: float | None = None,
 ) -> dict[str, TrackRecord]:
     """Compute per-strategy track records.
 
@@ -200,12 +234,18 @@ def compute_track_records_by_strategy(
 
     if "strategy" not in trades.columns:
         return {
-            "ensemble_v1": compute_track_record(trades, round_trip_cost_pct, gate_confidence, top_k)
+            "ensemble_v1": compute_track_record(
+                trades, round_trip_cost_pct, gate_confidence, top_k, short_round_trip_cost_pct
+            )
         }
 
     results: dict[str, TrackRecord] = {}
     for strategy_name, group in trades.groupby("strategy"):
         results[str(strategy_name)] = compute_track_record(
-            group.reset_index(drop=True), round_trip_cost_pct, gate_confidence, top_k
+            group.reset_index(drop=True),
+            round_trip_cost_pct,
+            gate_confidence,
+            top_k,
+            short_round_trip_cost_pct,
         )
     return results

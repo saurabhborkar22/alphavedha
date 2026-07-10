@@ -397,7 +397,7 @@ async def list_strategies() -> dict[str, Any]:
     if _is_demo():
         return _generate_demo_strategies()
 
-    from alphavedha.backtest.costs import compute_round_trip_cost_pct
+    from alphavedha.backtest.costs import compute_long_short_cost_pct
     from alphavedha.config import get_config
     from alphavedha.data.store import load_paper_trades
     from alphavedha.monitoring.track_record import compute_track_stats
@@ -411,13 +411,16 @@ async def list_strategies() -> dict[str, Any]:
     if all_trades.empty:
         return {"strategies": [], "total": 0}
 
-    cost_pct = compute_round_trip_cost_pct("large", get_config().backtest)
+    # Longs = cash delivery; shorts = stock futures. Each leg pays its real cost.
+    cost_pct, short_cost_pct = compute_long_short_cost_pct("large", get_config().backtest)
     strategy_names = sorted(all_trades["strategy"].dropna().unique().tolist())
     strategies: list[dict[str, Any]] = []
 
     for name in strategy_names:
         strat_df = all_trades[all_trades["strategy"] == name]
-        stats = compute_track_stats(name, strat_df, cost_pct=cost_pct)
+        stats = compute_track_stats(
+            name, strat_df, cost_pct=cost_pct, short_cost_pct=short_cost_pct
+        )
         strategies.append(
             {
                 "strategy": stats.name,
