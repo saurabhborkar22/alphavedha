@@ -14,6 +14,10 @@ from alphavedha.training.pipeline import (
     _temporal_split_3way,
 )
 
+# Rotate a class label to a different one (-1 → 0 → 1 → -1): perturbs
+# predictions off the truth while keeping the 3-class distribution balanced.
+_ROTATE = {-1: 0, 0: 1, 1: -1}
+
 
 def _make_dataset(n: int = 500) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     rng = np.random.default_rng(42)
@@ -230,6 +234,47 @@ class TestDegeneracyGate:
         empty_X = X.iloc[0:0]
         empty_y = labels.iloc[0:0]
         reason = _check_degenerate_direction_model(model, empty_X, empty_y)  # type: ignore[arg-type]
+        assert reason is None
+
+    # The array-based gate below is what train_all runs on the ENSEMBLE's
+    # validation directions — the layer that actually decides served direction.
+
+    def test_directions_reject_single_class(self) -> None:
+        from alphavedha.training.pipeline import _check_degenerate_directions
+
+        rng = np.random.default_rng(3)
+        directions = np.full(100, -1, dtype=int)  # the Jul-2026 all-short ensemble
+        y = pd.Series(rng.choice([-1, 0, 1], size=100), name="label")
+
+        reason = _check_degenerate_directions(directions, y)
+        assert reason is not None
+        assert "class -1" in reason
+
+    def test_directions_accept_mixed_and_accurate(self) -> None:
+        from alphavedha.training.pipeline import _check_degenerate_directions
+
+        y = pd.Series(([-1, 0, 1] * 34)[:99], name="label")  # balanced 3-class
+        directions = y.to_numpy().copy()
+        for i in range(25):  # ~75% accuracy, still class-balanced
+            directions[i] = _ROTATE[int(directions[i])]
+
+        assert _check_degenerate_directions(directions, y) is None
+
+    def test_directions_reject_below_accuracy_floor(self) -> None:
+        from alphavedha.training.pipeline import _check_degenerate_directions
+
+        y = pd.Series(([-1, 0, 1] * 34)[:99], name="label")
+        # Balanced (not collapsed) but every prediction is rotated off → 0% right.
+        directions = np.array([_ROTATE[int(v)] for v in y], dtype=int)
+
+        reason = _check_degenerate_directions(directions, y)
+        assert reason is not None
+        assert "accuracy" in reason
+
+    def test_directions_empty_skips_gate(self) -> None:
+        from alphavedha.training.pipeline import _check_degenerate_directions
+
+        reason = _check_degenerate_directions(np.array([], dtype=int), pd.Series([], dtype=int))
         assert reason is None
 
 
