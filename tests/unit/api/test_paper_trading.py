@@ -295,7 +295,16 @@ class TestDashboardEndpoint:
         assert all_track.n_evaluated == 2
         assert all_track.avg_return_gross == pytest.approx(0.025)
         assert all_track.avg_return_net is not None
-        assert all_track.avg_return_net == pytest.approx(0.025 - summary.round_trip_cost_pct)
+        # Per-leg costs: the long pays the delivery round-trip (the headline
+        # round_trip_cost_pct); the short pays the lower stock-futures round-trip.
+        from alphavedha.backtest.costs import compute_long_short_cost_pct
+        from alphavedha.config import get_config
+
+        long_cost, short_cost = compute_long_short_cost_pct("large", get_config().backtest)
+        assert summary.round_trip_cost_pct == pytest.approx(long_cost)
+        assert short_cost < long_cost
+        expected_net = ((0.02 - long_cost) + (0.03 - short_cost)) / 2
+        assert all_track.avg_return_net == pytest.approx(expected_net)
         # Gate uses the persisted flag: only LONGWIN passed.
         assert summary.tracks["gate_passed"].n_selected == 1
         assert summary.tracks["top_k"].n_selected == 2
