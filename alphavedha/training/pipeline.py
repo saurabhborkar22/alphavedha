@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import joblib
 import numpy as np
@@ -24,6 +25,9 @@ from alphavedha.labels.triple_barrier import compute_triple_barrier_labels
 from alphavedha.models.base import PredictionResult, TrainResult
 from alphavedha.models.xgboost_model import XGBoostModel
 from alphavedha.monitoring.experiment_tracker import ExperimentTracker
+
+if TYPE_CHECKING:
+    from alphavedha.models.ensemble import StackingEnsemble
 
 logger = structlog.get_logger(__name__)
 
@@ -457,38 +461,54 @@ _DEGENERATE_MAX_CLASS_SHARE = 0.90
 _DEGENERATE_MIN_VAL_ACCURACY = 0.40
 
 
-def _check_degenerate_direction_model(
-    model: XGBoostModel,
-    X_val: pd.DataFrame,
+def _check_degenerate_directions(
+    directions: np.ndarray,
     y_val: pd.Series,
 ) -> str | None:
-    """Return a rejection reason when a direction model is unusable, else None.
+    """Return a rejection reason for a degenerate validation direction set, else None.
 
-    Two failure modes are checked on the validation set:
+    Two failure modes:
     - collapse: one class dominates the predictions (> 90%), which is how a
       majority-class model looks — it scores near the class prior but carries
-      zero signal;
+      zero signal (the Jun-2026 all-short production failure);
     - accuracy floor: worse than 0.40 on three classes means the artifact
       would degrade whatever is currently serving.
 
-    An empty validation set skips the gate rather than blocking the train.
+    Empty input skips the gate rather than blocking promotion. Works on a raw
+    direction array so both the base-model gate and the ensemble gate share it.
     """
-    if X_val.empty or y_val.empty:
+    if len(directions) == 0 or y_val.empty:
         return None
 
-    pred = model.predict(X_val)
-    directions = pd.Series(pred.direction)
-    shares = directions.value_counts(normalize=True)
+    dirs = pd.Series(directions)
+    shares = dirs.value_counts(normalize=True)
     top_class = int(shares.index[0])
     top_share = float(shares.iloc[0])
     if top_share > _DEGENERATE_MAX_CLASS_SHARE:
         return f"{top_share:.0%} of val predictions are class {top_class}"
 
-    accuracy = float((directions.to_numpy() == y_val.to_numpy()).mean())
+    accuracy = float((dirs.to_numpy() == y_val.to_numpy()).mean())
     if accuracy < _DEGENERATE_MIN_VAL_ACCURACY:
         return f"val accuracy {accuracy:.3f} below floor {_DEGENERATE_MIN_VAL_ACCURACY}"
 
     return None
+
+
+def _check_degenerate_direction_model(
+    model: XGBoostModel,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+) -> str | None:
+    """Gate a fitted direction model on its validation predictions.
+
+    Thin wrapper over :func:`_check_degenerate_directions` — see it for the
+    two failure modes. An empty validation set skips the gate.
+    """
+    if X_val.empty or y_val.empty:
+        return None
+
+    pred = model.predict(X_val)
+    return _check_degenerate_directions(np.asarray(pred.direction), y_val)
 
 
 async def train_xgboost(
@@ -850,6 +870,31 @@ def _get_regime_probs(
         return np.full((n_rows, 4), 0.25)
 
 
+def _ensemble_val_directions(
+    ensemble: StackingEnsemble,
+    xgb_model: XGBoostModel,
+    lstm_model: object,
+    tft_model: object,
+    data: TierData,
+    top_features: list[str],
+    gnn_model: object | None = None,
+) -> np.ndarray:
+    """The ensemble's predicted directions on the validation split (for the gate)."""
+    if data.X_val.empty:
+        return np.array([], dtype=int)
+    base_preds = _get_base_predictions(
+        xgb_model,
+        lstm_model,
+        tft_model,
+        data.X_val,
+        top_features,
+        gnn_model=gnn_model,
+    )
+    regime_probs = _get_regime_probs(data, len(data.X_val))
+    result = ensemble.predict(base_preds, regime_probs)
+    return np.asarray(result.direction)
+
+
 def _train_ensemble_on_data(
     xgb_model: XGBoostModel,
     lstm_model: object,
@@ -857,15 +902,20 @@ def _train_ensemble_on_data(
     data: TierData,
     top_features: list[str],
     gnn_model: object | None = None,
-) -> tuple[dict[str, float], Path]:
-    """Train stacking ensemble on OOF predictions from base models."""
+) -> tuple[dict[str, float], StackingEnsemble | None, np.ndarray]:
+    """Fit the stacking ensemble on OOF predictions — does NOT persist it.
+
+    Returns ``(metrics, ensemble_or_None, val_directions)``. train_all runs the
+    degeneracy gate on ``val_directions`` and saves only a non-collapsed
+    ensemble, so an all-one-class stacker never overwrites a working one.
+    """
     from alphavedha.models.ensemble import StackingEnsemble
 
     config = get_config()
 
     if data.X_oof.empty or len(data.X_oof) < 50:
         logger.error("ensemble_insufficient_oof", rows=len(data.X_oof))
-        return {}, Path()
+        return {}, None, np.array([], dtype=int)
 
     base_preds = _get_base_predictions(
         xgb_model,
@@ -880,10 +930,10 @@ def _train_ensemble_on_data(
     ensemble = StackingEnsemble(config=config.models.ensemble)
     metrics = ensemble.fit(base_preds, regime_probs, data.y_oof)
 
-    artifact_dir = ARTIFACTS_DIR / "ensemble" / "latest"
-    ensemble.save(artifact_dir)
-
-    return metrics, artifact_dir
+    val_directions = _ensemble_val_directions(
+        ensemble, xgb_model, lstm_model, tft_model, data, top_features, gnn_model=gnn_model
+    )
+    return metrics, ensemble, val_directions
 
 
 def _train_meta_labeling_on_data(
@@ -1181,12 +1231,21 @@ async def train_ensemble(
     lstm_model = LSTMModel.load(lstm_artifact)
     tft_model = TemporalAttentionModel.load(tft_artifact)
 
-    ens_metrics, ens_dir = _train_ensemble_on_data(
+    ens_metrics, ensemble, val_directions = _train_ensemble_on_data(
         xgb_model, lstm_model, tft_model, data, top_features
     )
     result.extra_metrics = ens_metrics
-    if ens_dir != Path():
+
+    # Same promotion gate as train_all: a collapsed stacker must never overwrite
+    # a working one, even on the standalone ensemble-only retrain path.
+    degenerate_reason = _check_degenerate_directions(val_directions, data.y_val)
+    if ensemble is not None and degenerate_reason is None:
+        ens_dir = ARTIFACTS_DIR / "ensemble" / "latest"
+        ensemble.save(ens_dir)
         result.artifact_path = ens_dir
+    elif degenerate_reason is not None:
+        result.errors["degenerate"] = degenerate_reason
+        logger.error("train_ensemble_rejected_degenerate", reason=degenerate_reason)
     result.total_time_seconds = time.perf_counter() - start_time
 
     logger.info("train_complete", model="ensemble", total_time=round(result.total_time_seconds, 1))
@@ -1431,7 +1490,7 @@ async def train_all(
             lstm_model = LSTMModel.load(ARTIFACTS_DIR / "lstm" / "latest")
             tft_model = TemporalAttentionModel.load(ARTIFACTS_DIR / "tft" / "latest")
 
-            ens_metrics, ens_dir = _train_ensemble_on_data(
+            ens_metrics, ensemble, val_directions = _train_ensemble_on_data(
                 xgb_model,
                 lstm_model,
                 tft_model,
@@ -1440,9 +1499,29 @@ async def train_all(
                 gnn_model=gnn_model_loaded,
             )
             ensemble_result.extra_metrics = ens_metrics
-            if ens_dir != Path():
+
+            # Promotion gate: never let a collapsed (all-one-class) or
+            # below-floor stacker overwrite a working one — this is what shipped
+            # the all-short model on Jul 4. On rejection we keep the previous
+            # good ensemble and skip meta (artifact_path stays None). Base models
+            # were already saved this run, so a rejection leaves new base models
+            # under the prior ensemble; the daily direction-entropy alarm covers
+            # that residual case.
+            degenerate_reason = _check_degenerate_directions(val_directions, data.y_val)
+            if ensemble is None:
+                logger.error("train_all_ensemble_failed", error="ensemble not produced")
+            elif degenerate_reason is not None:
+                ensemble_result.errors["degenerate"] = degenerate_reason
+                logger.error(
+                    "train_all_rejected_degenerate",
+                    model="ensemble",
+                    reason=degenerate_reason,
+                )
+            else:
+                ens_dir = ARTIFACTS_DIR / "ensemble" / "latest"
+                ensemble.save(ens_dir)
                 ensemble_result.artifact_path = ens_dir
-            logger.info("train_all_ensemble_done", metrics=ens_metrics)
+                logger.info("train_all_ensemble_done", metrics=ens_metrics)
         except Exception as e:
             ensemble_result.errors["ensemble"] = str(e)
             logger.error("train_all_ensemble_failed", error=str(e))
