@@ -377,6 +377,33 @@ def _send_strategy_summary(as_of: date) -> None:
         logger.warning("strategy_summary_failed", error=str(e))
 
 
+def _alert_on_direction_collapse(directions: list[int], as_of: date) -> None:
+    """Email when the day's predictions collapse to one direction.
+
+    An all-one-way cohort is the signature of a degenerate model (the Jun-2026
+    all-short failure) — this is the detection that was missing then, and the
+    safety net for a retrain that ships new base models under an old ensemble.
+    Never raises: an alarm failure must not fail the prediction job.
+    """
+    try:
+        from alphavedha.monitoring.alerts import EmailAlerter, detect_direction_collapse
+
+        collapse = detect_direction_collapse(directions)
+        if collapse is None:
+            return
+        dominant, share = collapse
+        logger.warning(
+            "direction_collapse_detected",
+            dominant=dominant,
+            share=round(share, 3),
+            n=len(directions),
+            date=str(as_of),
+        )
+        EmailAlerter().direction_collapse(dominant, share, len(directions), str(as_of))
+    except Exception as e:
+        logger.warning("direction_collapse_alarm_failed", error=str(e))
+
+
 async def _run_shadow_cycle(run_date: date) -> dict[str, Any]:
     """Shadow-execute today's tradeable signals and persist ghost fills."""
     from pandas import isna as pd_isna
@@ -563,6 +590,10 @@ class AlphaVedhaScheduler:
             else:
                 prediction_date = _now_ist().date()
                 persisted = _run_async(_persist_paper_trades(predictions, prediction_date))
+                # predictions is object-typed here (via _run_async), as on the
+                # sibling lines above; iterate for the collapse alarm's directions.
+                directions = [int(p.direction) for p in predictions]  # type: ignore[attr-defined]
+                _alert_on_direction_collapse(directions, prediction_date)
 
             result.symbols_processed = len(predictions)
             result.success = True

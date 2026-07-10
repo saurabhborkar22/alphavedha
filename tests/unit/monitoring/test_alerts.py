@@ -5,7 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
-from alphavedha.monitoring.alerts import AlertConfig, AlertLevel, EmailAlerter
+import pytest
+
+from alphavedha.monitoring.alerts import (
+    AlertConfig,
+    AlertLevel,
+    EmailAlerter,
+    detect_direction_collapse,
+)
 
 
 class TestAlertConfig:
@@ -126,3 +133,44 @@ class TestEmailAlerter:
         alerter = EmailAlerter(AlertConfig())
         result = alerter.strategy_daily_summary("report text", "2026-06-20")
         assert result is False
+
+
+class TestDirectionCollapse:
+    """The daily alarm that catches an all-one-way (degenerate) prediction cohort."""
+
+    def test_detects_dominant_direction(self) -> None:
+        # 48 of 50 short → 96% > 90% threshold.
+        result = detect_direction_collapse([-1] * 48 + [1, 0])
+        assert result is not None
+        dominant, share = result
+        assert dominant == -1
+        assert share == pytest.approx(0.96)
+
+    def test_mixed_directions_no_alarm(self) -> None:
+        assert detect_direction_collapse([1] * 25 + [-1] * 25) is None
+
+    def test_empty_no_alarm(self) -> None:
+        assert detect_direction_collapse([]) is None
+
+    def test_exactly_at_threshold_does_not_fire(self) -> None:
+        # 90% is not > 90%.
+        assert detect_direction_collapse([-1] * 90 + [1] * 10) is None
+
+    def test_just_over_threshold_fires(self) -> None:
+        result = detect_direction_collapse([-1] * 91 + [1] * 9)
+        assert result is not None
+        assert result[0] == -1
+
+    def test_alert_method_disabled_returns_false(self) -> None:
+        alerter = EmailAlerter(AlertConfig())
+        assert alerter.direction_collapse(-1, 0.96, 50, "2026-07-11") is False
+
+    def test_alert_method_builds_critical_message(self) -> None:
+        alerter = EmailAlerter(AlertConfig())
+        with patch.object(alerter, "send", return_value=True) as mock_send:
+            alerter.direction_collapse(-1, 0.96, 50, "2026-07-11")
+        mock_send.assert_called_once()
+        kwargs = mock_send.call_args.kwargs
+        assert kwargs["level"] == AlertLevel.CRITICAL
+        assert "SELL/DOWN" in kwargs["subject"]
+        assert "2026-07-11" in kwargs["subject"]
