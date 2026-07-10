@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import smtplib
+from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from email.message import EmailMessage
@@ -44,6 +46,30 @@ class AlertConfig:
             recipient_email=os.environ.get("ALERT_SMTP_RECIPIENT", sender),
             enabled=os.environ.get("ALERT_EMAIL_ENABLED", "").lower() in ("1", "true", "yes"),
         )
+
+
+# A day's ensemble predictions collapsing to one direction is the signature of a
+# degenerate model (the Jun-2026 all-short failure). Mirrors the training gate's
+# _DEGENERATE_MAX_CLASS_SHARE so serving and training agree on "collapsed".
+DIRECTION_COLLAPSE_THRESHOLD = 0.90
+
+
+def detect_direction_collapse(
+    directions: Sequence[int],
+    threshold: float = DIRECTION_COLLAPSE_THRESHOLD,
+) -> tuple[int, float] | None:
+    """Return ``(dominant_direction, share)`` when one direction exceeds
+    ``threshold`` of the day's predictions — the all-one-way signature of a
+    collapsed model — else ``None``. Empty input returns ``None``.
+    """
+    dirs = [int(d) for d in directions]
+    if not dirs:
+        return None
+    dominant, count = Counter(dirs).most_common(1)[0]
+    share = count / len(dirs)
+    if share > threshold:
+        return dominant, float(share)
+    return None
 
 
 class EmailAlerter:
@@ -116,6 +142,22 @@ class EmailAlerter:
                 f"Error count: {error_count}\n"
                 f"Window: last {window_minutes} minutes\n"
                 f"Action: Check API logs for details.\n"
+            ),
+            level=AlertLevel.CRITICAL,
+        )
+
+    def direction_collapse(self, dominant: int, share: float, n: int, date_str: str) -> bool:
+        """Alert when a day's predictions collapse to one direction (degenerate model)."""
+        label = {1: "BUY/UP", -1: "SELL/DOWN", 0: "HOLD/FLAT"}.get(dominant, str(dominant))
+        return self.send(
+            subject=f"Direction collapse: {share:.0%} of predictions are {label} ({date_str})",
+            body=(
+                f"Date: {date_str}\n"
+                f"{share:.1%} of {n} predictions are direction {dominant} ({label}).\n"
+                f"This is the all-one-way signature of a degenerate model "
+                f"(the Jun-2026 all-short failure).\n"
+                f"Action: check the latest ensemble artifact and the most recent "
+                f"train_all run — a healthy model produces mixed directions.\n"
             ),
             level=AlertLevel.CRITICAL,
         )
