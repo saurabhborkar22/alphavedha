@@ -155,6 +155,42 @@ class TestPredictionEngine:
         rm.assess.assert_called_once()
         assert rm.assess.call_args.kwargs["sector"] == "IT"
 
+    def test_short_magnitude_sized_as_unsigned_move(
+        self,
+        features: pd.DataFrame,
+        market_features: pd.DataFrame,
+    ) -> None:
+        """A short's negative predicted return must reach risk sizing as the
+        unsigned MOVE size — otherwise position_sizing zeros it (magnitude <= 0
+        returns 0), auto-excluding every short. The raw signed magnitude stays
+        on the prediction for transparency."""
+        ens = MagicMock()
+        ens.predict.return_value = EnsembleResult(
+            direction=np.array([-1]),
+            magnitude=np.array([-0.03]),  # collapsed regressor: negative return
+            probabilities=np.array([[0.7, 0.2, 0.1]]),
+            confidence=np.array([0.75]),
+            model_disagreement=np.array([0.05]),
+        )
+        rm = _mock_risk_manager()
+        result = PredictionEngine(
+            xgboost=_mock_base_model("xgboost"),
+            lstm=_mock_base_model("lstm"),
+            tft=_mock_base_model("tft"),
+            regime=_mock_regime(),
+            ensemble=ens,
+            meta_model=_mock_meta(),
+            conformal=_mock_conformal(),
+            scorer=CompositeScorer(),
+            risk_manager=rm,
+        ).predict("TCS", features, sector="IT", market_features=market_features)
+
+        rm.assess.assert_called_once()
+        # The fix: sizing receives the unsigned move (0.03), not -0.03.
+        assert rm.assess.call_args.kwargs["magnitude"] == pytest.approx(0.03)
+        # Raw signed magnitude is preserved on the prediction for display.
+        assert result.magnitude == pytest.approx(-0.03)
+
     def test_one_model_failure_degrades_gracefully(self, features: pd.DataFrame) -> None:
         lstm = _mock_base_model("lstm")
         lstm.predict.side_effect = RuntimeError("LSTM failed")

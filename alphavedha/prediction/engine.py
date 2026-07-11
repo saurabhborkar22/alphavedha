@@ -201,6 +201,15 @@ class PredictionEngine:
             )
         direction = int(ensemble_result.direction[-1])
         magnitude = float(ensemble_result.magnitude[-1])
+        # The regressor's magnitude is a SIGNED forward-return estimate; direction
+        # already carries long/short. The *size* of the expected move is what
+        # gates tradeability and sizes the position, so use the unsigned move
+        # wherever magnitude means "how big". Without this a short (negative
+        # predicted return) is read as zero edge and sized to 0 by
+        # position_sizing (which returns 0 for magnitude <= 0) — i.e. every
+        # short candidate is auto-excluded. StockPrediction.magnitude keeps the
+        # raw signed value for transparency.
+        expected_move = abs(magnitude)
         disagreement = float(ensemble_result.model_disagreement[-1])
 
         meta_confidence, is_tradeable = self._run_meta(features, ensemble_result, warnings)
@@ -234,7 +243,7 @@ class PredictionEngine:
         if self._risk_manager is not None:
             risk = self._risk_manager.assess(
                 meta_confidence=meta_confidence,
-                magnitude=magnitude,
+                magnitude=expected_move,
                 symbol=symbol,
                 sector=sector,
                 portfolio=current_portfolio,
@@ -262,10 +271,10 @@ class PredictionEngine:
             warnings.append(overlay_warning)
 
         cost_hurdle = _ROUND_TRIP_COST_PCT * _COST_HURDLE_MULTIPLE
-        if abs(magnitude) < cost_hurdle:
+        if expected_move < cost_hurdle:
             is_tradeable = False
             warnings.append(
-                f"Expected move {abs(magnitude):.4f} below cost hurdle "
+                f"Expected move {expected_move:.4f} below cost hurdle "
                 f"{cost_hurdle:.4f} (cost {_ROUND_TRIP_COST_PCT:.4f} x {_COST_HURDLE_MULTIPLE}x)"
             )
 
