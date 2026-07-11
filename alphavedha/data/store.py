@@ -694,9 +694,12 @@ async def store_alternative_data(rows: list[dict]) -> int:
 
     async with session_factory() as session:
         for row in rows:
+            period_date = row["period_date"]
+            if isinstance(period_date, str):
+                period_date = date.fromisoformat(period_date)
             values = {
                 "data_type": row["data_type"],
-                "period_date": row["period_date"],
+                "period_date": period_date,
                 "value": row["value"],
                 "yoy_change": row.get("yoy_change"),
                 "sector": row.get("sector"),
