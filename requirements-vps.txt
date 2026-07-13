@@ -49,7 +49,7 @@ pyyaml>=6.0
 structlog>=24.1
 
 # LLM extraction (Phase 2)
-google-genai>=1.0
+google-genai>=2.11.0
 groq>=0.9
 
 # PDF extraction (transcripts, credit rating PDFs)
