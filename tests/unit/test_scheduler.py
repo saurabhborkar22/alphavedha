@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -745,3 +746,109 @@ class TestDataRefreshJob:
         assert result.success is False
         assert result.error is not None
         assert "yfinance down" in result.error
+
+
+class TestNightlyRestack:
+    """After a nightly XGBoost promotion the ensemble/meta/conformal must be
+    re-fit on top of it — a promoted base model under a stale stacker served
+    the 98%-short chimera cohort of 2026-07-13."""
+
+    @staticmethod
+    def _result(artifact: bool, errors: dict[str, str] | None = None) -> SimpleNamespace:
+        return SimpleNamespace(
+            artifact_path=Path("models/artifacts/x/latest") if artifact else None,
+            n_symbols=50,
+            total_time_seconds=1.0,
+            errors=errors or {},
+        )
+
+    def _run(
+        self,
+        xgb: SimpleNamespace,
+        ens: SimpleNamespace,
+        meta: SimpleNamespace,
+        conf: SimpleNamespace,
+    ) -> tuple[object, MagicMock, MagicMock, MagicMock]:
+        sched = AlphaVedhaScheduler()
+        with (
+            patch("alphavedha.scheduler._run_async", side_effect=lambda x: x),
+            patch("alphavedha.training.pipeline.train_xgboost", MagicMock(return_value=xgb)),
+            patch(
+                "alphavedha.training.pipeline.train_ensemble", MagicMock(return_value=ens)
+            ) as m_ens,
+            patch(
+                "alphavedha.training.pipeline.train_meta_labeling", MagicMock(return_value=meta)
+            ) as m_meta,
+            patch(
+                "alphavedha.training.pipeline.train_conformal", MagicMock(return_value=conf)
+            ) as m_conf,
+        ):
+            result = sched.run_daily_xgboost_retrain()
+        return result, m_ens, m_meta, m_conf
+
+    def test_promotion_triggers_full_restack(self) -> None:
+        result, m_ens, m_meta, m_conf = self._run(
+            self._result(True), self._result(True), self._result(True), self._result(True)
+        )
+        assert result.success is True
+        assert result.error is None
+        m_ens.assert_called_once()
+        m_meta.assert_called_once()
+        m_conf.assert_called_once()
+
+    def test_no_promotion_skips_restack(self) -> None:
+        result, m_ens, m_meta, m_conf = self._run(
+            self._result(False), self._result(True), self._result(True), self._result(True)
+        )
+        assert result.success is False
+        m_ens.assert_not_called()
+        m_meta.assert_not_called()
+        m_conf.assert_not_called()
+
+    def test_rejected_ensemble_skips_meta_and_surfaces_reason(self) -> None:
+        result, m_ens, m_meta, m_conf = self._run(
+            self._result(True),
+            self._result(False, errors={"degenerate": "97% of val predictions are class -1"}),
+            self._result(True),
+            self._result(True),
+        )
+        # XGBoost promotion stands; the restack problem is surfaced, not fatal.
+        assert result.success is True
+        assert result.error is not None and "rejected at ensemble" in result.error
+        assert "class -1" in result.error
+        m_ens.assert_called_once()
+        m_meta.assert_not_called()
+        m_conf.assert_not_called()
+
+    def test_env_kill_switch_disables_restack(self) -> None:
+        sched = AlphaVedhaScheduler()
+        with (
+            patch.dict(os.environ, {"ALPHAVEDHA_NIGHTLY_RESTACK": "0"}, clear=False),
+            patch("alphavedha.scheduler._run_async", side_effect=lambda x: x),
+            patch(
+                "alphavedha.training.pipeline.train_xgboost",
+                MagicMock(return_value=self._result(True)),
+            ),
+            patch("alphavedha.training.pipeline.train_ensemble", MagicMock()) as m_ens,
+        ):
+            result = sched.run_daily_xgboost_retrain()
+        assert result.success is True
+        assert result.error is None
+        m_ens.assert_not_called()
+
+    def test_restack_exception_never_fails_the_promotion(self) -> None:
+        sched = AlphaVedhaScheduler()
+        with (
+            patch("alphavedha.scheduler._run_async", side_effect=lambda x: x),
+            patch(
+                "alphavedha.training.pipeline.train_xgboost",
+                MagicMock(return_value=self._result(True)),
+            ),
+            patch(
+                "alphavedha.training.pipeline.train_ensemble",
+                MagicMock(side_effect=RuntimeError("OOM")),
+            ),
+        ):
+            result = sched.run_daily_xgboost_retrain()
+        assert result.success is True
+        assert result.error is not None and result.error.startswith("restack failed")

@@ -1523,10 +1523,18 @@ class AlphaVedhaScheduler:
         return result
 
     def run_daily_xgboost_retrain(self) -> JobResult:
-        """Retrain XGBoost nightly after market-close data is ingested.
+        """Retrain XGBoost nightly, then re-fit the stack that sits on top of it.
 
-        Runs on cx23 (2 vCPU, 4GB) — XGBoost fits comfortably within that budget.
-        LSTM/TFT are NOT retrained here; those need more RAM and run weekly.
+        Promoting a new XGBoost under an ensemble/meta calibrated to the OLD
+        one serves a mixed-era "chimera" stack — on 2026-07-13 exactly that
+        produced a 98%-short cohort the morning after a Sunday-night XGBoost
+        promotion. So after every promotion, re-fit ensemble → meta-labeling →
+        conformal against the new base model. Each step keeps its own guard
+        (the ensemble path runs the degeneracy gate; a rejected step leaves
+        the previous artifact serving). LSTM/TFT stay on the weekly cadence —
+        they need the big box.
+
+        Set ALPHAVEDHA_NIGHTLY_RESTACK=0 to fall back to xgboost-only.
         """
         result = JobResult(job_name="xgboost_retrain", started_at=_now_ist())
         logger.info("scheduler_job_start", job="xgboost_retrain", tier=self._tier)
@@ -1547,6 +1555,12 @@ class AlphaVedhaScheduler:
                     artifact=str(train_result.artifact_path),
                     elapsed_s=train_result.total_time_seconds,
                 )
+                # XGBoost promoted — re-align the downstream stack to it. A
+                # failure here is surfaced on the job but must not undo the
+                # promotion above, so the job stays successful.
+                restack_error = self._restack_downstream_models()
+                if restack_error is not None:
+                    result.error = restack_error
             else:
                 result.error = "no artifact produced — check training logs"
                 logger.warning("xgboost_retrain_no_artifact", tier=self._tier)
@@ -1558,6 +1572,53 @@ class AlphaVedhaScheduler:
         result.finished_at = _now_ist()
         self._record_job(result)
         return result
+
+    def _restack_downstream_models(self) -> str | None:
+        """Re-fit ensemble → meta-labeling → conformal on the just-promoted XGBoost.
+
+        Returns an error string when a step was rejected or failed (the
+        previous artifact keeps serving in that case), else None. Never
+        raises — a restack problem must not fail the XGBoost promotion.
+        The ensemble step reuses the standalone ``train_ensemble`` path,
+        which carries the degeneracy gate: a collapsed stacker is never
+        written. Meta depends on the new ensemble, so a rejected ensemble
+        also skips meta (better one stale layer than a meta calibrated to
+        an ensemble that isn't serving).
+        """
+        if os.environ.get("ALPHAVEDHA_NIGHTLY_RESTACK", "1").lower() in ("0", "false", "no"):
+            logger.info("nightly_restack_skipped", reason="ALPHAVEDHA_NIGHTLY_RESTACK disabled")
+            return None
+
+        try:
+            from alphavedha.training.pipeline import (
+                train_conformal,
+                train_ensemble,
+                train_meta_labeling,
+            )
+
+            ensemble_result = _run_async(train_ensemble(self._tier))
+            if ensemble_result.artifact_path is None:  # type: ignore[attr-defined]
+                reason = ensemble_result.errors.get(  # type: ignore[attr-defined]
+                    "degenerate", "ensemble not produced"
+                )
+                logger.error("nightly_restack_rejected", stage="ensemble", reason=str(reason))
+                return f"restack rejected at ensemble: {reason}"
+
+            meta_result = _run_async(train_meta_labeling(self._tier))
+            if meta_result.artifact_path is None:  # type: ignore[attr-defined]
+                logger.error("nightly_restack_failed", stage="meta_labeling")
+                return "restack failed at meta_labeling — previous meta still serving"
+
+            conformal_result = _run_async(train_conformal(self._tier))
+            if conformal_result.artifact_path is None:  # type: ignore[attr-defined]
+                logger.error("nightly_restack_failed", stage="conformal")
+                return "restack failed at conformal — previous conformal still serving"
+
+            logger.info("nightly_restack_complete", stages="ensemble,meta_labeling,conformal")
+            return None
+        except Exception as e:
+            logger.error("nightly_restack_failed", error=str(e))
+            return f"restack failed: {e}"
 
     def run_weekly_lstm_tft_retrain(self) -> JobResult:
         """Retrain LSTM and TFT models every Saturday night.
