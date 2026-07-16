@@ -281,9 +281,35 @@ class TestEquityCurve:
         assert data["points"][0]["date"] == "2026-05-04"
         assert data["current_value"] != data["start_value"]
 
+    def test_wrong_short_counts_as_loss(self, real_client: TestClient) -> None:
+        """Regression: actual_return is a price return — the INFY short that
+        saw the price rise +0.8% must drag the curve down, not lift it."""
+        data = real_client.get("/public/equity-curve").json()
+        # 2026-05-04 mean trade return = (+0.0122 - 0.008 + 0.0073) / 3
+        assert data["points"][0]["portfolio_value"] == pytest.approx(1_003_833.33, abs=0.01)
+
     def test_real_empty(self, empty_client: TestClient) -> None:
         data = empty_client.get("/public/equity-curve").json()
         assert data["points"] == []
+
+
+def test_daily_returns_fallback_is_directional() -> None:
+    """Regression: the Sharpe fallback counts a correct short as a gain."""
+    rec = public.PredictionRecord(
+        date="2026-05-04",
+        symbol="INFY",
+        predicted_direction=-1,
+        predicted_direction_label="SELL",
+        predicted_magnitude=0.01,
+        confidence=0.6,
+        regime="bear",
+        actual_direction=-1,
+        actual_return=-0.02,
+        is_correct=True,
+        model_version="v1.2.0",
+        generated_at="2026-05-04T00:00:00+05:30",
+    )
+    assert public._daily_returns([rec], None) == [pytest.approx(0.02)]
 
 
 class TestMonthlyReturns:
@@ -301,6 +327,14 @@ class TestMonthlyReturns:
         assert month["n_trades"] == 4  # evaluated trades only
         assert month["win_rate"] == pytest.approx(3 / 4, abs=1e-3)
         assert month["benchmark_return"] == 0.0  # no DailyPnL — honest zero
+
+    def test_portfolio_return_is_directional(self, real_client: TestClient) -> None:
+        """Regression: monthly P&L is predicted_direction * actual_return,
+        so the wrong-way INFY short subtracts its price move."""
+        data = real_client.get("/public/monthly-returns").json()
+        month = data["returns"][0]
+        # (+0.0122 - 0.008 + 0.0072 + 0.0073) / 4 = 0.004675 → rounds to 0.0047
+        assert month["portfolio_return"] == pytest.approx(0.0047, abs=1e-4)
 
 
 class TestExport:

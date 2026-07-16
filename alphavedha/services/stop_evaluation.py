@@ -98,8 +98,11 @@ async def evaluate_stop_hits(eval_date: date | None = None) -> dict[str, int]:
         if exit_price is None:
             continue
 
-        actual_return = (exit_price - entry) / entry * direction
-        is_correct = actual_return > 0
+        # actual_return stores the PRICE return (not direction-multiplied);
+        # trade P&L = predicted_direction * actual_return, same as the
+        # scheduler's horizon-maturity path.
+        actual_return = (exit_price - entry) / entry
+        is_correct = actual_return * direction > 0
         pred_date = trade["prediction_date"]
         if not isinstance(pred_date, date):
             pred_date = date.fromisoformat(str(pred_date))

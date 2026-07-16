@@ -222,14 +222,18 @@ def _daily_returns(
     evaluated: list[PredictionRecord],
     pnl_df: pd.DataFrame | None,
 ) -> list[float]:
-    """Daily return series from DailyPnL, falling back to per-day mean trade returns."""
+    """Daily return series from DailyPnL, falling back to per-day mean trade returns.
+
+    The fallback multiplies by predicted_direction: actual_return is the
+    price return, so a correct short must count as a gain.
+    """
     if pnl_df is not None and not pnl_df.empty:
         return [float(x) for x in pnl_df["daily_return"].tolist()]
 
     by_day: dict[str, list[float]] = {}
     for r in evaluated:
         if r.actual_return is not None:
-            by_day.setdefault(r.date, []).append(r.actual_return)
+            by_day.setdefault(r.date, []).append(r.predicted_direction * r.actual_return)
     return [sum(rets) / len(rets) for _, rets in sorted(by_day.items())]
 
 
@@ -555,11 +559,15 @@ def _equity_curve_from_records(
     position_weight: float,
     benchmark_daily: float,
 ) -> dict:
-    """Cumulative equity curve from per-day mean evaluated trade returns."""
+    """Cumulative equity curve from per-day mean evaluated trade returns.
+
+    actual_return is the price return; the trade's P&L is
+    predicted_direction * actual_return (a correct short gains).
+    """
     by_day: dict[str, list[float]] = {}
     for r in records:
         if r.actual_return is not None:
-            by_day.setdefault(r.date, []).append(r.actual_return)
+            by_day.setdefault(r.date, []).append(r.predicted_direction * r.actual_return)
 
     if not by_day:
         return {"points": [], "start_value": 0.0, "current_value": 0.0}
@@ -648,7 +656,9 @@ def _monthly_returns_from_records(
 
     returns: list[MonthlyReturn] = []
     for month, recs in sorted(months.items()):
-        portfolio_return = round(sum(r.actual_return or 0 for r in recs) / len(recs), 4)
+        portfolio_return = round(
+            sum(r.predicted_direction * (r.actual_return or 0) for r in recs) / len(recs), 4
+        )
         if benchmark_by_month is None:
             benchmark_return = round(0.01 + (hash(month) % 20) / 1000.0, 4)
         else:

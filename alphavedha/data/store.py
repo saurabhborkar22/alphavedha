@@ -807,7 +807,12 @@ async def update_paper_trade_outcome(
     exit_reason: str | None = None,
     strategy: str = "ensemble_v1",
 ) -> None:
-    """Update a paper trade with the actual outcome."""
+    """Update a paper trade with the actual outcome.
+
+    ``actual_return`` must be the price return over the hold (NOT
+    direction-multiplied); consumers compute trade P&L as
+    ``predicted_direction * actual_return``.
+    """
     from sqlalchemy import update
 
     session_factory = get_session_factory()
