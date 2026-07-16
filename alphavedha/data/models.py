@@ -241,6 +241,9 @@ class PaperTrade(Base):
     take_profit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Price return over the hold, NOT direction-multiplied: trade P&L is
+    # predicted_direction * actual_return. Every outcome writer must follow
+    # this convention (scheduler horizon path, stop_evaluation, manual close).
     actual_return: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default="now()")

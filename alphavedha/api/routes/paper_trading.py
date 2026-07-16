@@ -47,6 +47,12 @@ class PaperTradeResponse(BaseModel):
 
 
 class TradeOutcomeRequest(BaseModel):
+    """Manual outcome update.
+
+    ``actual_return`` is the PRICE return over the hold, not
+    direction-multiplied — a correct short reports a negative value.
+    """
+
     symbol: str
     prediction_date: str
     strategy: str = "ensemble_v1"

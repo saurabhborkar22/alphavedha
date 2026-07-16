@@ -2120,13 +2120,15 @@ async def close_paper_position(position_id: str) -> dict[str, str]:
             return {"status": "error", "id": position_id}
 
         sign = 1 if int(trade["predicted_direction"]) >= 0 else -1
-        actual_return = ((exit_price - float(entry)) / float(entry)) * sign if has_entry else 0.0
+        # actual_return stores the PRICE return (not direction-multiplied).
+        actual_return = ((exit_price - float(entry)) / float(entry)) if has_entry else 0.0
         await update_paper_trade_outcome(
             symbol=symbol,
             prediction_date=prediction_date,
             exit_price=exit_price,
             actual_return=actual_return,
-            is_correct=actual_return > 0,
+            is_correct=actual_return * sign > 0,
+            exit_reason="manual_close",
             strategy=str(trade.get("strategy", "ensemble_v1")),
         )
         return {"status": "closed", "id": position_id}
