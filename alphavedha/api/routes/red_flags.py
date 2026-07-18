@@ -16,7 +16,7 @@ from alphavedha.intel.signals.blowup_score import (
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(
-    prefix="/intel",
+    prefix="/api/intel",
     tags=["intel"],
     dependencies=[Depends(verify_api_key)],
 )
