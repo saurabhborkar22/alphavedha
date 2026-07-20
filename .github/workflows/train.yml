@@ -82,7 +82,8 @@ jobs:
             for i in $(seq 1 "$timeout"); do
               status=$(hcloud -H "Authorization: Bearer $HETZNER_TOKEN" \
                 "https://api.hetzner.cloud/v1/servers/$SERVER_ID" \
-                | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['status'])")
+                | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['status'])" \
+                2>/dev/null || echo unknown)
               if [ "$status" = "$target" ]; then
                 echo "Server is $target (after ${i}s)"
                 return 0
@@ -103,12 +104,35 @@ jobs:
 
           wait_for_status "off" 120
 
-          hcloud -X POST \
-            -H "Authorization: Bearer $HETZNER_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"server_type":"cx43","upgrade_disk":false}' \
-            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/change_type" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print('resize:', d.get('action',{}).get('status','?'))"
+          # cx43 placement can fail transiently (HTTP 412 "error during
+          # placement" = no capacity in the DC, 2026-07-18 outage). Retry,
+          # and if it never succeeds power the box back ON before aborting —
+          # a failed resize must never leave the server off.
+          resized=false
+          for attempt in 1 2 3; do
+            if body=$(hcloud -X POST \
+              -H "Authorization: Bearer $HETZNER_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"server_type":"cx43","upgrade_disk":false}' \
+              "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/change_type"); then
+              echo "resize: accepted (attempt $attempt)"
+              resized=true
+              break
+            fi
+            echo "Resize attempt $attempt/3 failed — retrying in 60s..."
+            sleep 60
+          done
+
+          if [ "$resized" != "true" ]; then
+            echo "ERROR: cx43 placement failed after 3 attempts — powering server back on as-is and aborting."
+            hcloud -X POST \
+              -H "Authorization: Bearer $HETZNER_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/poweron" \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweron:', d.get('action',{}).get('status','?'))" || true
+            wait_for_status "running" 180
+            exit 1
+          fi
 
           sleep 15
 
@@ -167,7 +191,8 @@ jobs:
               python -m alphavedha.cli.main train "$TRAIN_MODEL" --tier large
             echo "Training complete: $TRAIN_MODEL"
 
-      # always() ensures scale-down runs even if training failed — never leave on cx43 by accident
+      # always() ensures scale-down runs even if training failed — never leave
+      # the server on cx43 by accident, and never leave it powered OFF.
       - name: Scale down server (cx43 → cx23)
         if: always() && env.DO_SCALE == 'true'
         env:
@@ -192,7 +217,8 @@ jobs:
             for i in $(seq 1 "$timeout"); do
               status=$(hcloud -H "Authorization: Bearer $HETZNER_TOKEN" \
                 "https://api.hetzner.cloud/v1/servers/$SERVER_ID" \
-                | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['status'])")
+                | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['status'])" \
+                2>/dev/null || echo unknown)
               if [ "$status" = "$target" ]; then
                 echo "Server is $target (after ${i}s)"
                 return 0
@@ -203,30 +229,58 @@ jobs:
             return 1
           }
 
-          echo "Scaling back down to cx23..."
+          # This step's one hard guarantee: the server ends up RUNNING.
+          # Resize problems are warnings handled after power-on — on
+          # 2026-07-18 a failed scale-up left the box already cx23, the
+          # "senseless" resize error killed this step before poweron, and
+          # the server stayed off for 35 hours.
+          server=$(hcloud -H "Authorization: Bearer $HETZNER_TOKEN" \
+            "https://api.hetzner.cloud/v1/servers/$SERVER_ID")
+          current_type=$(echo "$server" | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['server_type']['name'])")
+          current_status=$(echo "$server" | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['status'])")
+          echo "Current state: type=$current_type status=$current_status"
 
-          hcloud -X POST \
-            -H "Authorization: Bearer $HETZNER_TOKEN" \
-            -H "Content-Type: application/json" \
-            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/poweroff" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweroff:', d.get('action',{}).get('status','?'))"
+          downsize_ok=true
+          if [ "$current_type" != "cx23" ]; then
+            echo "Scaling back down to cx23..."
+            if [ "$current_status" = "running" ]; then
+              hcloud -X POST \
+                -H "Authorization: Bearer $HETZNER_TOKEN" \
+                -H "Content-Type: application/json" \
+                "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/poweroff" \
+                | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweroff:', d.get('action',{}).get('status','?'))" || true
+              wait_for_status "off" 120 || true
+            fi
+            if body=$(hcloud -X POST \
+              -H "Authorization: Bearer $HETZNER_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"server_type":"cx23","upgrade_disk":false}' \
+              "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/change_type"); then
+              echo "resize: accepted"
+              sleep 15
+            else
+              echo "WARNING: downsize failed — server stays $current_type; powering on anyway."
+              downsize_ok=false
+            fi
+          else
+            echo "Server already cx23 — no resize needed."
+          fi
 
-          wait_for_status "off" 120
+          status=$(hcloud -H "Authorization: Bearer $HETZNER_TOKEN" \
+            "https://api.hetzner.cloud/v1/servers/$SERVER_ID" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['status'])" \
+            2>/dev/null || echo unknown)
+          if [ "$status" != "running" ]; then
+            hcloud -X POST \
+              -H "Authorization: Bearer $HETZNER_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/poweron" \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweron:', d.get('action',{}).get('status','?'))" || true
+          fi
+          wait_for_status "running" 180
 
-          hcloud -X POST \
-            -H "Authorization: Bearer $HETZNER_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"server_type":"cx23","upgrade_disk":false}' \
-            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/change_type" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print('resize:', d.get('action',{}).get('status','?'))"
-
-          sleep 15
-
-          hcloud -X POST \
-            -H "Authorization: Bearer $HETZNER_TOKEN" \
-            -H "Content-Type: application/json" \
-            "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/poweron" \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print('poweron:', d.get('action',{}).get('status','?'))"
-
-          wait_for_status "running" 120
+          if [ "$downsize_ok" != "true" ]; then
+            echo "ERROR: server is RUNNING but still $current_type — downsize manually to stop extra billing."
+            exit 1
+          fi
           echo "Server back to cx23 (€3.99/mo)."
